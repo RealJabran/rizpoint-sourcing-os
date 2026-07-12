@@ -16,6 +16,18 @@
 
 `NormalizedOffer` money and dimensions are `NUMERIC(18,4)`; the scanner returns decimal strings, never binary floats. UPC, EAN, GTIN, and ASIN are strings. `NormalizationWarning` records invalid identifiers and numeric values rather than silently discarding them.
 
+## Phase 2 physical schema
+
+| Entity                                 | Purpose                                                                               | Tenant boundary                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `CatalogProduct` / `ProductIdentifier` | Provider-normalized candidate and typed identifiers with source observation metadata. | Provider global; candidates reference tenant rows |
+| `MatchLookup`                          | Scan-scoped, idempotent provider lookup response with provenance and freshness.       | `organization_id`                                 |
+| `ListingCandidate` / `MatchEvidence`   | Candidate score and feature-level agreement, contradiction, or unknown evidence.      | `organization_id`                                 |
+| `MatchDecision`                        | System or human selection state and reason codes for one supplier row.                | `organization_id`                                 |
+| `PackGuardResult`                      | Case/pack verification state and decimal cost per sellable unit.                      | Through `ListingCandidate`                        |
+
+`CatalogProduct.observed_at` and `freshness_state`, together with its provider and provider reference, are mandatory. `MatchLookup` retains the raw provider response used for the decision. `PackGuardResult.cost_per_sellable_unit` is `NUMERIC(18,4)` and is null whenever PackGuard blocks.
+
 ## Required future external metric fields
 
 Every catalog, price, fee, restriction, or history observation must carry `provider`, `observed_at`, `freshness_state`, and the relevant provider reference. Cached or stale values may be displayed only with their freshness state.
@@ -26,4 +38,4 @@ Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal
 
 ## Future conceptual entities
 
-Listing candidates, provider snapshots, cost scenarios, profit results, shortlists, purchase orders, and audit entities remain planned.
+Cost scenarios, profit results, shortlists, purchase orders, and audit entities remain planned.

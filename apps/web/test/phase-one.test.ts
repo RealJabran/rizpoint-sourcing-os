@@ -87,4 +87,33 @@ describe("Phase 1 upload validation", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepts MPN as a matching field", () => {
+    expect(() =>
+      validateMappings([
+        { sourceIndex: 0, target: "MPN" },
+        { sourceIndex: 1, target: "DESCRIPTION" },
+      ]),
+    ).not.toThrow();
+    expect(
+      profileInputSchema.safeParse({
+        name: "VSI MPN",
+        headerRow: 1,
+        mapping: [
+          {
+            sourceIndex: 0,
+            sourceColumn: "MPN",
+            target: "MPN",
+            required: true,
+          },
+          {
+            sourceIndex: 1,
+            sourceColumn: "Description",
+            target: "DESCRIPTION",
+            required: true,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
 });

@@ -2,9 +2,9 @@
 
 An explainable Amazon wholesale sourcing platform. It is intentionally built around evidence, pack correctness, tenant boundaries, and deterministic Decimal-based financial calculations.
 
-## Phase 1 status
+## Phase 2 status
 
-This repository includes the Phase 0 foundation and Phase 1 upload/mapping slice. A local demo user can upload CSV, XLSX, or XLS supplier catalogs, select a sheet/header row, save validated mappings (including a VSI profile), and normalize rows with persisted warnings. It does not call Amazon, calculate profits, or provide production authentication yet.
+This repository includes the Phase 0 foundation, Phase 1 upload/mapping slice, and Phase 2 deterministic matching slice. A local demo user can upload CSV, XLSX, or XLS supplier catalogs, select a sheet/header row, save validated mappings (including a VSI profile), normalize rows with persisted warnings, and queue mocked catalog matching. Match decisions preserve provider provenance, feature-level evidence, and PackGuard status. It does not call Amazon, calculate profits, or provide production authentication yet.
 
 ## Local development
 
@@ -17,6 +17,8 @@ docker compose up --build --wait
 ```
 
 Open `http://localhost:3000/uploads`. The seeded `VSI` supplier lets you exercise a local upload/mapping flow without committing supplier data. MinIO accepts browser uploads only through short-lived signed URLs from the local web origin.
+
+After normalization, submit `POST /api/scans/{scanId}/match` in demo mode and review results at `/scans/{scanId}/matches`. The only catalog adapter is a deterministic mock fixture; no real provider credentials are configured.
 
 `PHASE_ZERO_DEMO_MODE=true` is set only by local Compose to enable this mock route. Do not expose it as a production authorization mechanism.
 

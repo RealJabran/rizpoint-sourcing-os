@@ -19,6 +19,7 @@ import {
   requestMockScan,
   ScannerRequestError,
 } from "./scanner-client.js";
+import { processMatching } from "./matching.js";
 
 const terminalUploadErrorCodes = new Set([
   "EMPTY_FILE",
@@ -46,7 +47,7 @@ function errorCode(error: unknown): string {
 
 export const mockScanWorker = new Worker<{
   scanJobId: string;
-  kind?: "UPLOAD_INSPECT" | "NORMALIZE";
+  kind?: "UPLOAD_INSPECT" | "NORMALIZE" | "MATCH";
 }>(
   "mock-scan",
   async (job) => {
@@ -114,6 +115,10 @@ export const mockScanWorker = new Worker<{
             warnings: row.warnings,
           })),
         );
+        return;
+      }
+      if (job.data.kind === "MATCH") {
+        await processMatching(job.data.scanJobId);
         return;
       }
       const shouldProcess = await markScanJobRunning(job.data.scanJobId);

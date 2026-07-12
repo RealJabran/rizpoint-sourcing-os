@@ -12,6 +12,7 @@ describe("queue idempotency", () => {
     expect(mockScanQueueJobId("scan_123", "NORMALIZE")).toBe(
       "scan-scan_123-normalize",
     );
+    expect(mockScanQueueJobId("scan_123", "MATCH")).toBe("scan-scan_123-match");
     expect(mockScanQueueJobId("scan_123", "UPLOAD_INSPECT")).not.toBe(
       mockScanQueueJobId("scan_123", "NORMALIZE"),
     );

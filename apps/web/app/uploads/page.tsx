@@ -8,6 +8,7 @@ const targets = [
   "UPC",
   "EAN",
   "GTIN",
+  "MPN",
   "ITEM_NUMBER",
   "DESCRIPTION",
   "BRAND",

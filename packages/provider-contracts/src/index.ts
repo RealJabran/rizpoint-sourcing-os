@@ -22,11 +22,36 @@ export const observedMetricSchema = <T extends z.ZodType>(valueSchema: T) =>
     provenance: provenanceSchema,
   });
 
-export const listingCandidateSchema = z.object({
+export const identifierTypeSchema = z.enum([
+  "ASIN",
+  "UPC",
+  "EAN",
+  "GTIN",
+  "MPN",
+]);
+export type IdentifierType = z.infer<typeof identifierTypeSchema>;
+
+export const catalogIdentifierSchema = z.object({
+  type: identifierTypeSchema,
+  value: z.string().trim().min(1),
+});
+export type CatalogIdentifier = z.infer<typeof catalogIdentifierSchema>;
+
+export const catalogProductSchema = z.object({
   asin: z.string().regex(/^B[A-Z0-9]{9}$/),
   title: z.string().min(1),
+  brand: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  mpn: z.string().min(1).optional(),
+  sizeText: z.string().min(1).optional(),
+  packCount: z.number().int().positive().optional(),
+  variation: z.string().min(1).optional(),
+  identifiers: z.array(catalogIdentifierSchema),
   provenance: provenanceSchema,
 });
+export type CatalogProduct = z.infer<typeof catalogProductSchema>;
+
+export const listingCandidateSchema = catalogProductSchema;
 
 export type ListingCandidate = z.infer<typeof listingCandidateSchema>;
 
@@ -75,8 +100,11 @@ export const aiMatchRankingSchema = z.object({
 export type AiMatchRanking = z.infer<typeof aiMatchRankingSchema>;
 
 export interface CatalogProvider {
-  searchByIdentifier(identifier: string): Promise<readonly ListingCandidate[]>;
+  searchByIdentifier(
+    identifier: CatalogIdentifier,
+  ): Promise<readonly CatalogProduct[]>;
   searchByKeywords(keywords: string): Promise<readonly ListingCandidate[]>;
+  getItem(asin: string): Promise<CatalogProduct | null>;
 }
 
 export interface PricingProvider {

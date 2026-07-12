@@ -72,9 +72,18 @@ importers:
       '@rizpoint/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@rizpoint/matching-engine':
+        specifier: workspace:*
+        version: link:../../packages/matching-engine
+      '@rizpoint/mock-providers':
+        specifier: workspace:*
+        version: link:../../packages/mock-providers
       '@rizpoint/object-storage':
         specifier: workspace:*
         version: link:../../packages/object-storage
+      '@rizpoint/provider-contracts':
+        specifier: workspace:*
+        version: link:../../packages/provider-contracts
       bullmq:
         specifier: 5.80.2
         version: 5.80.2
@@ -151,6 +160,62 @@ importers:
       decimal.js:
         specifier: 10.6.0
         version: 10.6.0
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.1.1
+        version: 26.1.1
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.63.0
+        version: 8.63.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0))
+
+  packages/matching-engine:
+    dependencies:
+      '@rizpoint/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@rizpoint/provider-contracts':
+        specifier: workspace:*
+        version: link:../provider-contracts
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.1.1
+        version: 26.1.1
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.63.0
+        version: 8.63.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0))
+
+  packages/mock-providers:
+    dependencies:
+      '@rizpoint/provider-contracts':
+        specifier: workspace:*
+        version: link:../provider-contracts
+      '@rizpoint/test-fixtures':
+        specifier: workspace:*
+        version: link:../test-fixtures
     devDependencies:
       '@eslint/js':
         specifier: 9.39.5

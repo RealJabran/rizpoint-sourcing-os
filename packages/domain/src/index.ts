@@ -42,3 +42,13 @@ export interface ObservedValue<T> {
 
 export type PackGuardStatus =
   "VERIFIED" | "BLOCKED_PACK_UNCERTAIN" | "BLOCKED_PACK_CONTRADICTION";
+
+export type MatchDecisionStatus =
+  | "AUTO_ACCEPTED"
+  | "REVIEW_REQUIRED"
+  | "UNMATCHED"
+  | "USER_ACCEPTED"
+  | "USER_REJECTED";
+
+export type MatchEvidenceOutcome =
+  "AGREEMENT" | "CONTRADICTION" | "UNKNOWN" | "NOT_APPLICABLE";

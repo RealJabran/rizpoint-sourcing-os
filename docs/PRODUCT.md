@@ -15,6 +15,10 @@ Phase 1 adds supplier-catalog ingestion through private object storage. It suppo
 
 The proof slice uploads a local file through a short-lived signed URL, runs it through malware scanning and deterministic inspection, persists a selected mapping, then normalizes rows in a checkpointed background job.
 
+## Phase 2 scope
+
+Phase 2 adds deterministic catalog matching after normalization. It cascades from supplied ASIN to exact UPC/EAN/GTIN, MPN plus brand, and title candidates. Candidates retain feature-level evidence, confidence, provider provenance, and freshness. Brand, model, size, pack, or variation contradictions cannot auto-accept. PackGuard prevents downstream profitability when case-to-sellable pack data is unknown or contradictory.
+
 ## Future workflow
 
 `upload → inspect/map → normalize → match → enrich → calculate → review → shortlist → purchase order`

@@ -34,6 +34,7 @@ export const profileInputSchema = z.object({
           "UPC",
           "EAN",
           "GTIN",
+          "MPN",
           "ITEM_NUMBER",
           "DESCRIPTION",
           "BRAND",
@@ -83,6 +84,7 @@ export const mappingInputSchema = z.object({
           "UPC",
           "EAN",
           "GTIN",
+          "MPN",
           "ITEM_NUMBER",
           "DESCRIPTION",
           "BRAND",
@@ -127,7 +129,7 @@ export function validateMappings(
   if (!targets.includes("DESCRIPTION")) throw new Error("DESCRIPTION_REQUIRED");
   if (
     !targets.some((target) =>
-      ["ASIN", "UPC", "EAN", "GTIN", "ITEM_NUMBER"].includes(target),
+      ["ASIN", "UPC", "EAN", "GTIN", "MPN", "ITEM_NUMBER"].includes(target),
     )
   )
     throw new Error("IDENTIFIER_MAPPING_REQUIRED");

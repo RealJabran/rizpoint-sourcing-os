@@ -504,6 +504,7 @@ export async function persistNormalizedRows(
         upc: stringOrNull(row.offer.upc),
         ean: stringOrNull(row.offer.ean),
         gtin: stringOrNull(row.offer.gtin),
+        mpn: stringOrNull(row.offer.mpn),
         itemNumber: stringOrNull(row.offer.item_number),
         description: stringOrNull(row.offer.description),
         brand: stringOrNull(row.offer.brand),
@@ -554,6 +555,359 @@ export async function persistNormalizedRows(
         payload: { rowCount: rows.length },
       },
     });
+  });
+}
+
+export async function queueMatching(organizationId: string, scanJobId: string) {
+  return db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findFirst({
+      where: { id: scanJobId, organizationId, jobType: "UPLOAD" },
+      include: { _count: { select: { supplierRows: true } } },
+    });
+    if (!scan || scan._count.supplierRows === 0) return null;
+    if (scan.status === "MATCHING") return scan;
+    if (scan.status !== "COMPLETED") return null;
+    const updated = await transaction.scanJob.update({
+      where: { id: scan.id },
+      data: { status: "MATCHING", completedAt: null },
+    });
+    await transaction.outboxEvent.upsert({
+      where: {
+        scanJobId_eventType: {
+          scanJobId: scan.id,
+          eventType: "scan.match.requested",
+        },
+      },
+      create: {
+        organizationId,
+        scanJobId: scan.id,
+        eventType: "scan.match.requested",
+        payload: { scanJobId: scan.id, kind: "MATCH" },
+      },
+      update: {
+        status: "PENDING",
+        claimToken: null,
+        claimedAt: null,
+        lastError: null,
+      },
+    });
+    return updated;
+  });
+}
+
+export async function getScanRowsForMatching(scanJobId: string) {
+  return db.scanJob.findUnique({
+    where: { id: scanJobId },
+    include: {
+      supplierRows: {
+        orderBy: { sourceRowNumber: "asc" },
+        include: { normalizedOffer: true },
+      },
+    },
+  });
+}
+
+export async function getCompletedMatchLookup(
+  scanJobId: string,
+  provider: string,
+  lookupType:
+    "SUPPLIED_ASIN" | "EXACT_IDENTIFIER" | "MPN_BRAND" | "TITLE_SEARCH",
+  lookupKey: string,
+) {
+  return db.matchLookup.findUnique({
+    where: {
+      scanJobId_provider_lookupType_lookupKey: {
+        scanJobId,
+        provider,
+        lookupType,
+        lookupKey,
+      },
+    },
+  });
+}
+
+export async function saveMatchLookup(input: {
+  organizationId: string;
+  scanJobId: string;
+  provider: string;
+  lookupType:
+    "SUPPLIED_ASIN" | "EXACT_IDENTIFIER" | "MPN_BRAND" | "TITLE_SEARCH";
+  lookupKey: string;
+  payload: Prisma.InputJsonValue;
+  observedAt: Date;
+  freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
+}) {
+  return db.matchLookup.upsert({
+    where: {
+      scanJobId_provider_lookupType_lookupKey: {
+        scanJobId: input.scanJobId,
+        provider: input.provider,
+        lookupType: input.lookupType,
+        lookupKey: input.lookupKey,
+      },
+    },
+    create: { ...input, status: "COMPLETED" },
+    update: {
+      payload: input.payload,
+      observedAt: input.observedAt,
+      freshnessState: input.freshnessState,
+      status: "COMPLETED",
+      errorCode: null,
+    },
+  });
+}
+
+type PersistedMatchEvidence = {
+  feature:
+    "IDENTIFIER" | "BRAND" | "MODEL" | "SIZE" | "PACK" | "VARIATION" | "TITLE";
+  outcome: "AGREEMENT" | "CONTRADICTION" | "UNKNOWN" | "NOT_APPLICABLE";
+  score: number;
+  reasonCode: string;
+  details: Prisma.InputJsonValue;
+};
+
+export type PersistedMatchCandidate = {
+  source: "SUPPLIED_ASIN" | "EXACT_IDENTIFIER" | "MPN_BRAND" | "TITLE_SEARCH";
+  confidence: number;
+  product: {
+    asin: string;
+    title: string;
+    brand?: string | undefined;
+    model?: string | undefined;
+    mpn?: string | undefined;
+    sizeText?: string | undefined;
+    packCount?: number | undefined;
+    variation?: string | undefined;
+    identifiers: Array<{
+      type: "ASIN" | "UPC" | "EAN" | "GTIN" | "MPN";
+      value: string;
+    }>;
+    provenance: {
+      provider: string;
+      providerReference?: string | undefined;
+      observedAt: string;
+      freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
+    };
+  };
+  evidence: PersistedMatchEvidence[];
+  packGuard: {
+    status:
+      "VERIFIED" | "BLOCKED_PACK_UNCERTAIN" | "BLOCKED_PACK_CONTRADICTION";
+    supplierUnitsPerCase: number | null;
+    amazonUnitsPerPack: number | null;
+    sellableUnitsPerCase: number | null;
+    remainderUnits: number | null;
+    costPerSellableUnit: string | null;
+    reasonCode: string;
+  };
+};
+
+export async function persistMatchRow(input: {
+  organizationId: string;
+  supplierRowId: string;
+  candidates: PersistedMatchCandidate[];
+  decision: {
+    status: "AUTO_ACCEPTED" | "REVIEW_REQUIRED" | "UNMATCHED";
+    confidence: number;
+    selectedAsin: string | null;
+    reasonCodes: string[];
+  };
+}) {
+  await db.$transaction(async (transaction) => {
+    const row = await transaction.supplierRow.findFirst({
+      where: {
+        id: input.supplierRowId,
+        scanJob: { organizationId: input.organizationId },
+      },
+    });
+    if (!row) throw new Error("supplier_row_not_found");
+    const existing = await transaction.matchDecision.findUnique({
+      where: { supplierRowId: input.supplierRowId },
+    });
+    if (existing?.source === "HUMAN") return;
+    if (existing)
+      await transaction.matchDecision.delete({ where: { id: existing.id } });
+    await transaction.listingCandidate.deleteMany({
+      where: { supplierRowId: input.supplierRowId },
+    });
+    const candidateIds = new Map<string, string>();
+    for (const candidate of input.candidates) {
+      const product = await transaction.catalogProduct.upsert({
+        where: {
+          provider_providerReference: {
+            provider: candidate.product.provenance.provider,
+            providerReference:
+              candidate.product.provenance.providerReference ??
+              candidate.product.asin,
+          },
+        },
+        create: {
+          provider: candidate.product.provenance.provider,
+          providerReference:
+            candidate.product.provenance.providerReference ??
+            candidate.product.asin,
+          asin: candidate.product.asin,
+          title: candidate.product.title,
+          brand: candidate.product.brand ?? null,
+          model: candidate.product.model ?? null,
+          mpn: candidate.product.mpn ?? null,
+          sizeText: candidate.product.sizeText ?? null,
+          packCount: candidate.product.packCount ?? null,
+          variation: candidate.product.variation ?? null,
+          observedAt: new Date(candidate.product.provenance.observedAt),
+          freshnessState: candidate.product.provenance.freshnessState,
+          rawPayload: candidate.product as unknown as Prisma.InputJsonValue,
+        },
+        update: {
+          asin: candidate.product.asin,
+          title: candidate.product.title,
+          brand: candidate.product.brand ?? null,
+          model: candidate.product.model ?? null,
+          mpn: candidate.product.mpn ?? null,
+          sizeText: candidate.product.sizeText ?? null,
+          packCount: candidate.product.packCount ?? null,
+          variation: candidate.product.variation ?? null,
+          observedAt: new Date(candidate.product.provenance.observedAt),
+          freshnessState: candidate.product.provenance.freshnessState,
+          rawPayload: candidate.product as unknown as Prisma.InputJsonValue,
+        },
+      });
+      await transaction.productIdentifier.deleteMany({
+        where: { catalogProductId: product.id },
+      });
+      if (candidate.product.identifiers.length > 0) {
+        await transaction.productIdentifier.createMany({
+          data: candidate.product.identifiers.map((identifier) => ({
+            catalogProductId: product.id,
+            type: identifier.type,
+            value: identifier.value,
+          })),
+        });
+      }
+      const stored = await transaction.listingCandidate.create({
+        data: {
+          organizationId: input.organizationId,
+          supplierRowId: input.supplierRowId,
+          catalogProductId: product.id,
+          source: candidate.source,
+          confidence: candidate.confidence,
+        },
+      });
+      candidateIds.set(candidate.product.asin, stored.id);
+      await transaction.matchEvidence.createMany({
+        data: candidate.evidence.map((evidence) => ({
+          listingCandidateId: stored.id,
+          feature: evidence.feature,
+          outcome: evidence.outcome,
+          score: evidence.score,
+          reasonCode: evidence.reasonCode,
+          details: evidence.details,
+        })),
+      });
+      await transaction.packGuardResult.create({
+        data: { listingCandidateId: stored.id, ...candidate.packGuard },
+      });
+    }
+    await transaction.matchDecision.create({
+      data: {
+        organizationId: input.organizationId,
+        supplierRowId: input.supplierRowId,
+        selectedCandidateId: input.decision.selectedAsin
+          ? (candidateIds.get(input.decision.selectedAsin) ?? null)
+          : null,
+        status: input.decision.status,
+        confidence: input.decision.confidence,
+        reasonCodes: input.decision.reasonCodes,
+        source: "SYSTEM",
+      },
+    });
+  });
+}
+
+export async function completeMatching(scanJobId: string, rowCount: number) {
+  await db.$transaction(async (transaction) => {
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    await transaction.scanCheckpoint.upsert({
+      where: { scanJobId_stage: { scanJobId, stage: "MATCH" } },
+      create: {
+        scanJobId,
+        stage: "MATCH",
+        checksum: String(rowCount),
+        payload: { rowCount },
+      },
+      update: { checksum: String(rowCount), payload: { rowCount } },
+    });
+    await transaction.scanEvent.create({
+      data: { scanJobId, eventType: "MATCH_COMPLETED", payload: { rowCount } },
+    });
+  });
+}
+
+export async function listMatchDecisions(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.matchDecision.findMany({
+    where: { organizationId, supplierRow: { scanJobId } },
+    orderBy: { supplierRow: { sourceRowNumber: "asc" } },
+    include: {
+      supplierRow: {
+        include: {
+          normalizedOffer: true,
+          listingCandidates: {
+            include: {
+              catalogProduct: true,
+              evidence: true,
+              packGuard: true,
+            },
+            orderBy: { confidence: "desc" },
+          },
+        },
+      },
+      selectedCandidate: {
+        include: {
+          catalogProduct: true,
+          evidence: true,
+          packGuard: true,
+        },
+      },
+    },
+  });
+}
+
+export async function reviewMatchDecision(input: {
+  organizationId: string;
+  supplierRowId: string;
+  selectedCandidateId: string | null;
+  status: "USER_ACCEPTED" | "USER_REJECTED";
+}) {
+  const decision = await db.matchDecision.findFirst({
+    where: {
+      supplierRowId: input.supplierRowId,
+      organizationId: input.organizationId,
+    },
+  });
+  if (!decision) return null;
+  if (input.selectedCandidateId) {
+    const candidate = await db.listingCandidate.findFirst({
+      where: {
+        id: input.selectedCandidateId,
+        supplierRowId: input.supplierRowId,
+        organizationId: input.organizationId,
+      },
+    });
+    if (!candidate) return null;
+  }
+  return db.matchDecision.update({
+    where: { id: decision.id },
+    data: {
+      selectedCandidateId: input.selectedCandidateId,
+      status: input.status,
+      source: "HUMAN",
+    },
   });
 }
 

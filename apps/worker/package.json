@@ -13,7 +13,10 @@
   },
   "dependencies": {
     "@rizpoint/database": "workspace:*",
+    "@rizpoint/matching-engine": "workspace:*",
+    "@rizpoint/mock-providers": "workspace:*",
     "@rizpoint/object-storage": "workspace:*",
+    "@rizpoint/provider-contracts": "workspace:*",
     "bullmq": "5.80.2",
     "ioredis": "5.10.1",
     "zod": "4.4.3"

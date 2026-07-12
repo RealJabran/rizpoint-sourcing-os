@@ -12,6 +12,7 @@ enum ScanJobStatus {
   MAPPING_REQUIRED
   READY
   NORMALIZING
+  MATCHING
   QUEUED
   RUNNING
   COMPLETED
@@ -49,6 +50,7 @@ enum MappingTarget {
   EAN
   GTIN
   ITEM_NUMBER
+  MPN
   DESCRIPTION
   BRAND
   UNIT_COST
@@ -81,6 +83,69 @@ enum OutboxStatus {
   PUBLISHED
 }
 
+enum IdentifierType {
+  ASIN
+  UPC
+  EAN
+  GTIN
+  MPN
+}
+
+enum CandidateSource {
+  SUPPLIED_ASIN
+  EXACT_IDENTIFIER
+  MPN_BRAND
+  TITLE_SEARCH
+}
+
+enum MatchDecisionStatus {
+  AUTO_ACCEPTED
+  REVIEW_REQUIRED
+  UNMATCHED
+  USER_ACCEPTED
+  USER_REJECTED
+}
+
+enum MatchEvidenceFeature {
+  IDENTIFIER
+  BRAND
+  MODEL
+  SIZE
+  PACK
+  VARIATION
+  TITLE
+}
+
+enum MatchEvidenceOutcome {
+  AGREEMENT
+  CONTRADICTION
+  UNKNOWN
+  NOT_APPLICABLE
+}
+
+enum DecisionSource {
+  SYSTEM
+  HUMAN
+}
+
+enum LookupStatus {
+  COMPLETED
+  FAILED
+}
+
+enum ExternalFreshnessState {
+  FRESH
+  STALE
+  EXPIRED
+  UNKNOWN
+}
+
+enum PackGuardStatus {
+  VERIFIED
+  BLOCKED_PACK_UNCERTAIN
+  BLOCKED_PACK_CONTRADICTION
+}
+
 model Organization {
   id        String   @id @default(cuid())
   slug      String   @unique
@@ -93,6 +158,9 @@ model Organization {
   suppliers Supplier[]
   uploads Upload[]
   sheetProfiles SheetProfile[]
+  matchLookups MatchLookup[]
+  listingCandidates ListingCandidate[]
+  matchDecisions MatchDecision[]
 
   @@map("organizations")
 }
@@ -119,6 +187,7 @@ model ScanJob {
   outboxEvents OutboxEvent[]
   columnMappings ColumnMapping[]
   supplierRows SupplierRow[]
+  matchLookups MatchLookup[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status])
@@ -244,6 +313,8 @@ model SupplierRow {
   uploadSheet UploadSheet @relation(fields: [uploadSheetId], references: [id], onDelete: Restrict)
   normalizedOffer NormalizedOffer?
   warnings NormalizationWarning[]
+  listingCandidates ListingCandidate[]
+  matchDecision MatchDecision?
 
   @@unique([scanJobId, sourceRowNumber])
   @@index([scanJobId, normalizationStatus])
@@ -258,6 +329,7 @@ model NormalizedOffer {
   ean           String?
   gtin          String?
   itemNumber    String?  @map("item_number")
+  mpn           String?
   description   String?
   brand         String?
   unitCost      Decimal? @db.Decimal(18, 4) @map("unit_cost")
@@ -292,6 +364,147 @@ model NormalizationWarning {
 
   @@unique([supplierRowId, code, field])
   @@map("normalization_warnings")
+}
+
+model CatalogProduct {
+  id                String                 @id @default(cuid())
+  provider          String
+  providerReference String                 @map("provider_reference")
+  asin              String?
+  title             String
+  brand             String?
+  model             String?
+  mpn               String?
+  sizeText          String?                @map("size_text")
+  packCount         Int?                   @map("pack_count")
+  variation         String?
+  observedAt        DateTime               @map("observed_at")
+  freshnessState    ExternalFreshnessState @map("freshness_state")
+  rawPayload        Json?                  @map("raw_payload")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  identifiers       ProductIdentifier[]
+  listingCandidates ListingCandidate[]
+
+  @@unique([provider, providerReference])
+  @@index([provider, asin])
+  @@map("catalog_products")
+}
+
+model ProductIdentifier {
+  id               String         @id @default(cuid())
+  catalogProductId String         @map("catalog_product_id")
+  type             IdentifierType
+  value            String
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Cascade)
+
+  @@unique([catalogProductId, type, value])
+  @@index([type, value])
+  @@map("product_identifiers")
+}
+
+model MatchLookup {
+  id               String                  @id @default(cuid())
+  organizationId   String                  @map("organization_id")
+  scanJobId        String                  @map("scan_job_id")
+  provider         String
+  lookupType       CandidateSource         @map("lookup_type")
+  lookupKey        String                  @map("lookup_key")
+  status           LookupStatus
+  responseChecksum String?                 @map("response_checksum")
+  payload          Json?
+  observedAt       DateTime?               @map("observed_at")
+  freshnessState   ExternalFreshnessState? @map("freshness_state")
+  errorCode        String?                 @map("error_code")
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scan         ScanJob      @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+
+  @@unique([scanJobId, provider, lookupType, lookupKey])
+  @@index([organizationId, scanJobId])
+  @@map("match_lookups")
+}
+
+model ListingCandidate {
+  id               String          @id @default(cuid())
+  organizationId   String          @map("organization_id")
+  supplierRowId    String          @map("supplier_row_id")
+  catalogProductId String          @map("catalog_product_id")
+  source           CandidateSource
+  confidence       Int
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplierRow          SupplierRow    @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  catalogProduct       CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  evidence             MatchEvidence[]
+  selectedForDecisions MatchDecision[] @relation("selected_candidate")
+  packGuard            PackGuardResult?
+
+  @@unique([supplierRowId, catalogProductId, source])
+  @@index([organizationId, supplierRowId])
+  @@map("listing_candidates")
+}
+
+model MatchEvidence {
+  id                 String               @id @default(cuid())
+  listingCandidateId String               @map("listing_candidate_id")
+  feature            MatchEvidenceFeature
+  outcome            MatchEvidenceOutcome
+  score              Int
+  reasonCode         String               @map("reason_code")
+  details            Json?
+  createdAt          DateTime             @default(now()) @map("created_at")
+
+  listingCandidate ListingCandidate @relation(fields: [listingCandidateId], references: [id], onDelete: Cascade)
+
+  @@unique([listingCandidateId, feature])
+  @@map("match_evidence")
+}
+
+model MatchDecision {
+  id                  String              @id @default(cuid())
+  organizationId      String              @map("organization_id")
+  supplierRowId       String              @unique @map("supplier_row_id")
+  selectedCandidateId String?             @map("selected_candidate_id")
+  status              MatchDecisionStatus
+  confidence          Int
+  reasonCodes         Json                @map("reason_codes")
+  source              DecisionSource
+  reviewedAt          DateTime?           @map("reviewed_at")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  organization       Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplierRow        SupplierRow       @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  selectedCandidate  ListingCandidate? @relation("selected_candidate", fields: [selectedCandidateId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, updatedAt])
+  @@map("match_decisions")
+}
+
+model PackGuardResult {
+  id                   String          @id @default(cuid())
+  listingCandidateId   String          @unique @map("listing_candidate_id")
+  status               PackGuardStatus
+  supplierUnitsPerCase Int?            @map("supplier_units_per_case")
+  amazonUnitsPerPack   Int?            @map("amazon_units_per_pack")
+  sellableUnitsPerCase Int?            @map("sellable_units_per_case")
+  remainderUnits       Int?            @map("remainder_units")
+  costPerSellableUnit  Decimal?        @db.Decimal(18, 4) @map("cost_per_sellable_unit")
+  reasonCode           String          @map("reason_code")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  listingCandidate ListingCandidate @relation(fields: [listingCandidateId], references: [id], onDelete: Cascade)
+
+  @@map("pack_guard_results")
 }
 
 model ScanCheckpoint {
