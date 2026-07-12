@@ -1,0 +1,28 @@
+{
+  "name": "rizpoint-sourcing-os",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.12.0",
+  "engines": {
+    "node": ">=22.0.0 <23"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:integration": "tsx tests/integration/mock-scan.integration.ts",
+    "typecheck": "turbo run typecheck",
+    "check:private-assets": "node scripts/check-private-assets.mjs",
+    "verify": "pnpm check:private-assets && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:generate": "pnpm --filter @rizpoint/database prisma:generate",
+    "db:migrate": "pnpm --filter @rizpoint/database prisma:migrate"
+  },
+  "devDependencies": {
+    "prettier": "3.9.5",
+    "tsx": "4.23.0",
+    "turbo": "2.10.4"
+  }
+}

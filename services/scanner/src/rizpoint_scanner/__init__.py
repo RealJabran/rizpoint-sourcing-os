@@ -1,0 +1,1 @@
+"""RizPoint scanner service."""

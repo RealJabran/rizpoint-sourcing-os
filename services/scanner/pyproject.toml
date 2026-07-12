@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rizpoint-scanner"
+version = "0.0.0"
+description = "RizPoint deterministic scanner service"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi[standard]==0.139.0",
+  "polars==1.42.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.2.0",
+  "pytest==9.1.1",
+  "ruff==0.15.21",
+]
+
+[dependency-groups]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.2.0",
+  "pytest==9.1.1",
+  "ruff==0.15.21",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rizpoint_scanner"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src"]

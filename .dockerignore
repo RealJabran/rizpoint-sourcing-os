@@ -1,0 +1,14 @@
+.git
+node_modules
+.next
+dist
+.turbo
+coverage
+.venv
+**/.venv
+.env
+uploads
+exports
+minio-data
+postgres-data
+redis-data
