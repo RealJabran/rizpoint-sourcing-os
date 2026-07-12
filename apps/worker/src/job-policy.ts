@@ -1,7 +1,12 @@
 import type { ScanJobStatus } from "@rizpoint/database";
 
-export function mockScanQueueJobId(scanJobId: string): string {
-  return `scan-${scanJobId}`;
+export type UploadJobKind = "UPLOAD_INSPECT" | "NORMALIZE" | "MOCK";
+
+export function mockScanQueueJobId(
+  scanJobId: string,
+  kind: UploadJobKind = "MOCK",
+): string {
+  return `scan-${scanJobId}-${kind.toLowerCase()}`;
 }
 
 export function failureStatusForAttempt(

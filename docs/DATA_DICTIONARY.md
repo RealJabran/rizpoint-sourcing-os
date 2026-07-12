@@ -10,8 +10,8 @@
 | `ScanEvent`                                                | Append-only state/audit event.                                                                                                  | Through `ScanJob`              |
 | `OutboxEvent`                                              | Durable instruction to enqueue work after commit; carries a claim token, claim lease, delivery count, and safe last-error code. | `organization_id`              |
 | `Supplier`                                                 | Organization-scoped supplier, including the local VSI preset.                                                                   | `organization_id`              |
-| `Upload` / `UploadSheet`                                   | Private uploaded file metadata, inspection result, and selected sheet/header row.                                               | `organization_id`              |
-| `ColumnMapping` / `SheetProfile`                           | Explicit scan mapping and reusable supplier mapping profile.                                                                    | Through `ScanJob` / `Supplier` |
+| `Upload` / `UploadSheet`                                   | Private uploaded file metadata, inspection result, rejection code, and exactly one selected sheet/header row.                   | `organization_id`              |
+| `ColumnMapping` / `SheetProfile`                           | Explicit scan mapping and reusable, typed supplier mapping profile.                                                             | Through `ScanJob` / `Supplier` |
 | `SupplierRow` / `NormalizedOffer` / `NormalizationWarning` | Immutable-source row, normalized catalog fields, and non-silent validation warnings.                                            | Through `ScanJob`              |
 
 `NormalizedOffer` money and dimensions are `NUMERIC(18,4)`; the scanner returns decimal strings, never binary floats. UPC, EAN, GTIN, and ASIN are strings. `NormalizationWarning` records invalid identifiers and numeric values rather than silently discarding them.

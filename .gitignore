@@ -21,6 +21,10 @@ __pycache__/
 .venv/
 
 uploads/
+!apps/web/app/uploads/
+!apps/web/app/uploads/**
+!apps/web/app/api/uploads/
+!apps/web/app/api/uploads/**
 exports/
 fixtures/private/
 minio-data/

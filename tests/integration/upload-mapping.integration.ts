@@ -1,7 +1,28 @@
 import assert from "node:assert/strict";
 
 const baseUrl = process.env.WEB_BASE_URL ?? "http://localhost:3000";
-const idempotencyKey = "phase-one-upload-mapping-integration-key";
+const idempotencyKey = `phase-one-upload-mapping-${Date.now()}`;
+
+function upcFor(index: number): string {
+  const body = String(index).padStart(11, "0");
+  const total = [...body]
+    .reverse()
+    .reduce(
+      (sum, digit, position) =>
+        sum + Number(digit) * (position % 2 === 0 ? 3 : 1),
+      0,
+    );
+  return `${body}${(10 - (total % 10)) % 10}`;
+}
+
+const catalog = [
+  "UPC,Description,Unit Cost",
+  ...Array.from(
+    { length: 4_969 },
+    (_, index) => `${upcFor(index)},Synthetic VSI item ${index},12.50`,
+  ),
+  "",
+].join("\n");
 
 const suppliersResponse = await fetch(`${baseUrl}/api/suppliers`);
 assert.equal(suppliersResponse.status, 200);
@@ -22,7 +43,7 @@ const createdResponse = await fetch(`${baseUrl}/api/uploads/presign`, {
     supplierId: vsi.id,
     filename: "synthetic-vsi-catalog.csv",
     contentType: "text/csv",
-    sizeBytes: 81,
+    sizeBytes: Buffer.byteLength(catalog),
   }),
 });
 assert.equal(createdResponse.status, 200);
@@ -32,10 +53,29 @@ const created = (await createdResponse.json()) as {
   uploadUrl: string;
 };
 
+const duplicateResponse = await fetch(`${baseUrl}/api/uploads/presign`, {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    "idempotency-key": idempotencyKey,
+  },
+  body: JSON.stringify({
+    supplierId: vsi.id,
+    filename: "synthetic-vsi-catalog.csv",
+    contentType: "text/csv",
+    sizeBytes: Buffer.byteLength(catalog),
+  }),
+});
+assert.equal(duplicateResponse.status, 200);
+assert.equal(
+  ((await duplicateResponse.json()) as { uploadId: string }).uploadId,
+  created.uploadId,
+);
+
 const putResponse = await fetch(created.uploadUrl, {
   method: "PUT",
   headers: { "content-type": "text/csv" },
-  body: "UPC,Description,Unit Cost\n012345678905,Synthetic widget,12.50\n",
+  body: catalog,
 });
 assert.ok(putResponse.ok, `signed object PUT failed: ${putResponse.status}`);
 
@@ -47,12 +87,16 @@ assert.equal(inspectionResponse.status, 202);
 
 type UploadState = {
   status: string;
-  scan: { id: string; status: string } | null;
+  scan: {
+    id: string;
+    status: string;
+    supplierRows: Array<{ id: string }>;
+  } | null;
   sheets: Array<{ id: string; headerCandidates: Array<{ row: number }> }>;
 };
 
 async function waitFor(expectedStatus: string): Promise<UploadState> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const response = await fetch(`${baseUrl}/api/uploads/${created.uploadId}`);
     assert.equal(response.status, 200);
@@ -130,4 +174,5 @@ const normalizationResponse = await fetch(
 assert.equal(normalizationResponse.status, 202);
 const complete = await waitFor("COMPLETED");
 assert.equal(complete.scan?.status, "COMPLETED");
+assert.equal(complete.scan?.supplierRows.length, 4_969);
 console.log(`integration upload/mapping completed: ${created.uploadId}`);

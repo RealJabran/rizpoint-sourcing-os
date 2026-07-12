@@ -158,7 +158,6 @@ export async function queueUploadInspection(
   uploadId: string,
   byteSize: number,
   checksumSha256: string,
-  detectedFormat: "CSV" | "XLS" | "XLSX",
 ) {
   return db.$transaction(async (transaction) => {
     const upload = await transaction.upload.findFirst({
@@ -166,12 +165,13 @@ export async function queueUploadInspection(
       include: { scan: true },
     });
     if (!upload?.scan) return null;
+    if (upload.status === "INSPECTING") return upload.scan;
+    if (upload.status !== "PENDING_UPLOAD") return null;
     await transaction.upload.update({
       where: { id: upload.id },
       data: {
         byteSize,
         checksumSha256,
-        detectedFormat,
         status: "INSPECTING",
         malwareStatus: "PENDING",
         rejectionCode: null,
@@ -207,6 +207,7 @@ export async function queueUploadInspection(
 
 export async function persistUploadInspection(
   scanJobId: string,
+  detectedFormat: "CSV" | "XLS" | "XLSX",
   inspection: Prisma.InputJsonValue,
   sheets: Array<{
     sheetIndex: number;
@@ -234,6 +235,7 @@ export async function persistUploadInspection(
     await transaction.upload.update({
       where: { id: upload.id },
       data: {
+        detectedFormat,
         status: "MAPPING_REQUIRED",
         malwareStatus: "CLEAN",
         inspectedAt: new Date(),
@@ -307,6 +309,7 @@ export async function saveColumnMappings(
     });
     if (!sheet) return null;
     if (
+      !["MAPPING_REQUIRED", "READY"].includes(scan.status) ||
       headerRow < 1 ||
       headerRow > sheet.rowCount ||
       mappings.some(
@@ -319,6 +322,10 @@ export async function saveColumnMappings(
     await transaction.columnMapping.deleteMany({ where: { scanJobId } });
     await transaction.columnMapping.createMany({
       data: mappings.map((mapping) => ({ scanJobId, ...mapping })),
+    });
+    await transaction.uploadSheet.updateMany({
+      where: { uploadId: scan.upload.id },
+      data: { selectedHeaderRow: null },
     });
     await transaction.uploadSheet.update({
       where: { id: uploadSheetId },
@@ -343,10 +350,31 @@ export async function saveSheetProfile(
   headerRow: number,
   mapping: Prisma.InputJsonValue,
 ) {
-  return db.sheetProfile.upsert({
-    where: { supplierId_name: { supplierId, name } },
-    create: { organizationId, supplierId, name, headerRow, mapping },
-    update: { headerRow, mapping, version: { increment: 1 } },
+  return db.$transaction(async (transaction) => {
+    const supplier = await transaction.supplier.findFirst({
+      where: { id: supplierId, organizationId },
+    });
+    if (!supplier) return null;
+    return transaction.sheetProfile.upsert({
+      where: { supplierId_name: { supplierId, name } },
+      create: { organizationId, supplierId, name, headerRow, mapping },
+      update: { headerRow, mapping, version: { increment: 1 } },
+    });
+  });
+}
+
+export async function listSheetProfiles(
+  organizationId: string,
+  supplierId: string,
+) {
+  const supplier = await db.supplier.findFirst({
+    where: { id: supplierId, organizationId },
+    select: { id: true },
+  });
+  if (!supplier) return null;
+  return db.sheetProfile.findMany({
+    where: { organizationId, supplierId },
+    orderBy: [{ name: "asc" }, { version: "desc" }],
   });
 }
 
@@ -360,6 +388,7 @@ export async function queueNormalization(
       include: { upload: true, columnMappings: true },
     });
     if (!scan?.upload || scan.status !== "READY") return null;
+    if (scan.columnMappings.length === 0) return null;
     await transaction.scanJob.update({
       where: { id: scanJobId },
       data: { status: "NORMALIZING" },
@@ -389,6 +418,47 @@ export async function queueNormalization(
       },
     });
     return scan;
+  });
+}
+
+export async function failUploadStage(
+  scanJobId: string,
+  stage: "UPLOAD_INSPECT" | "NORMALIZE",
+  status: Extract<ScanJobStatus, "FAILED_RETRYABLE" | "FAILED_FINAL">,
+  errorCode: string,
+  terminal: boolean,
+  malwareStatus?: "INFECTED" | "ERROR",
+) {
+  await db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findUnique({
+      where: { id: scanJobId },
+      include: { upload: true },
+    });
+    if (!scan?.upload) return;
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status },
+    });
+    await transaction.upload.update({
+      where: { id: scan.upload.id },
+      data: terminal
+        ? {
+            status: "REJECTED",
+            rejectionCode: errorCode,
+            ...(malwareStatus ? { malwareStatus } : {}),
+          }
+        : {
+            status: stage === "UPLOAD_INSPECT" ? "INSPECTING" : "NORMALIZING",
+            rejectionCode: null,
+          },
+    });
+    await transaction.scanEvent.create({
+      data: {
+        scanJobId,
+        eventType: status,
+        payload: { stage, errorCode, terminal },
+      },
+    });
   });
 }
 

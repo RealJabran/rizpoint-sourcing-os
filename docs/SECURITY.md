@@ -10,9 +10,9 @@ The browser is untrusted. Web routes enforce an organization context before quer
 - Supplier files, exports, local object-store data, and test-private fixtures are ignored.
 - Every tenant-owned query is scoped by `organization_id`. Phase 0 mock routes require explicit local-demo opt-in and must not be exposed as an authentication substitute.
 - MinIO is configured as a private bucket. Browser upload uses a five-minute signed URL and an origin-scoped local CORS rule.
-- Uploads are limited to 50 MiB and CSV/XLS/XLSX filenames. File signatures are checked by the scanner; XLSX archive expansion, sheet, row, and column limits are bounded.
+- Uploads are limited to 50 MiB using object-store metadata before bytes are downloaded. CSV/XLS/XLSX filename and file signature must agree; XLSX archive expansion, sheet, row, and column limits reject rather than truncate.
 - Inspection fails closed unless ClamAV reports a clean file. `MALWARE_SCAN_MODE=mock` is test-only and must not be used in a deployed environment.
-- Spreadsheet values are treated as data, never formulas; exports remain unimplemented.
+- Spreadsheet values are treated as data, never formulas. Formula-like input cells are retained as source evidence and flagged; exports remain unimplemented and must escape them before delivery.
 - The worker records only synthetic metadata in Phase 0 and redacts credential-shaped error text before logging.
 - External provider contracts require provenance/freshness and never expose credential fields to the browser.
 - CI rejects spreadsheets outside the synthetic fixture allowlist, preventing accidental supplier-catalog commits.

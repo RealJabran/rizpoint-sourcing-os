@@ -2,20 +2,47 @@ import { Worker } from "bullmq";
 import {
   completeMockScanJob,
   db,
+  failUploadStage,
   failScanJob,
   markScanJobRunning,
   persistNormalizedRows,
   persistUploadInspection,
-  rejectUpload,
 } from "@rizpoint/database";
 import { getObjectBytes } from "@rizpoint/object-storage";
+import { createHash } from "node:crypto";
 import { redis } from "./queue.js";
 import { failureStatusForAttempt } from "./job-policy.js";
+import { selectMappedUploadSheet } from "./normalization-selection.js";
 import {
   inspectWorkbook,
   normalizeWorkbook,
   requestMockScan,
+  ScannerRequestError,
 } from "./scanner-client.js";
+
+const terminalUploadErrorCodes = new Set([
+  "EMPTY_FILE",
+  "FILE_SIZE_LIMIT",
+  "FILE_SIGNATURE_MISMATCH",
+  "UNSUPPORTED_FILE_TYPE",
+  "CSV_ENCODING",
+  "INVALID_XLS",
+  "INVALID_XLSX",
+  "ZIP_EXPANSION_LIMIT",
+  "SHEET_LIMIT",
+  "ROW_LIMIT",
+  "COLUMN_LIMIT",
+  "NO_DATA_ROWS",
+  "MAPPING_NOT_READY",
+  "UPLOAD_CHECKSUM_MISMATCH",
+  "MALWARE_DETECTED",
+]);
+
+function errorCode(error: unknown): string {
+  return error instanceof ScannerRequestError
+    ? error.code
+    : "SCANNER_REQUEST_FAILED";
+}
 
 export const mockScanWorker = new Worker<{
   scanJobId: string;
@@ -37,6 +64,7 @@ export const mockScanWorker = new Worker<{
         );
         await persistUploadInspection(
           job.data.scanJobId,
+          inspection.file_format,
           inspection,
           inspection.sheets.map((sheet) => ({
             sheetIndex: sheet.sheet_index,
@@ -59,11 +87,12 @@ export const mockScanWorker = new Worker<{
           },
         });
         if (!scan?.upload) throw new Error("upload_not_found");
-        const sheet = scan.upload.sheets.find(
-          (candidate) => candidate.selectedHeaderRow !== null,
-        );
-        if (!sheet?.selectedHeaderRow) throw new Error("mapping_not_ready");
+        const sheet = selectMappedUploadSheet(scan.upload.sheets);
+        if (!sheet) throw new ScannerRequestError("MAPPING_NOT_READY");
         const bytes = await getObjectBytes(scan.upload.objectKey);
+        const checksumSha256 = createHash("sha256").update(bytes).digest("hex");
+        if (scan.upload.checksumSha256 !== checksumSha256)
+          throw new ScannerRequestError("UPLOAD_CHECKSUM_MISMATCH");
         const normalized = await normalizeWorkbook(
           scan.upload.originalFilename,
           bytes,
@@ -96,10 +125,22 @@ export const mockScanWorker = new Worker<{
         job.attemptsMade,
         job.opts.attempts,
       );
-      if (job.data.kind === "UPLOAD_INSPECT")
-        await rejectUpload(job.data.scanJobId, "UPLOAD_INSPECTION_FAILED");
-      else
+      const code = errorCode(error);
+      const terminal =
+        terminalUploadErrorCodes.has(code) || status === "FAILED_FINAL";
+      if (job.data.kind === "UPLOAD_INSPECT" || job.data.kind === "NORMALIZE") {
+        await failUploadStage(
+          job.data.scanJobId,
+          job.data.kind,
+          terminal ? "FAILED_FINAL" : status,
+          code,
+          terminal,
+          code === "MALWARE_DETECTED" ? "INFECTED" : undefined,
+        );
+        if (terminal) return;
+      } else {
         await failScanJob(job.data.scanJobId, status, "scanner_request_failed");
+      }
       throw error;
     }
   },

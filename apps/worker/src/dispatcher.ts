@@ -3,7 +3,7 @@ import {
   markOutboxPublished,
   resetOutboxEvent,
 } from "@rizpoint/database";
-import { mockScanQueueJobId } from "./job-policy.js";
+import { mockScanQueueJobId, type UploadJobKind } from "./job-policy.js";
 import { mockScanQueue } from "./queue.js";
 
 export async function dispatchOutboxOnce(): Promise<number> {
@@ -12,10 +12,10 @@ export async function dispatchOutboxOnce(): Promise<number> {
     try {
       const payload = event.payload as {
         scanJobId: string;
-        kind?: "UPLOAD_INSPECT" | "NORMALIZE";
+        kind?: Exclude<UploadJobKind, "MOCK">;
       };
       await mockScanQueue.add("mock-scan", payload, {
-        jobId: mockScanQueueJobId(payload.scanJobId),
+        jobId: mockScanQueueJobId(payload.scanJobId, payload.kind ?? "MOCK"),
         attempts: 3,
         backoff: { type: "exponential", delay: 1_000 },
         removeOnComplete: 100,

@@ -3,6 +3,56 @@ import { z } from "zod";
 export const supportedUploadExtensions = [".csv", ".xls", ".xlsx"] as const;
 export const maxUploadBytes = 50 * 1024 * 1024;
 
+export function validateUploadedObjectMetadata(
+  contentLength: number | undefined,
+  contentType: string | undefined,
+  declaredContentType: string | null,
+): void {
+  if (
+    contentLength === undefined ||
+    !Number.isInteger(contentLength) ||
+    contentLength <= 0 ||
+    contentLength > maxUploadBytes
+  ) {
+    throw new Error("FILE_SIZE_LIMIT");
+  }
+  if (declaredContentType && contentType !== declaredContentType) {
+    throw new Error("CONTENT_TYPE_MISMATCH");
+  }
+}
+
+export const profileInputSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  headerRow: z.number().int().positive(),
+  mapping: z
+    .array(
+      z.object({
+        sourceIndex: z.number().int().nonnegative(),
+        sourceColumn: z.string().trim().min(1),
+        target: z.enum([
+          "ASIN",
+          "UPC",
+          "EAN",
+          "GTIN",
+          "ITEM_NUMBER",
+          "DESCRIPTION",
+          "BRAND",
+          "UNIT_COST",
+          "CURRENCY",
+          "QUANTITY",
+          "CASE_COUNT",
+          "PACK_COUNT",
+          "WEIGHT",
+          "LENGTH",
+          "WIDTH",
+          "HEIGHT",
+        ]),
+        required: z.boolean().default(false),
+      }),
+    )
+    .min(1),
+});
+
 export const supplierInputSchema = z.object({
   code: z
     .string()

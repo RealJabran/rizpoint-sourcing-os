@@ -77,23 +77,36 @@ class SheetData:
 
 def detect_format(data: bytes, filename: str) -> str:
     lowered = filename.lower()
-    if data.startswith(b"PK\x03\x04"):
-        return "XLSX"
-    if data.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
-        return "XLS"
+    expected_format: str
     if lowered.endswith(".csv"):
-        return "CSV"
-    if lowered.endswith(".xlsx") or lowered.endswith(".xls"):
+        expected_format = "CSV"
+    elif lowered.endswith(".xlsx"):
+        expected_format = "XLSX"
+    elif lowered.endswith(".xls"):
+        expected_format = "XLS"
+    else:
+        raise WorkbookError("UNSUPPORTED_FILE_TYPE", "Only CSV, XLSX, and XLS files are supported.")
+
+    if data.startswith(b"PK\x03\x04"):
+        detected_format = "XLSX"
+    elif data.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        detected_format = "XLS"
+    else:
+        try:
+            data.decode("utf-8-sig")
+        except UnicodeDecodeError as error:
+            raise WorkbookError(
+                "FILE_SIGNATURE_MISMATCH",
+                "File content does not match its spreadsheet extension.",
+            ) from error
+        detected_format = "CSV"
+
+    if detected_format != expected_format:
         raise WorkbookError(
-            "FILE_SIGNATURE_MISMATCH", "File content does not match its spreadsheet extension."
+            "FILE_SIGNATURE_MISMATCH",
+            "File content does not match its spreadsheet extension.",
         )
-    try:
-        data.decode("utf-8-sig")
-    except UnicodeDecodeError as error:
-        raise WorkbookError(
-            "UNSUPPORTED_FILE_TYPE", "Only CSV, XLSX, and XLS files are supported."
-        ) from error
-    return "CSV"
+    return detected_format
 
 
 def _check_xlsx_zip(data: bytes) -> None:
@@ -144,9 +157,13 @@ def _read_xlsx(data: bytes) -> list[SheetData]:
         raise WorkbookError("SHEET_LIMIT", "Workbook contains too many sheets.")
     sheets: list[SheetData] = []
     for index, worksheet in enumerate(workbook.worksheets):
+        if worksheet.max_row > MAX_ROWS:
+            raise WorkbookError("ROW_LIMIT", "Workbook exceeds the configured row limit.")
+        if worksheet.max_column > MAX_COLUMNS:
+            raise WorkbookError("COLUMN_LIMIT", "Workbook exceeds the configured column limit.")
         rows = [
-            [_format_number(cell.value, cell.number_format) for cell in row[:MAX_COLUMNS]]
-            for row in worksheet.iter_rows(max_row=MAX_ROWS, max_col=MAX_COLUMNS)
+            [_format_number(cell.value, cell.number_format) for cell in row]
+            for row in worksheet.iter_rows()
         ]
         sheets.append(SheetData(index=index, name=worksheet.title, rows=_bounded_rows(rows)))
     return sheets
@@ -170,10 +187,14 @@ def _read_xls(data: bytes) -> list[SheetData]:
     sheets: list[SheetData] = []
     for index in range(book.nsheets):
         sheet = book.sheet_by_index(index)
+        if sheet.nrows > MAX_ROWS:
+            raise WorkbookError("ROW_LIMIT", "Workbook exceeds the configured row limit.")
+        if sheet.ncols > MAX_COLUMNS:
+            raise WorkbookError("COLUMN_LIMIT", "Workbook exceeds the configured column limit.")
         rows: list[list[str]] = []
-        for row_index in range(min(sheet.nrows, MAX_ROWS)):
+        for row_index in range(sheet.nrows):
             row: list[str] = []
-            for column_index in range(min(sheet.ncols, MAX_COLUMNS)):
+            for column_index in range(sheet.ncols):
                 cell = sheet.cell(row_index, column_index)
                 row.append(_format_number(cell.value, _xls_number_format(book, cell)))
             rows.append(row)
@@ -263,6 +284,10 @@ def _integer(value: str) -> int | None:
     return int(parsed)
 
 
+def _is_formula_like(value: str) -> bool:
+    return value.lstrip().startswith(("=", "+", "-", "@"))
+
+
 def normalize_sheet(
     data: bytes,
     filename: str,
@@ -276,12 +301,23 @@ def normalize_sheet(
         raise WorkbookError("SHEET_NOT_FOUND", "Selected sheet no longer exists.")
     if header_row < 1 or header_row > len(sheet.rows):
         raise WorkbookError("HEADER_ROW_INVALID", "Selected header row is outside the sheet.")
+    if header_row >= len(sheet.rows):
+        raise WorkbookError("NO_DATA_ROWS", "Selected header row has no data rows.")
     mapped_indices = {entry["target"]: int(entry["source_index"]) for entry in mappings}
     output_rows: list[dict[str, Any]] = []
     for source_row_number, row in enumerate(sheet.rows[header_row:], start=header_row + 1):
         raw = {str(index): value for index, value in enumerate(row)}
         offer: dict[str, Any] = {}
         warnings: list[dict[str, str]] = []
+        for source_index, value in enumerate(row):
+            if _is_formula_like(value):
+                warnings.append(
+                    {
+                        "code": "FORMULA_LIKE_CELL",
+                        "severity": "WARNING",
+                        "field": f"column_{source_index}",
+                    }
+                )
         for target, source_index in mapped_indices.items():
             value = row[source_index].strip() if source_index < len(row) else ""
             if target in {"UPC", "EAN", "GTIN"}:

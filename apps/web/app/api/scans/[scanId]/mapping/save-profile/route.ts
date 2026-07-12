@@ -5,20 +5,7 @@ import {
   saveSheetProfile,
 } from "@rizpoint/database";
 import { phaseZeroDemoEnabled } from "@/src/phase-zero";
-import { z } from "zod";
-
-const profileSchema = z.object({
-  name: z.string().min(1).max(100),
-  headerRow: z.number().int().positive(),
-  mapping: z.array(
-    z.object({
-      sourceIndex: z.number().int(),
-      sourceColumn: z.string(),
-      target: z.string(),
-      required: z.boolean(),
-    }),
-  ),
-});
+import { profileInputSchema, validateMappings } from "@/src/phase-one";
 export const runtime = "nodejs";
 
 export async function POST(
@@ -27,9 +14,17 @@ export async function POST(
 ) {
   if (!phaseZeroDemoEnabled())
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const parsed = profileSchema.safeParse(await request.json());
+  const parsed = profileInputSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ error: "INVALID_PROFILE" }, { status: 400 });
+  try {
+    validateMappings(parsed.data.mapping);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "INVALID_PROFILE" },
+      { status: 400 },
+    );
+  }
   const organization = await ensurePhaseZeroOrganization();
   const scan = await getScanJobForOrganization(
     organization.id,
@@ -37,13 +32,14 @@ export async function POST(
   );
   if (!scan?.supplierId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(
-    await saveSheetProfile(
-      organization.id,
-      scan.supplierId,
-      parsed.data.name,
-      parsed.data.headerRow,
-      parsed.data.mapping,
-    ),
+  const profile = await saveSheetProfile(
+    organization.id,
+    scan.supplierId,
+    parsed.data.name,
+    parsed.data.headerRow,
+    parsed.data.mapping,
   );
+  return profile
+    ? NextResponse.json(profile)
+    : NextResponse.json({ error: "Not found" }, { status: 404 });
 }

@@ -47,6 +47,13 @@ export type NormalizedRows = z.infer<typeof normalizedRowsSchema>;
 
 const scannerBaseUrl = process.env.SCANNER_BASE_URL ?? "http://127.0.0.1:8000";
 
+export class ScannerRequestError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "ScannerRequestError";
+  }
+}
+
 export async function requestMockScan(
   scanJobId: string,
 ): Promise<MockScanResponse> {
@@ -78,7 +85,14 @@ async function requestWorkbook(path: string, payload: Record<string, unknown>) {
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error("scanner_request_failed");
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      detail?: { code?: string };
+    } | null;
+    throw new ScannerRequestError(
+      body?.detail?.code ?? "SCANNER_REQUEST_FAILED",
+    );
+  }
   return response.json();
 }
 

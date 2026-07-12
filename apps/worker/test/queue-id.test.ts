@@ -6,7 +6,15 @@ import {
 
 describe("queue idempotency", () => {
   it("derives a BullMQ-safe deterministic queue job id", () => {
-    expect(mockScanQueueJobId("scan_123")).toBe("scan-scan_123");
+    expect(mockScanQueueJobId("scan_123", "UPLOAD_INSPECT")).toBe(
+      "scan-scan_123-upload_inspect",
+    );
+    expect(mockScanQueueJobId("scan_123", "NORMALIZE")).toBe(
+      "scan-scan_123-normalize",
+    );
+    expect(mockScanQueueJobId("scan_123", "UPLOAD_INSPECT")).not.toBe(
+      mockScanQueueJobId("scan_123", "NORMALIZE"),
+    );
     expect(mockScanQueueJobId("scan_123")).not.toContain(":");
   });
 
