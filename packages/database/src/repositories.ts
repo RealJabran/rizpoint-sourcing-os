@@ -5,7 +5,7 @@ import { db } from "./client.js";
 export const PHASE_ZERO_ORGANIZATION_SLUG = "rizpoint-demo";
 
 export async function ensurePhaseZeroOrganization() {
-  return db.organization.upsert({
+  const organization = await db.organization.upsert({
     where: { slug: PHASE_ZERO_ORGANIZATION_SLUG },
     create: {
       slug: PHASE_ZERO_ORGANIZATION_SLUG,
@@ -13,6 +13,19 @@ export async function ensurePhaseZeroOrganization() {
     },
     update: {},
   });
+  await db.supplier.upsert({
+    where: {
+      organizationId_code: { organizationId: organization.id, code: "VSI" },
+    },
+    create: {
+      organizationId: organization.id,
+      code: "VSI",
+      name: "VSI",
+      isVsiPreset: true,
+    },
+    update: {},
+  });
+  return organization;
 }
 
 export async function createMockScanJob(
@@ -56,6 +69,447 @@ export async function getScanJobForOrganization(
     where: { id: scanJobId, organizationId },
     include: { checkpoints: true, events: { orderBy: { createdAt: "asc" } } },
   });
+}
+
+export async function listSuppliers(organizationId: string) {
+  return db.supplier.findMany({
+    where: { organizationId },
+    orderBy: { name: "asc" },
+  });
+}
+
+export async function createSupplier(
+  organizationId: string,
+  code: string,
+  name: string,
+) {
+  return db.supplier.upsert({
+    where: { organizationId_code: { organizationId, code } },
+    create: { organizationId, code, name, isVsiPreset: code === "VSI" },
+    update: { name },
+  });
+}
+
+export async function createUpload(
+  organizationId: string,
+  supplierId: string,
+  originalFilename: string,
+  declaredMediaType: string | null,
+  idempotencyKey: string,
+) {
+  return db.$transaction(async (transaction) => {
+    const supplier = await transaction.supplier.findFirst({
+      where: { id: supplierId, organizationId },
+    });
+    if (!supplier) return null;
+    const existing = await transaction.scanJob.findFirst({
+      where: { organizationId, idempotencyKey, jobType: "UPLOAD" },
+      include: { upload: true },
+    });
+    if (existing?.upload) return { upload: existing.upload, scan: existing };
+    const uploadId = randomUUID();
+    const upload = await transaction.upload.create({
+      data: {
+        id: uploadId,
+        organizationId,
+        supplierId,
+        originalFilename,
+        objectKey: `quarantine/${organizationId}/${uploadId}`,
+        declaredMediaType,
+      },
+    });
+    const scan = await transaction.scanJob.create({
+      data: {
+        organizationId,
+        supplierId,
+        uploadId,
+        idempotencyKey,
+        jobType: "UPLOAD",
+        status: "UPLOADED",
+      },
+    });
+    return { upload, scan };
+  });
+}
+
+export async function getUploadForOrganization(
+  organizationId: string,
+  uploadId: string,
+) {
+  return db.upload.findFirst({
+    where: { id: uploadId, organizationId },
+    include: {
+      sheets: { orderBy: { sheetIndex: "asc" } },
+      scan: {
+        include: {
+          columnMappings: true,
+          supplierRows: {
+            orderBy: { sourceRowNumber: "asc" },
+            include: { warnings: true },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function queueUploadInspection(
+  organizationId: string,
+  uploadId: string,
+  byteSize: number,
+  checksumSha256: string,
+  detectedFormat: "CSV" | "XLS" | "XLSX",
+) {
+  return db.$transaction(async (transaction) => {
+    const upload = await transaction.upload.findFirst({
+      where: { id: uploadId, organizationId },
+      include: { scan: true },
+    });
+    if (!upload?.scan) return null;
+    await transaction.upload.update({
+      where: { id: upload.id },
+      data: {
+        byteSize,
+        checksumSha256,
+        detectedFormat,
+        status: "INSPECTING",
+        malwareStatus: "PENDING",
+        rejectionCode: null,
+      },
+    });
+    await transaction.outboxEvent.upsert({
+      where: {
+        scanJobId_eventType: {
+          scanJobId: upload.scan.id,
+          eventType: "upload.inspect.requested",
+        },
+      },
+      create: {
+        organizationId,
+        scanJobId: upload.scan.id,
+        eventType: "upload.inspect.requested",
+        payload: {
+          scanJobId: upload.scan.id,
+          uploadId: upload.id,
+          kind: "UPLOAD_INSPECT",
+        },
+      },
+      update: {
+        status: "PENDING",
+        claimToken: null,
+        claimedAt: null,
+        lastError: null,
+      },
+    });
+    return upload.scan;
+  });
+}
+
+export async function persistUploadInspection(
+  scanJobId: string,
+  inspection: Prisma.InputJsonValue,
+  sheets: Array<{
+    sheetIndex: number;
+    name: string;
+    rowCount: number;
+    columnCount: number;
+    headerCandidates: Prisma.InputJsonValue;
+    columns: Prisma.InputJsonValue;
+    preview: Prisma.InputJsonValue;
+  }>,
+) {
+  await db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findUnique({
+      where: { id: scanJobId },
+      include: { upload: true },
+    });
+    if (!scan?.upload) return;
+    const upload = scan.upload;
+    await transaction.uploadSheet.deleteMany({
+      where: { uploadId: upload.id },
+    });
+    await transaction.uploadSheet.createMany({
+      data: sheets.map((sheet) => ({ uploadId: upload.id, ...sheet })),
+    });
+    await transaction.upload.update({
+      where: { id: upload.id },
+      data: {
+        status: "MAPPING_REQUIRED",
+        malwareStatus: "CLEAN",
+        inspectedAt: new Date(),
+      },
+    });
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "MAPPING_REQUIRED" },
+    });
+    await transaction.scanCheckpoint.upsert({
+      where: { scanJobId_stage: { scanJobId, stage: "UPLOAD_INSPECT" } },
+      create: {
+        scanJobId,
+        stage: "UPLOAD_INSPECT",
+        checksum: JSON.stringify(inspection).length.toString(),
+        payload: inspection,
+      },
+      update: { payload: inspection },
+    });
+    await transaction.scanEvent.create({
+      data: { scanJobId, eventType: "MAPPING_REQUIRED" },
+    });
+  });
+}
+
+export async function rejectUpload(scanJobId: string, rejectionCode: string) {
+  await db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findUnique({
+      where: { id: scanJobId },
+      include: { upload: true },
+    });
+    if (!scan?.upload) return;
+    await transaction.upload.update({
+      where: { id: scan.upload.id },
+      data: { status: "REJECTED", malwareStatus: "ERROR", rejectionCode },
+    });
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "FAILED_FINAL" },
+    });
+    await transaction.scanEvent.create({
+      data: {
+        scanJobId,
+        eventType: "UPLOAD_REJECTED",
+        payload: { rejectionCode },
+      },
+    });
+  });
+}
+
+export async function saveColumnMappings(
+  organizationId: string,
+  scanJobId: string,
+  uploadSheetId: string,
+  headerRow: number,
+  mappings: Array<{
+    sourceIndex: number;
+    sourceColumn: string;
+    target: Prisma.ColumnMappingCreateManyInput["target"];
+    required: boolean;
+  }>,
+) {
+  return db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findFirst({
+      where: { id: scanJobId, organizationId },
+      include: { upload: true },
+    });
+    if (!scan?.upload) return null;
+    const sheet = await transaction.uploadSheet.findFirst({
+      where: { id: uploadSheetId, uploadId: scan.upload.id },
+    });
+    if (!sheet) return null;
+    if (
+      headerRow < 1 ||
+      headerRow > sheet.rowCount ||
+      mappings.some(
+        (mapping) =>
+          mapping.sourceIndex < 0 || mapping.sourceIndex >= sheet.columnCount,
+      )
+    ) {
+      return null;
+    }
+    await transaction.columnMapping.deleteMany({ where: { scanJobId } });
+    await transaction.columnMapping.createMany({
+      data: mappings.map((mapping) => ({ scanJobId, ...mapping })),
+    });
+    await transaction.uploadSheet.update({
+      where: { id: uploadSheetId },
+      data: { selectedHeaderRow: headerRow },
+    });
+    await transaction.upload.update({
+      where: { id: scan.upload.id },
+      data: { status: "READY" },
+    });
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "READY" },
+    });
+    return scan;
+  });
+}
+
+export async function saveSheetProfile(
+  organizationId: string,
+  supplierId: string,
+  name: string,
+  headerRow: number,
+  mapping: Prisma.InputJsonValue,
+) {
+  return db.sheetProfile.upsert({
+    where: { supplierId_name: { supplierId, name } },
+    create: { organizationId, supplierId, name, headerRow, mapping },
+    update: { headerRow, mapping, version: { increment: 1 } },
+  });
+}
+
+export async function queueNormalization(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findFirst({
+      where: { id: scanJobId, organizationId },
+      include: { upload: true, columnMappings: true },
+    });
+    if (!scan?.upload || scan.status !== "READY") return null;
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "NORMALIZING" },
+    });
+    await transaction.upload.update({
+      where: { id: scan.upload.id },
+      data: { status: "NORMALIZING" },
+    });
+    await transaction.outboxEvent.upsert({
+      where: {
+        scanJobId_eventType: {
+          scanJobId,
+          eventType: "scan.normalize.requested",
+        },
+      },
+      create: {
+        organizationId,
+        scanJobId,
+        eventType: "scan.normalize.requested",
+        payload: { scanJobId, uploadId: scan.upload.id, kind: "NORMALIZE" },
+      },
+      update: {
+        status: "PENDING",
+        claimToken: null,
+        claimedAt: null,
+        lastError: null,
+      },
+    });
+    return scan;
+  });
+}
+
+export async function persistNormalizedRows(
+  scanJobId: string,
+  uploadSheetId: string,
+  rows: Array<{
+    sourceRowNumber: number;
+    rawData: Prisma.InputJsonValue;
+    rowChecksum: string;
+    offer: Record<string, string | number | null | undefined>;
+    warnings: Array<{
+      code: string;
+      severity: "INFO" | "WARNING" | "ERROR";
+      field: string;
+    }>;
+  }>,
+) {
+  await db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findUnique({
+      where: { id: scanJobId },
+      include: { upload: true },
+    });
+    if (!scan?.upload) return;
+    await transaction.supplierRow.deleteMany({ where: { scanJobId } });
+    const createdRows = rows.map((row) => ({
+      id: randomUUID(),
+      scanJobId,
+      uploadSheetId,
+      sourceRowNumber: row.sourceRowNumber,
+      rawData: row.rawData,
+      rowChecksum: row.rowChecksum,
+      normalizationStatus:
+        row.warnings.length === 0
+          ? ("NORMALIZED" as const)
+          : ("WARNING" as const),
+    }));
+    await transaction.supplierRow.createMany({ data: createdRows });
+    await transaction.normalizedOffer.createMany({
+      data: rows.map((row, index) => ({
+        supplierRowId: createdRows[index]!.id,
+        asin: stringOrNull(row.offer.asin),
+        upc: stringOrNull(row.offer.upc),
+        ean: stringOrNull(row.offer.ean),
+        gtin: stringOrNull(row.offer.gtin),
+        itemNumber: stringOrNull(row.offer.item_number),
+        description: stringOrNull(row.offer.description),
+        brand: stringOrNull(row.offer.brand),
+        unitCost: decimalOrNull(row.offer.unit_cost),
+        currency: stringOrNull(row.offer.currency),
+        quantity: integerOrNull(row.offer.quantity),
+        caseCount: integerOrNull(row.offer.case_count),
+        packCount: integerOrNull(row.offer.pack_count),
+        weight: decimalOrNull(row.offer.weight),
+        length: decimalOrNull(row.offer.length),
+        width: decimalOrNull(row.offer.width),
+        height: decimalOrNull(row.offer.height),
+      })),
+    });
+    const warningRows = rows.flatMap((row, index) =>
+      row.warnings.map((warning) => ({
+        id: randomUUID(),
+        supplierRowId: createdRows[index]!.id,
+        code: warning.code,
+        severity: warning.severity,
+        field: warning.field,
+      })),
+    );
+    if (warningRows.length > 0)
+      await transaction.normalizationWarning.createMany({ data: warningRows });
+    await transaction.upload.update({
+      where: { id: scan.upload.id },
+      data: { status: "COMPLETED" },
+    });
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    await transaction.scanCheckpoint.upsert({
+      where: { scanJobId_stage: { scanJobId, stage: "NORMALIZE" } },
+      create: {
+        scanJobId,
+        stage: "NORMALIZE",
+        checksum: rows.length.toString(),
+        payload: { rowCount: rows.length },
+      },
+      update: { payload: { rowCount: rows.length } },
+    });
+    await transaction.scanEvent.create({
+      data: {
+        scanJobId,
+        eventType: "COMPLETED",
+        payload: { rowCount: rows.length },
+      },
+    });
+  });
+}
+
+function stringOrNull(
+  value: string | number | null | undefined,
+): string | null {
+  return typeof value === "string"
+    ? value
+    : value == null
+      ? null
+      : String(value);
+}
+
+function integerOrNull(
+  value: string | number | null | undefined,
+): number | null {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
+  return null;
+}
+
+function decimalOrNull(
+  value: string | number | null | undefined,
+): string | null {
+  if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value)) return value;
+  return null;
 }
 
 const OUTBOX_CLAIM_LEASE_MS = 60_000;

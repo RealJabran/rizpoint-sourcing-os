@@ -10,7 +10,10 @@ export async function dispatchOutboxOnce(): Promise<number> {
   const events = await claimPendingOutboxEvents(25);
   for (const event of events) {
     try {
-      const payload = event.payload as { scanJobId: string };
+      const payload = event.payload as {
+        scanJobId: string;
+        kind?: "UPLOAD_INSPECT" | "NORMALIZE";
+      };
       await mockScanQueue.add("mock-scan", payload, {
         jobId: mockScanQueueJobId(payload.scanJobId),
         attempts: 3,

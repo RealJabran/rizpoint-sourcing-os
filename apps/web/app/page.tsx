@@ -9,6 +9,9 @@ export default function HomePage() {
         persisted status.
       </p>
       <Link href="/mock-scans">Run the mock scan vertical slice</Link>
+      <p>
+        <Link href="/uploads">Upload and map a supplier catalog</Link>
+      </p>
     </main>
   );
 }

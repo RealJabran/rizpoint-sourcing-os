@@ -9,11 +9,11 @@ RizPoint Sourcing OS helps an Amazon wholesale operator turn supplier catalogs i
 - Every product decision must expose source evidence, timestamps, assumptions, and unresolved risks.
 - A case, pack, or unit contradiction blocks automatic acceptance.
 
-## Phase 0 scope
+## Phase 1 scope
 
-Phase 0 establishes repository boundaries, durable job execution, and local infrastructure. It deliberately excludes supplier-file ingestion, matching, provider credentials, Amazon calls, profit calculations, shortlists, purchase orders, billing, and multi-tenant UI.
+Phase 1 adds supplier-catalog ingestion through private object storage. It supports CSV, XLSX, and XLS inspection; bounded sheet/header previews; explicit mapping; persisted normalized rows; GS1 check-digit warnings; and a saved VSI mapping profile. Identifiers remain strings throughout ingestion so leading zeroes are preserved.
 
-The proof slice creates a synthetic scan for a seeded organization, sends it through a durable queue and mock scanner, and displays its persisted completion state.
+The proof slice uploads a local file through a short-lived signed URL, runs it through malware scanning and deterministic inspection, persists a selected mapping, then normalizes rows in a checkpointed background job.
 
 ## Future workflow
 

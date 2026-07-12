@@ -8,11 +8,71 @@ datasource db {
 }
 
 enum ScanJobStatus {
+  UPLOADED
+  MAPPING_REQUIRED
+  READY
+  NORMALIZING
   QUEUED
   RUNNING
   COMPLETED
   FAILED_RETRYABLE
   FAILED_FINAL
+}
+
+enum UploadStatus {
+  PENDING_UPLOAD
+  QUARANTINED
+  INSPECTING
+  MAPPING_REQUIRED
+  READY
+  NORMALIZING
+  COMPLETED
+  REJECTED
+}
+
+enum MalwareScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  ERROR
+}
+
+enum FileFormat {
+  CSV
+  XLS
+  XLSX
+}
+
+enum MappingTarget {
+  ASIN
+  UPC
+  EAN
+  GTIN
+  ITEM_NUMBER
+  DESCRIPTION
+  BRAND
+  UNIT_COST
+  CURRENCY
+  QUANTITY
+  CASE_COUNT
+  PACK_COUNT
+  WEIGHT
+  LENGTH
+  WIDTH
+  HEIGHT
+}
+
+enum NormalizationStatus {
+  PENDING
+  NORMALIZED
+  WARNING
+  INVALID
+}
+
+enum WarningSeverity {
+  INFO
+  WARNING
+  ERROR
 }
 
 enum OutboxStatus {
@@ -30,6 +90,9 @@ model Organization {
 
   scanJobs ScanJob[]
   outbox   OutboxEvent[]
+  suppliers Supplier[]
+  uploads Upload[]
+  sheetProfiles SheetProfile[]
 
   @@map("organizations")
 }
@@ -38,6 +101,9 @@ model ScanJob {
   id             String        @id @default(cuid())
   organizationId String        @map("organization_id")
   idempotencyKey String        @map("idempotency_key")
+  supplierId     String?       @map("supplier_id")
+  uploadId       String?       @unique @map("upload_id")
+  jobType        String        @default("MOCK") @map("job_type")
   status         ScanJobStatus @default(QUEUED)
   attemptCount   Int           @default(0) @map("attempt_count")
   mockResult     Json?         @map("mock_result")
@@ -46,13 +112,186 @@ model ScanJob {
   completedAt    DateTime?     @map("completed_at")
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplier     Supplier?        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  upload       Upload?          @relation(fields: [uploadId], references: [id], onDelete: Restrict)
   checkpoints  ScanCheckpoint[]
   events       ScanEvent[]
   outboxEvents OutboxEvent[]
+  columnMappings ColumnMapping[]
+  supplierRows SupplierRow[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status])
+  @@index([organizationId, supplierId])
   @@map("scan_jobs")
+}
+
+model Supplier {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  code           String
+  name           String
+  isVsiPreset    Boolean  @default(false) @map("is_vsi_preset")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploads Upload[]
+  scans ScanJob[]
+  sheetProfiles SheetProfile[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, name])
+  @@map("suppliers")
+}
+
+model Upload {
+  id                String            @id @default(cuid())
+  organizationId    String            @map("organization_id")
+  supplierId        String            @map("supplier_id")
+  originalFilename  String            @map("original_filename")
+  objectKey         String            @unique @map("object_key")
+  declaredMediaType String?           @map("declared_media_type")
+  detectedFormat    FileFormat?       @map("detected_format")
+  byteSize          Int?              @map("byte_size")
+  checksumSha256    String?           @map("checksum_sha256")
+  status            UploadStatus      @default(PENDING_UPLOAD)
+  malwareStatus     MalwareScanStatus @default(PENDING) @map("malware_status")
+  rejectionCode     String?           @map("rejection_code")
+  inspectedAt       DateTime?         @map("inspected_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  sheets UploadSheet[]
+  scan ScanJob?
+
+  @@index([organizationId, status])
+  @@index([supplierId, createdAt])
+  @@map("uploads")
+}
+
+model UploadSheet {
+  id                  String   @id @default(cuid())
+  uploadId            String   @map("upload_id")
+  sheetIndex          Int      @map("sheet_index")
+  name                String
+  rowCount            Int      @map("row_count")
+  columnCount         Int      @map("column_count")
+  headerCandidates    Json     @map("header_candidates")
+  selectedHeaderRow   Int?     @map("selected_header_row")
+  columns             Json
+  preview             Json
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  supplierRows SupplierRow[]
+
+  @@unique([uploadId, sheetIndex])
+  @@map("upload_sheets")
+}
+
+model SheetProfile {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  supplierId     String   @map("supplier_id")
+  name           String
+  fileFormat     FileFormat? @map("file_format")
+  sheetName      String?   @map("sheet_name")
+  headerRow      Int       @map("header_row")
+  mapping        Json
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  @@unique([supplierId, name])
+  @@map("sheet_profiles")
+}
+
+model ColumnMapping {
+  id           String        @id @default(cuid())
+  scanJobId    String        @map("scan_job_id")
+  sourceIndex  Int           @map("source_index")
+  sourceColumn String        @map("source_column")
+  target       MappingTarget
+  required     Boolean       @default(false)
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  scanJob ScanJob @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+
+  @@unique([scanJobId, target])
+  @@unique([scanJobId, sourceIndex])
+  @@map("column_mappings")
+}
+
+model SupplierRow {
+  id                  String              @id @default(cuid())
+  scanJobId           String              @map("scan_job_id")
+  uploadSheetId       String              @map("upload_sheet_id")
+  sourceRowNumber     Int                 @map("source_row_number")
+  rawData             Json                @map("raw_data")
+  rowChecksum         String              @map("row_checksum")
+  normalizationStatus NormalizationStatus @default(PENDING) @map("normalization_status")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  scanJob ScanJob @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  uploadSheet UploadSheet @relation(fields: [uploadSheetId], references: [id], onDelete: Restrict)
+  normalizedOffer NormalizedOffer?
+  warnings NormalizationWarning[]
+
+  @@unique([scanJobId, sourceRowNumber])
+  @@index([scanJobId, normalizationStatus])
+  @@map("supplier_rows")
+}
+
+model NormalizedOffer {
+  id            String   @id @default(cuid())
+  supplierRowId String   @unique @map("supplier_row_id")
+  asin          String?
+  upc           String?
+  ean           String?
+  gtin          String?
+  itemNumber    String?  @map("item_number")
+  description   String?
+  brand         String?
+  unitCost      Decimal? @db.Decimal(18, 4) @map("unit_cost")
+  currency      String?
+  quantity      Int?
+  caseCount     Int?     @map("case_count")
+  packCount     Int?     @map("pack_count")
+  weight        Decimal? @db.Decimal(18, 4)
+  length        Decimal? @db.Decimal(18, 4)
+  width         Decimal? @db.Decimal(18, 4)
+  height        Decimal? @db.Decimal(18, 4)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  supplierRow SupplierRow @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+
+  @@index([upc])
+  @@index([ean])
+  @@map("normalized_offers")
+}
+
+model NormalizationWarning {
+  id            String          @id @default(cuid())
+  supplierRowId String          @map("supplier_row_id")
+  code          String
+  severity      WarningSeverity
+  field         String?
+  context       Json?
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  supplierRow SupplierRow @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierRowId, code, field])
+  @@map("normalization_warnings")
 }
 
 model ScanCheckpoint {

@@ -9,7 +9,7 @@
 - **Redis**: BullMQ transport only; it is not canonical job state.
 - **MinIO**: local private S3-compatible object storage.
 
-## Phase 0 job flow
+## Upload and mapping job flow
 
 ```mermaid
 sequenceDiagram
@@ -18,22 +18,22 @@ sequenceDiagram
   participant Q as Redis/BullMQ
   participant K as Worker
   participant S as Scanner
-  W->>P: transaction: ScanJob + OutboxEvent
+  W->>P: transaction: Upload + ScanJob + OutboxEvent
+  W->>S: signed URL upload to private object storage
   K->>P: claim OutboxEvent
   K->>Q: enqueue deterministic job id
-  K->>P: mark RUNNING/checkpoint
-  K->>S: mock processing request
-  S-->>K: deterministic result
-  K->>P: result + COMPLETED event
+  K->>S: malware-gated inspection / normalization
+  S-->>K: bounded workbook result
+  K->>P: checkpoint, rows/warnings, state event
 ```
 
 The transactional outbox prevents a request from creating a database job without a recoverable enqueue instruction. Claims carry a token and lease; stale claims are reclaimed. Delivery is at least once, so queue IDs, checkpoints, and terminal writes are idempotent.
 
-The initial migration is additive and includes a reviewed manual `rollback.sql` for disposable/local recovery. Production rollback requires a backup and change-review decision because it deletes job history.
+The initial and upload migrations are additive and include reviewed manual `rollback.sql` files for disposable/local recovery. Production rollback requires a backup and change-review decision because it deletes job history and uploaded-row state.
 
 ## State model
 
-Phase 0 uses `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED_RETRYABLE`, and `FAILED_FINAL`. The complete product will add `UPLOADED`, `MAPPING_REQUIRED`, `READY`, `NORMALIZING`, `MATCHING`, `ENRICHING`, `CALCULATING`, `CANCELLED`, and `PARTIAL_SUCCESS`.
+The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → COMPLETED`; rejection ends in `FAILED_FINAL`. A duplicate inspect or normalize request is represented by a single outbox event and an idempotent persistence stage. The complete product will add matching, enrichment, calculation, cancellation, and explicit partial-success states.
 
 ## Provider boundary
 
@@ -43,6 +43,6 @@ The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Red
 
 ## Runtime baselines
 
-The local containers use Node 22 and Python 3.13. Next.js requires Node 20.9 or newer; Prisma supports active/maintenance Node LTS releases. See the official [Next.js installation](https://nextjs.org/docs/app/getting-started/installation) and [Prisma system requirements](https://docs.prisma.io/docs/orm/reference/system-requirements).
+The local containers use Node 22 and Python 3.13+. Next.js requires Node 20.9 or newer; Prisma supports active/maintenance Node LTS releases. See the official [Next.js installation](https://nextjs.org/docs/app/getting-started/installation) and [Prisma system requirements](https://docs.prisma.io/docs/orm/reference/system-requirements).
 
 Compose pins PostgreSQL, Redis, and MinIO release tags so local rebuilds do not silently float across versions.

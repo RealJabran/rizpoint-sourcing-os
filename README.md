@@ -2,9 +2,9 @@
 
 An explainable Amazon wholesale sourcing platform. It is intentionally built around evidence, pack correctness, tenant boundaries, and deterministic Decimal-based financial calculations.
 
-## Phase 0 status
+## Phase 1 status
 
-This repository contains the foundation only: local service topology, typed boundaries, a minimal persisted job lifecycle, and mock processing. It does not ingest supplier files, call Amazon, calculate profits, or provide production authentication yet.
+This repository includes the Phase 0 foundation and Phase 1 upload/mapping slice. A local demo user can upload CSV, XLSX, or XLS supplier catalogs, select a sheet/header row, save validated mappings (including a VSI profile), and normalize rows with persisted warnings. It does not call Amazon, calculate profits, or provide production authentication yet.
 
 ## Local development
 
@@ -16,7 +16,7 @@ pnpm install --frozen-lockfile
 docker compose up --build --wait
 ```
 
-Open `http://localhost:3000/mock-scans`. The page starts a synthetic scan and shows its persisted status.
+Open `http://localhost:3000/uploads`. The seeded `VSI` supplier lets you exercise a local upload/mapping flow without committing supplier data. MinIO accepts browser uploads only through short-lived signed URLs from the local web origin.
 
 `PHASE_ZERO_DEMO_MODE=true` is set only by local Compose to enable this mock route. Do not expose it as a production authorization mechanism.
 
@@ -26,7 +26,7 @@ Useful commands:
 pnpm verify
 pnpm db:generate
 pnpm db:migrate
-docker compose logs -f worker scanner web
+docker compose logs -f worker scanner clamav web
 docker compose down --volumes
 ```
 

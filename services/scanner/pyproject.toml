@@ -6,10 +6,14 @@ build-backend = "hatchling.build"
 name = "rizpoint-scanner"
 version = "0.0.0"
 description = "RizPoint deterministic scanner service"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.13,<3.15"
 dependencies = [
+  "boto3==1.43.46",
+  "clamd==1.0.2",
   "fastapi[standard]==0.139.0",
+  "openpyxl==3.1.5",
   "polars==1.42.1",
+  "xlrd==2.0.2",
 ]
 
 [project.optional-dependencies]
@@ -18,6 +22,7 @@ dev = [
   "mypy==2.2.0",
   "pytest==9.1.1",
   "ruff==0.15.21",
+  "xlwt==1.3.0",
 ]
 
 [dependency-groups]
@@ -26,6 +31,7 @@ dev = [
   "mypy==2.2.0",
   "pytest==9.1.1",
   "ruff==0.15.21",
+  "xlwt==1.3.0",
 ]
 
 [tool.hatch.build.targets.wheel]
