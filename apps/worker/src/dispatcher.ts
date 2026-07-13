@@ -11,18 +11,26 @@ export async function dispatchOutboxOnce(): Promise<number> {
   for (const event of events) {
     try {
       const payload = event.payload as {
-        scanJobId: string;
-        kind?: Exclude<UploadJobKind, "MOCK">;
+        scanJobId?: string;
+        exportJobId?: string;
+        kind?: Exclude<UploadJobKind, "MOCK"> | "EXPORT";
         runAttempt?: number;
         runId?: string;
       };
+      if (payload.kind === "EXPORT" && !payload.exportJobId)
+        throw new Error("export_job_id_missing");
+      if (payload.kind !== "EXPORT" && !payload.scanJobId)
+        throw new Error("scan_job_id_missing");
       await mockScanQueue.add("mock-scan", payload, {
-        jobId: mockScanQueueJobId(
-          payload.scanJobId,
-          payload.kind ?? "MOCK",
-          payload.runAttempt,
-          payload.runId,
-        ),
+        jobId:
+          payload.kind === "EXPORT"
+            ? `export-${payload.exportJobId}`
+            : mockScanQueueJobId(
+                payload.scanJobId!,
+                payload.kind ?? "MOCK",
+                payload.runAttempt,
+                payload.runId,
+              ),
         attempts: 3,
         backoff: { type: "exponential", delay: 1_000 },
         removeOnComplete: 100,

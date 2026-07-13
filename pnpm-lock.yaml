@@ -32,6 +32,9 @@ importers:
       '@rizpoint/object-storage':
         specifier: workspace:*
         version: link:../../packages/object-storage
+      '@rizpoint/order-engine':
+        specifier: workspace:*
+        version: link:../../packages/order-engine
       '@rizpoint/profit-engine':
         specifier: workspace:*
         version: link:../../packages/profit-engine
@@ -90,6 +93,9 @@ importers:
       '@rizpoint/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@rizpoint/export-engine':
+        specifier: workspace:*
+        version: link:../../packages/export-engine
       '@rizpoint/matching-engine':
         specifier: workspace:*
         version: link:../../packages/matching-engine
@@ -99,6 +105,9 @@ importers:
       '@rizpoint/object-storage':
         specifier: workspace:*
         version: link:../../packages/object-storage
+      '@rizpoint/order-engine':
+        specifier: workspace:*
+        version: link:../../packages/order-engine
       '@rizpoint/profit-engine':
         specifier: workspace:*
         version: link:../../packages/profit-engine
@@ -232,6 +241,27 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0))
 
+  packages/export-engine:
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.1.1
+        version: 26.1.1
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.63.0
+        version: 8.63.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0))
+
   packages/matching-engine:
     dependencies:
       '@rizpoint/domain':
@@ -309,6 +339,34 @@ importers:
       eslint:
         specifier: 9.39.5
         version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.63.0
+        version: 8.63.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0))
+
+  packages/order-engine:
+    dependencies:
+      decimal.js:
+        specifier: 10.6.0
+        version: 10.6.0
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.1.1
+        version: 26.1.1
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)
+      fast-check:
+        specifier: 4.9.0
+        version: 4.9.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3

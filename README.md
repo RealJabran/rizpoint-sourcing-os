@@ -34,6 +34,10 @@ docker compose down --volumes
 
 `docker compose down --volumes` intentionally removes local development data.
 
+## Phase 6 workflow
+
+Create shortlists through `/shortlists`, add eligible analysis results through the shortlist API, and build a single-supplier, single-route purchase order. Validate the draft before queueing CSV, XLSX, or audit exports. Download links are temporary and exports remain private object-store artifacts.
+
 ## Documentation
 
 - [Product](docs/PRODUCT.md)

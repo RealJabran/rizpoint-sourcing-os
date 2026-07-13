@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@rizpoint/database": "workspace:*",
+    "@rizpoint/export-engine": "workspace:*",
     "@rizpoint/matching-engine": "workspace:*",
     "@rizpoint/mock-providers": "workspace:*",
     "@rizpoint/object-storage": "workspace:*",
+    "@rizpoint/order-engine": "workspace:*",
     "@rizpoint/profit-engine": "workspace:*",
     "@rizpoint/provider-contracts": "workspace:*",
     "bullmq": "5.80.2",

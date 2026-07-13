@@ -1,4 +1,5 @@
 from hashlib import sha256
+from io import BytesIO
 from typing import Any
 
 import polars as pl
@@ -30,6 +31,16 @@ class NormalizeRequest(WorkbookInspectRequest):
     sheet_index: int = Field(ge=0)
     header_row: int = Field(ge=1)
     mappings: list[dict[str, Any]]
+
+
+class ExportSheet(BaseModel):
+    sheet_name: str = Field(min_length=1, max_length=31)
+    columns: list[str] = Field(min_length=1, max_length=80)
+    rows: list[list[str | int | float]] = Field(max_length=50000)
+
+
+class XlsxExportRequest(BaseModel):
+    sheets: list[ExportSheet] = Field(min_length=1, max_length=4)
 
 
 @app.get("/health")
@@ -80,3 +91,22 @@ def normalize_upload(request: NormalizeRequest) -> dict[str, Any]:
     except (ValueError, WorkbookError) as error:
         code = error.code if isinstance(error, WorkbookError) else "INVALID_UPLOAD"
         raise HTTPException(status_code=400, detail={"code": code}) from error
+
+
+@app.post("/v1/exports/xlsx")
+def export_xlsx(request: XlsxExportRequest) -> dict[str, str]:
+    """Create a formula-free workbook from already-sanitized, allowlisted cells."""
+    import base64
+
+    from openpyxl import Workbook  # type: ignore[import-untyped]
+
+    workbook = Workbook(write_only=True)
+    for sheet in request.sheets:
+        worksheet = workbook.create_sheet(title=sheet.sheet_name)
+        worksheet.append(sheet.columns)
+        for row in sheet.rows:
+            worksheet.append(row)
+    # openpyxl creates a default sheet only in normal mode; write-only starts empty.
+    output = BytesIO()
+    workbook.save(output)
+    return {"content_base64": base64.b64encode(output.getvalue()).decode("ascii")}

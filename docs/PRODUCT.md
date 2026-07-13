@@ -27,6 +27,10 @@ Phase 4 adds an idempotent, tenant-scoped calculation stage after enrichment. A 
 
 Phase 5 adds a server-windowed analysis workspace with a virtualized grid, filters, saved views, typed inline cost/stress assumptions, bounded bulk recalculation, evidence inspection, and read-only decision replay. Overrides are versioned and reasoned; they never mutate supplier source rows or provider evidence.
 
+## Phase 6 scope
+
+Phase 6 adds organization-scoped shortlists, research statuses, notes, workflow audit events, and a case-aware purchase-order draft. A PO copies a selected verified scenario and uses Decimal-only carton/MOQ rounding. Exports are private, asynchronous CSV/XLSX artifacts with formula-safe textual cells, audit evidence, checksums, and short-lived downloads.
+
 ## Future workflow
 
 `upload → inspect/map → normalize → match → enrich → calculate → review → shortlist → purchase order`

@@ -1,0 +1,17 @@
+ALTER TABLE "outbox_events" DROP CONSTRAINT IF EXISTS "outbox_events_one_aggregate";
+ALTER TABLE "outbox_events" DROP CONSTRAINT IF EXISTS "outbox_events_export_job_id_fkey";
+DROP TABLE IF EXISTS "workflow_audit_events";
+DROP TABLE IF EXISTS "export_jobs";
+DROP TABLE IF EXISTS "purchase_order_lines";
+DROP TABLE IF EXISTS "purchase_orders";
+DROP TABLE IF EXISTS "shortlist_notes";
+DROP TABLE IF EXISTS "shortlist_items";
+DROP TABLE IF EXISTS "shortlists";
+ALTER TABLE "outbox_events" DROP COLUMN IF EXISTS "export_job_id";
+ALTER TABLE "outbox_events" ALTER COLUMN "scan_job_id" SET NOT NULL;
+DROP TYPE IF EXISTS "ExportKind";
+DROP TYPE IF EXISTS "ExportFormat";
+DROP TYPE IF EXISTS "ExportStatus";
+DROP TYPE IF EXISTS "PurchaseOrderStatus";
+DROP TYPE IF EXISTS "ShortlistItemStatus";
+DROP TYPE IF EXISTS "ShortlistStatus";

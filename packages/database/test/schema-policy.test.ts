@@ -7,6 +7,9 @@ import {
   AnalysisOverrideStatus,
   CostOverrideField,
   ProductRecommendation,
+  ExportStatus,
+  PurchaseOrderStatus,
+  ShortlistItemStatus,
   ProfitCalculationStatus,
 } from "../src/index.js";
 
@@ -27,6 +30,12 @@ describe("database policy", () => {
     expect(CostOverrideField.SUPPLIER_COST_PER_SELLABLE_UNIT).toBe(
       "SUPPLIER_COST_PER_SELLABLE_UNIT",
     );
+  });
+
+  it("exposes Phase 6 workflow states", () => {
+    expect(ShortlistItemStatus.READY_FOR_PO).toBe("READY_FOR_PO");
+    expect(PurchaseOrderStatus.VALIDATED).toBe("VALIDATED");
+    expect(ExportStatus.COMPLETED).toBe("COMPLETED");
   });
 
   it("does not promote a stale targeted override calculation", () => {

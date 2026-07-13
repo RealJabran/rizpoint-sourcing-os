@@ -51,6 +51,10 @@ The analysis API queries a tenant-scoped current-result projection in 100-row wi
 
 ## Runtime baselines
 
+## Phase 6 workflow and exports
+
+Shortlist and purchase-order aggregates are organization-scoped PostgreSQL records. PO lines snapshot the selected immutable profit scenario, route, quantities, pack conversion, MOQ, order-multiple rounding, and Decimal totals. The worker owns export generation through the transactional outbox; export jobs are persisted before Redis publication, retry safely, and write checksummed allowlisted CSV/XLSX artifacts to private object storage. Download routes verify the organization before returning a five-minute signed URL.
+
 The local containers use Node 22 and Python 3.13+. Next.js requires Node 20.9 or newer; Prisma supports active/maintenance Node LTS releases. See the official [Next.js installation](https://nextjs.org/docs/app/getting-started/installation) and [Prisma system requirements](https://docs.prisma.io/docs/orm/reference/system-requirements).
 
 Compose pins PostgreSQL, Redis, and MinIO release tags so local rebuilds do not silently float across versions.

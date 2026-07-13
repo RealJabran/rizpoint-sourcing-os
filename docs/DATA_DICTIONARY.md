@@ -56,6 +56,6 @@ Every catalog, price, fee, restriction, or history observation must carry `provi
 
 Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal libraries and explicit rounding policies. Binary floats are prohibited. Ratios are represented as Decimal values, not percentages stored as floats.
 
-## Future conceptual entities
+## Phase 6 workflow entities
 
-Shortlists, purchase orders, and further audit entities remain planned.
+`Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Export jobs retain the source revision, checksum, byte size, generator version, and private object key; raw provider payloads are not exported by default.

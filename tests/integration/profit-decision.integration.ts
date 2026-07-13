@@ -252,6 +252,94 @@ assert.ok(workspaceResult);
 assert.equal(workspaceResult?.evidence, undefined);
 assert.ok(workspaceResult?.currentNetProfit);
 
+const shortlistResponse = await fetch(`${baseUrl}/api/shortlists`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    name: `phase-six-${Date.now()}`,
+    idempotencyKey: randomUUID(),
+  }),
+});
+assert.equal(shortlistResponse.status, 201);
+const shortlist = (await shortlistResponse.json()) as { id: string };
+assert.equal(
+  (
+    await fetch(`${baseUrl}/api/shortlists/${shortlist.id}/items`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        resultIds: [workspaceResult!.id],
+        idempotencyKey: randomUUID(),
+      }),
+    })
+  ).status,
+  201,
+);
+const shortlistDetail = (await (
+  await fetch(`${baseUrl}/api/shortlists/${shortlist.id}`)
+).json()) as { items: Array<{ id: string }> };
+assert.equal(shortlistDetail.items.length, 1);
+const poResponse = await fetch(`${baseUrl}/api/purchase-orders`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    shortlistId: shortlist.id,
+    itemIds: [shortlistDetail.items[0]!.id],
+    scenarioType: "CURRENT",
+    budgetAmount: "1000.00",
+    idempotencyKey: randomUUID(),
+    quantities: {
+      [shortlistDetail.items[0]!.id]: {
+        requestedUnits: 13,
+        minimumOrderCases: 1,
+        orderMultipleCases: 1,
+      },
+    },
+  }),
+});
+assert.equal(poResponse.status, 201);
+const purchaseOrder = (await poResponse.json()) as {
+  id: string;
+  revision: number;
+  supplierSubtotal: string;
+};
+assert.ok(Number(purchaseOrder.supplierSubtotal) > 0);
+assert.equal(
+  (
+    await fetch(`${baseUrl}/api/purchase-orders/${purchaseOrder.id}/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        expectedRevision: purchaseOrder.revision,
+        idempotencyKey: randomUUID(),
+      }),
+    })
+  ).status,
+  200,
+);
+const exportResponse = await fetch(
+  `${baseUrl}/api/purchase-orders/${purchaseOrder.id}/exports`,
+  {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "PURCHASE_ORDER",
+      format: "CSV",
+      idempotencyKey: randomUUID(),
+    }),
+  },
+);
+assert.equal(exportResponse.status, 202);
+const exportJob = (await exportResponse.json()) as { id: string };
+await poll(async () => {
+  const response = await fetch(`${baseUrl}/api/exports/${exportJob.id}`);
+  const value = (await response.json()) as {
+    status: string;
+    downloadUrl?: string;
+  };
+  return value.status === "COMPLETED" ? value : null;
+}, "purchase-order export");
+
 assert.equal(
   (
     await fetch(`${baseUrl}/api/analysis-views`, {

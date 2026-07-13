@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@rizpoint/database": "workspace:*",
+    "@rizpoint/order-engine": "workspace:*",
     "@rizpoint/domain": "workspace:*",
     "@rizpoint/mock-providers": "workspace:*",
     "@rizpoint/object-storage": "workspace:*",

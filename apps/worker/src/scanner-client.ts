@@ -125,3 +125,24 @@ export async function normalizeWorkbook(
     }),
   );
 }
+
+export async function createXlsxExport(
+  sheets: Array<{
+    sheet_name: string;
+    columns: readonly string[];
+    rows: readonly (readonly (string | number)[])[];
+  }>,
+): Promise<Uint8Array> {
+  const response = await fetch(`${scannerBaseUrl}/v1/exports/xlsx`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sheets }),
+  });
+  const body = (await response.json().catch(() => null)) as {
+    content_base64?: string;
+    detail?: { code?: string };
+  } | null;
+  if (!response.ok || !body?.content_base64)
+    throw new ScannerRequestError(body?.detail?.code ?? "XLSX_EXPORT_FAILED");
+  return Uint8Array.from(Buffer.from(body.content_base64, "base64"));
+}

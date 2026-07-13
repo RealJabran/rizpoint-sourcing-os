@@ -12,7 +12,7 @@ The browser is untrusted. Web routes enforce an organization context before quer
 - MinIO is configured as a private bucket. Browser upload uses a five-minute signed URL and an origin-scoped local CORS rule.
 - Uploads are limited to 50 MiB using object-store metadata before bytes are downloaded. CSV/XLS/XLSX filename and file signature must agree; XLSX archive expansion, sheet, row, and column limits reject rather than truncate.
 - Inspection fails closed unless ClamAV reports a clean file. `MALWARE_SCAN_MODE=mock` is test-only and must not be used in a deployed environment.
-- Spreadsheet values are treated as data, never formulas. Formula-like input cells are retained as source evidence and flagged; exports remain unimplemented and must escape them before delivery.
+- Spreadsheet values are treated as data, never formulas. Formula-like input cells are retained as source evidence and flagged. Exports prefix textual cells beginning (including after whitespace) with `=`, `+`, `-`, `@`, tab, carriage return, or newline; numeric cells remain numeric. Exports are allowlisted, private, checksummed, and returned through a five-minute tenant-authorized signed download URL.
 - The worker records only synthetic metadata in Phase 0 and redacts credential-shaped error text before logging.
 - External provider contracts require provenance/freshness and never expose credential fields to the browser.
 - Analysis filters and sort keys are allowlisted; evidence payloads are loaded only through tenant-scoped result-detail routes. Inline cost/stress edits require an idempotency key, revision, and reason, and retain an audit event rather than mutating supplier or provider evidence.

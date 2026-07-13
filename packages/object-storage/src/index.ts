@@ -54,3 +54,35 @@ export async function getObjectBytes(objectKey: string): Promise<Uint8Array> {
   if (!response.Body) throw new Error("Object body was empty.");
   return response.Body.transformToByteArray();
 }
+
+export async function putPrivateObject(input: {
+  objectKey: string;
+  body: Uint8Array;
+  contentType: string;
+  contentDisposition: string;
+}): Promise<void> {
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: input.objectKey,
+      Body: input.body,
+      ContentType: input.contentType,
+      ContentDisposition: input.contentDisposition,
+    }),
+  );
+}
+
+export async function createDownloadUrl(
+  objectKey: string,
+  filename: string,
+): Promise<string> {
+  return getSignedUrl(
+    publicClient,
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+      ResponseContentDisposition: `attachment; filename="${filename.replaceAll(/[^A-Za-z0-9._-]/g, "_")}"`,
+    }),
+    { expiresIn: 300 },
+  );
+}

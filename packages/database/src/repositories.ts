@@ -2398,3 +2398,534 @@ export async function failScanJob(
     });
   });
 }
+
+// Phase 6 workflow repositories. These deliberately accept an organization context on
+// every call so nested identifiers cannot become a cross-tenant access path.
+export async function createShortlist(input: {
+  organizationId: string;
+  name: string;
+  description?: string;
+  idempotencyKey: string;
+}) {
+  return db.$transaction(async (transaction) => {
+    const existing = await transaction.workflowAuditEvent.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        idempotencyKey: input.idempotencyKey,
+      },
+      select: { entityId: true },
+    });
+    if (existing)
+      return transaction.shortlist.findFirst({
+        where: { id: existing.entityId, organizationId: input.organizationId },
+      });
+    const shortlist = await transaction.shortlist.create({
+      data: {
+        organizationId: input.organizationId,
+        name: input.name,
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+      },
+    });
+    await transaction.workflowAuditEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        entityType: "SHORTLIST",
+        entityId: shortlist.id,
+        eventType: "CREATED",
+        idempotencyKey: input.idempotencyKey,
+      },
+    });
+    return shortlist;
+  });
+}
+
+export async function listShortlists(organizationId: string) {
+  return db.shortlist.findMany({
+    where: { organizationId },
+    include: { _count: { select: { items: true } } },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+export async function getShortlistForOrganization(
+  organizationId: string,
+  shortlistId: string,
+) {
+  return db.shortlist.findFirst({
+    where: { id: shortlistId, organizationId },
+    include: {
+      items: {
+        include: {
+          notes: { orderBy: { createdAt: "asc" } },
+          profitResult: {
+            include: {
+              shippingRoute: true,
+              supplierRow: {
+                include: {
+                  normalizedOffer: true,
+                  matchDecision: {
+                    include: {
+                      selectedCandidate: {
+                        include: { packGuard: true, catalogProduct: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+}
+
+export async function addShortlistItems(input: {
+  organizationId: string;
+  shortlistId: string;
+  resultIds: string[];
+  idempotencyKey: string;
+}) {
+  return db.$transaction(async (transaction) => {
+    const shortlist = await transaction.shortlist.findFirst({
+      where: { id: input.shortlistId, organizationId: input.organizationId },
+    });
+    if (!shortlist) return null;
+    const results = await transaction.profitResult.findMany({
+      where: {
+        id: { in: input.resultIds },
+        organizationId: input.organizationId,
+        isCurrent: true,
+      },
+      select: { id: true, supplierRowId: true },
+    });
+    if (results.length !== new Set(input.resultIds).size)
+      throw new Error("RESULT_NOT_FOUND");
+    const items = [];
+    for (const result of results)
+      items.push(
+        await transaction.shortlistItem.upsert({
+          where: {
+            shortlistId_supplierRowId: {
+              shortlistId: shortlist.id,
+              supplierRowId: result.supplierRowId,
+            },
+          },
+          create: {
+            organizationId: input.organizationId,
+            shortlistId: shortlist.id,
+            supplierRowId: result.supplierRowId,
+            profitResultId: result.id,
+          },
+          update: { profitResultId: result.id },
+        }),
+      );
+    await transaction.shortlist.update({
+      where: { id: shortlist.id },
+      data: { revision: { increment: 1 } },
+    });
+    await transaction.workflowAuditEvent.upsert({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        entityType: "SHORTLIST",
+        entityId: shortlist.id,
+        eventType: "ITEMS_ADDED",
+        idempotencyKey: input.idempotencyKey,
+        payload: { resultIds: input.resultIds },
+      },
+      update: {},
+    });
+    return items;
+  });
+}
+
+export async function transitionShortlistItems(input: {
+  organizationId: string;
+  shortlistId: string;
+  itemIds: string[];
+  status: string;
+  ownerReference?: string | null;
+  expectedRevision?: number;
+  idempotencyKey: string;
+}) {
+  return db.$transaction(async (transaction) => {
+    const items = await transaction.shortlistItem.findMany({
+      where: {
+        id: { in: input.itemIds },
+        shortlistId: input.shortlistId,
+        organizationId: input.organizationId,
+      },
+      include: {
+        profitResult: {
+          include: {
+            supplierRow: {
+              include: {
+                matchDecision: {
+                  include: {
+                    selectedCandidate: { include: { packGuard: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (items.length !== new Set(input.itemIds).size)
+      throw new Error("SHORTLIST_ITEM_NOT_FOUND");
+    if (
+      input.expectedRevision !== undefined &&
+      items.some((item) => item.revision !== input.expectedRevision)
+    )
+      throw new Error("SHORTLIST_REVISION_CONFLICT");
+    if (
+      input.status === "READY_FOR_PO" &&
+      items.some((item) => {
+        const match = item.profitResult.supplierRow.matchDecision;
+        return (
+          item.profitResult.status !== "COMPLETED" ||
+          item.profitResult.recommendation !== "BUY" ||
+          !match ||
+          !["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(match.status) ||
+          match.selectedCandidate?.packGuard?.status !== "VERIFIED"
+        );
+      })
+    )
+      throw new Error("SHORTLIST_ITEM_NOT_PURCHASE_READY");
+    await transaction.shortlistItem.updateMany({
+      where: {
+        id: { in: input.itemIds },
+        organizationId: input.organizationId,
+      },
+      data: {
+        status: input.status as never,
+        ...(input.ownerReference !== undefined
+          ? { ownerReference: input.ownerReference }
+          : {}),
+        revision: { increment: 1 },
+      },
+    });
+    await transaction.shortlist.updateMany({
+      where: { id: input.shortlistId, organizationId: input.organizationId },
+      data: { revision: { increment: 1 } },
+    });
+    await transaction.workflowAuditEvent.upsert({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        entityType: "SHORTLIST",
+        entityId: input.shortlistId,
+        eventType: "ITEMS_TRANSITIONED",
+        idempotencyKey: input.idempotencyKey,
+        payload: { itemIds: input.itemIds, status: input.status },
+      },
+      update: {},
+    });
+    return { count: items.length };
+  });
+}
+
+export async function addShortlistNote(input: {
+  organizationId: string;
+  shortlistId: string;
+  itemId: string;
+  body: string;
+  authorReference?: string;
+  idempotencyKey: string;
+}) {
+  return db.$transaction(async (transaction) => {
+    const item = await transaction.shortlistItem.findFirst({
+      where: {
+        id: input.itemId,
+        shortlistId: input.shortlistId,
+        organizationId: input.organizationId,
+      },
+    });
+    if (!item) return null;
+    const event = await transaction.workflowAuditEvent.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        idempotencyKey: input.idempotencyKey,
+      },
+      select: { entityId: true },
+    });
+    if (event)
+      return transaction.shortlistNote.findFirst({
+        where: { id: event.entityId, organizationId: input.organizationId },
+      });
+    const note = await transaction.shortlistNote.create({
+      data: {
+        organizationId: input.organizationId,
+        shortlistItemId: item.id,
+        body: input.body,
+        ...(input.authorReference !== undefined
+          ? { authorReference: input.authorReference }
+          : {}),
+      },
+    });
+    await transaction.workflowAuditEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        entityType: "SHORTLIST_ITEM",
+        entityId: note.id,
+        eventType: "NOTE_ADDED",
+        idempotencyKey: input.idempotencyKey,
+      },
+    });
+    return note;
+  });
+}
+
+export async function getShortlistItemsForPurchaseOrder(
+  organizationId: string,
+  shortlistId: string,
+  itemIds: string[],
+) {
+  return db.shortlistItem.findMany({
+    where: { organizationId, shortlistId, id: { in: itemIds } },
+    include: {
+      profitResult: {
+        include: {
+          shippingRoute: true,
+          supplierRow: {
+            include: {
+              scanJob: true,
+              normalizedOffer: true,
+              matchDecision: {
+                include: {
+                  selectedCandidate: {
+                    include: { packGuard: true, catalogProduct: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function createPurchaseOrder(input: {
+  organizationId: string;
+  supplierId: string;
+  shortlistId: string;
+  shippingRouteId: string;
+  scenarioType: "CURRENT" | "CONSERVATIVE" | "STRESS" | "MAP";
+  currency: string;
+  idempotencyKey: string;
+  budgetAmount?: string;
+  minimumOrderAmount?: string;
+  lines: Array<Record<string, unknown>>;
+  totals: Record<string, string>;
+}) {
+  return db.$transaction(async (transaction) => {
+    const existing = await transaction.purchaseOrder.findUnique({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+    if (existing) return existing;
+    const order = await transaction.purchaseOrder.create({
+      data: {
+        organizationId: input.organizationId,
+        supplierId: input.supplierId,
+        shortlistId: input.shortlistId,
+        shippingRouteId: input.shippingRouteId,
+        scenarioType: input.scenarioType,
+        currency: input.currency,
+        idempotencyKey: input.idempotencyKey,
+        budgetAmount: input.budgetAmount,
+        minimumOrderAmount: input.minimumOrderAmount,
+        ...input.totals,
+        lines: {
+          create: input.lines.map((line) => ({
+            organizationId: input.organizationId,
+            ...line,
+          })),
+        },
+      } as never,
+    });
+    await transaction.workflowAuditEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        entityType: "PURCHASE_ORDER",
+        entityId: order.id,
+        eventType: "CREATED",
+        idempotencyKey: input.idempotencyKey,
+        payload: { lineCount: input.lines.length },
+      },
+    });
+    return order;
+  });
+}
+
+export async function getPurchaseOrderForOrganization(
+  organizationId: string,
+  purchaseOrderId: string,
+) {
+  return db.purchaseOrder.findFirst({
+    where: { id: purchaseOrderId, organizationId },
+    include: {
+      supplier: true,
+      shippingRoute: true,
+      lines: {
+        include: {
+          supplierRow: {
+            include: {
+              normalizedOffer: true,
+              matchDecision: {
+                include: {
+                  selectedCandidate: { include: { catalogProduct: true } },
+                },
+              },
+            },
+          },
+          profitResult: true,
+          shortlistItem: true,
+        },
+        orderBy: { createdAt: "asc" },
+      },
+      exportJobs: { orderBy: { createdAt: "desc" } },
+    },
+  });
+}
+
+export async function validatePurchaseOrder(
+  organizationId: string,
+  purchaseOrderId: string,
+  expectedRevision: number,
+  idempotencyKey: string,
+) {
+  return db.$transaction(async (transaction) => {
+    const order = await transaction.purchaseOrder.findFirst({
+      where: { id: purchaseOrderId, organizationId },
+      include: { lines: true },
+    });
+    if (!order) return null;
+    if (order.revision !== expectedRevision)
+      throw new Error("PURCHASE_ORDER_REVISION_CONFLICT");
+    if (!order.lines.length) throw new Error("PURCHASE_ORDER_LINES_REQUIRED");
+    const staleEvidence = order.lines.some((line) => {
+      const snapshot = line.sourceSnapshot as {
+        scenarioType?: string;
+        evidence?: {
+          scenarios?: Record<
+            string,
+            {
+              evidence?: {
+                price?: { freshnessState?: string; freshUntil?: string };
+                feeQuote?: { freshnessState?: string; freshUntil?: string };
+              };
+            }
+          >;
+        };
+      };
+      const price =
+        snapshot.evidence?.scenarios?.[snapshot.scenarioType ?? ""]?.evidence
+          ?.price;
+      const fee =
+        snapshot.evidence?.scenarios?.[snapshot.scenarioType ?? ""]?.evidence
+          ?.feeQuote;
+      return (
+        !price ||
+        !fee ||
+        price.freshnessState !== "FRESH" ||
+        fee.freshnessState !== "FRESH" ||
+        !price.freshUntil ||
+        !fee.freshUntil ||
+        new Date(price.freshUntil).getTime() < Date.now() ||
+        new Date(fee.freshUntil).getTime() < Date.now()
+      );
+    });
+    if (staleEvidence) throw new Error("PURCHASE_ORDER_EVIDENCE_STALE");
+    await transaction.purchaseOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "VALIDATED",
+        validatedAt: new Date(),
+        revision: { increment: 1 },
+      },
+    });
+    await transaction.workflowAuditEvent.upsert({
+      where: {
+        organizationId_idempotencyKey: { organizationId, idempotencyKey },
+      },
+      create: {
+        organizationId,
+        entityType: "PURCHASE_ORDER",
+        entityId: order.id,
+        eventType: "VALIDATED",
+        idempotencyKey,
+      },
+      update: {},
+    });
+    return { ...order, status: "VALIDATED", revision: order.revision + 1 };
+  });
+}
+
+export async function queueExport(input: {
+  organizationId: string;
+  kind: "SHORTLIST" | "PURCHASE_ORDER" | "AUDIT_REPORT";
+  format: "CSV" | "XLSX";
+  shortlistId?: string;
+  purchaseOrderId?: string;
+  sourceRevision: number;
+  idempotencyKey: string;
+}) {
+  return db.$transaction(async (transaction) => {
+    const existing = await transaction.exportJob.findUnique({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+    if (existing) return existing;
+    const job = await transaction.exportJob.create({ data: { ...input } });
+    await transaction.outboxEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        exportJobId: job.id,
+        eventType: `export.requested.${job.id}`,
+        payload: { kind: "EXPORT", exportJobId: job.id },
+      },
+    });
+    await transaction.workflowAuditEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        entityType: "EXPORT",
+        entityId: job.id,
+        eventType: "REQUESTED",
+        idempotencyKey: input.idempotencyKey,
+        payload: { kind: input.kind, format: input.format },
+      },
+    });
+    return job;
+  });
+}
+
+export async function getExportForOrganization(
+  organizationId: string,
+  exportJobId: string,
+) {
+  return db.exportJob.findFirst({ where: { id: exportJobId, organizationId } });
+}

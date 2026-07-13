@@ -23,6 +23,7 @@ import {
 import { processMatching } from "./matching.js";
 import { processEnrichment } from "./enrichment.js";
 import { processProfitCalculation } from "./profit.js";
+import { processExport } from "./export.js";
 
 const terminalUploadErrorCodes = new Set([
   "EMPTY_FILE",
@@ -49,13 +50,26 @@ function errorCode(error: unknown): string {
 }
 
 export const mockScanWorker = new Worker<{
-  scanJobId: string;
+  scanJobId?: string;
+  exportJobId?: string;
   runId?: string;
-  kind?: "UPLOAD_INSPECT" | "NORMALIZE" | "MATCH" | "ENRICH" | "CALCULATE";
+  kind?:
+    | "UPLOAD_INSPECT"
+    | "NORMALIZE"
+    | "MATCH"
+    | "ENRICH"
+    | "CALCULATE"
+    | "EXPORT";
 }>(
   "mock-scan",
   async (job) => {
     try {
+      if (job.data.kind === "EXPORT") {
+        if (!job.data.exportJobId) throw new Error("export_job_id_missing");
+        await processExport(job.data.exportJobId);
+        return;
+      }
+      if (!job.data.scanJobId) throw new Error("scan_job_id_missing");
       if (job.data.kind === "UPLOAD_INSPECT") {
         const scan = await db.scanJob.findUnique({
           where: { id: job.data.scanJobId },
@@ -68,7 +82,7 @@ export const mockScanWorker = new Worker<{
           bytes,
         );
         await persistUploadInspection(
-          job.data.scanJobId,
+          job.data.scanJobId!,
           inspection.file_format,
           inspection,
           inspection.sheets.map((sheet) => ({
@@ -109,7 +123,7 @@ export const mockScanWorker = new Worker<{
           })),
         );
         await persistNormalizedRows(
-          job.data.scanJobId,
+          job.data.scanJobId!,
           sheet.id,
           normalized.rows.map((row) => ({
             sourceRowNumber: row.source_row_number,
@@ -139,6 +153,7 @@ export const mockScanWorker = new Worker<{
       const result = await requestMockScan(job.data.scanJobId);
       await completeMockScanJob(job.data.scanJobId, result.checksum, result);
     } catch (error) {
+      if (job.data.kind === "EXPORT") throw error;
       const status = failureStatusForAttempt(
         job.attemptsMade,
         job.opts.attempts,
@@ -148,7 +163,7 @@ export const mockScanWorker = new Worker<{
         terminalUploadErrorCodes.has(code) || status === "FAILED_FINAL";
       if (job.data.kind === "UPLOAD_INSPECT" || job.data.kind === "NORMALIZE") {
         await failUploadStage(
-          job.data.scanJobId,
+          job.data.scanJobId!,
           job.data.kind,
           terminal ? "FAILED_FINAL" : status,
           code,
@@ -163,7 +178,7 @@ export const mockScanWorker = new Worker<{
         }
         if (job.data.kind !== "CALCULATE")
           await failScanJob(
-            job.data.scanJobId,
+            job.data.scanJobId!,
             status,
             job.data.kind === "MATCH"
               ? "matching_failed"
