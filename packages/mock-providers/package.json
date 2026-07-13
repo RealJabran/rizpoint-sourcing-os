@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@rizpoint/provider-contracts": "workspace:*",
-    "@rizpoint/test-fixtures": "workspace:*"
+    "@rizpoint/test-fixtures": "workspace:*",
+    "decimal.js": "10.6.0"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

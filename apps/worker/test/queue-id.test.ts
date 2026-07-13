@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   failureStatusForAttempt,
+  isProfitCalculationAttemptRunnable,
   mockScanQueueJobId,
 } from "../src/job-policy.js";
 
@@ -13,6 +14,9 @@ describe("queue idempotency", () => {
       "scan-scan_123-normalize",
     );
     expect(mockScanQueueJobId("scan_123", "MATCH")).toBe("scan-scan_123-match");
+    expect(mockScanQueueJobId("scan_123", "CALCULATE", 2)).toBe(
+      "scan-scan_123-calculate-2",
+    );
     expect(mockScanQueueJobId("scan_123", "UPLOAD_INSPECT")).not.toBe(
       mockScanQueueJobId("scan_123", "NORMALIZE"),
     );
@@ -22,5 +26,12 @@ describe("queue idempotency", () => {
   it("marks only the last configured attempt as final", () => {
     expect(failureStatusForAttempt(0, 3)).toBe("FAILED_RETRYABLE");
     expect(failureStatusForAttempt(2, 3)).toBe("FAILED_FINAL");
+  });
+
+  it("only resumes pending or explicitly retryable calculations", () => {
+    expect(isProfitCalculationAttemptRunnable("PENDING")).toBe(true);
+    expect(isProfitCalculationAttemptRunnable("FAILED_RETRYABLE")).toBe(true);
+    expect(isProfitCalculationAttemptRunnable("RUNNING")).toBe(false);
+    expect(isProfitCalculationAttemptRunnable("COMPLETED")).toBe(false);
   });
 });

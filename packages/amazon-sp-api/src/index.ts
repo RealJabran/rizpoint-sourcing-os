@@ -372,6 +372,7 @@ export class AmazonSpApiProvider
     return feeEstimateSchema.parse({
       value: {
         totalFee: fee.Amount,
+        quotedPrice: request.price,
         currency: fee.CurrencyCode,
       },
       provenance: {

@@ -19,6 +19,10 @@ The proof slice uploads a local file through a short-lived signed URL, runs it t
 
 Phase 2 adds deterministic catalog matching after normalization. It cascades from supplied ASIN to exact UPC/EAN/GTIN, MPN plus brand, and title candidates. Candidates retain feature-level evidence, confidence, provider provenance, and freshness. Brand, model, size, pack, or variation contradictions cannot auto-accept. PackGuard prevents downstream profitability when case-to-sellable pack data is unknown or contradictory.
 
+## Phase 4 scope
+
+Phase 4 adds an idempotent, tenant-scoped calculation stage after enrichment. A configured financial policy, dated shipping route, verified PackGuard result, and fresh price, fee, history, and restriction evidence are required. It stores Decimal/NUMERIC scenario outputs and evidence snapshots. Missing or unsupported fee evidence remains explicit `PARTIAL_SUCCESS`; it never becomes an optimistic profit estimate.
+
 ## Future workflow
 
 `upload → inspect/map → normalize → match → enrich → calculate → review → shortlist → purchase order`

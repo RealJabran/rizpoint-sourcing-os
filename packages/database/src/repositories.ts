@@ -1,4 +1,8 @@
-import type { Prisma, ScanJobStatus } from "./generated/prisma/client.js";
+import type {
+  Prisma,
+  ProductRecommendation,
+  ScanJobStatus,
+} from "./generated/prisma/client.js";
 import { randomUUID } from "node:crypto";
 import { db } from "./client.js";
 
@@ -1091,11 +1095,13 @@ export async function persistEnrichmentItem(input: {
     provider: "MOCK_AMAZON" | "AMAZON_SP_API" | "MOCK_HISTORY";
     observedAt: Date;
     freshUntil: Date;
+    freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
     marketplaceId: string;
     providerReference?: string;
     payload: Prisma.InputJsonValue;
     primaryAmount?: string;
     secondaryAmount?: string;
+    quotedPrice?: string;
     currency?: string;
   }>;
   missingMetrics: string[];
@@ -1114,9 +1120,9 @@ export async function persistEnrichmentItem(input: {
         create: {
           ...observation,
           enrichmentItemId: input.enrichmentItemId,
-          freshnessState: "FRESH",
+          freshnessState: observation.freshnessState,
         },
-        update: { ...observation, freshnessState: "FRESH", errorCode: null },
+        update: { ...observation, errorCode: null },
       });
     }
     await transaction.enrichmentItem.update({
@@ -1194,6 +1200,361 @@ export async function listEnrichmentForScan(
       items: { include: { observations: true }, orderBy: { createdAt: "asc" } },
     },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function saveFinancialPolicy(input: {
+  organizationId: string;
+  currency: string;
+  minNetProfit: string;
+  minRoiPercent: string;
+  minMarginPercent: string;
+  maxStressLoss: string;
+  stressDiscountPercent: string;
+  minimumDemandScore?: number;
+  engineVersion: string;
+}) {
+  return db.financialPolicy.upsert({
+    where: { organizationId: input.organizationId },
+    create: {
+      ...input,
+      minimumDemandScore: input.minimumDemandScore ?? 1,
+    },
+    update: {
+      currency: input.currency,
+      minNetProfit: input.minNetProfit,
+      minRoiPercent: input.minRoiPercent,
+      minMarginPercent: input.minMarginPercent,
+      maxStressLoss: input.maxStressLoss,
+      stressDiscountPercent: input.stressDiscountPercent,
+      minimumDemandScore: input.minimumDemandScore ?? 1,
+      engineVersion: input.engineVersion,
+    },
+  });
+}
+
+export async function saveShippingRoute(input: {
+  organizationId: string;
+  name: string;
+  currency: string;
+  effectiveFrom: Date;
+  effectiveTo?: Date;
+  active?: boolean;
+  allocatedSupplierFreight: string;
+  prepFee: string;
+  labelingFee: string;
+  polybagFee: string;
+  bundleFee: string;
+  bubblewrapFee: string;
+  inboundShipping: string;
+  dutyOrTax: string;
+  storageAllowance: string;
+  returnAllowance: string;
+  otherCosts: string;
+}) {
+  return db.shippingRoute.upsert({
+    where: {
+      organizationId_name_effectiveFrom: {
+        organizationId: input.organizationId,
+        name: input.name,
+        effectiveFrom: input.effectiveFrom,
+      },
+    },
+    create: {
+      ...input,
+      active: input.active ?? true,
+    },
+    update: {
+      currency: input.currency,
+      effectiveTo: input.effectiveTo ?? null,
+      active: input.active ?? true,
+      allocatedSupplierFreight: input.allocatedSupplierFreight,
+      prepFee: input.prepFee,
+      labelingFee: input.labelingFee,
+      polybagFee: input.polybagFee,
+      bundleFee: input.bundleFee,
+      bubblewrapFee: input.bubblewrapFee,
+      inboundShipping: input.inboundShipping,
+      dutyOrTax: input.dutyOrTax,
+      storageAllowance: input.storageAllowance,
+      returnAllowance: input.returnAllowance,
+      otherCosts: input.otherCosts,
+    },
+  });
+}
+
+export async function saveBrandPolicy(input: {
+  organizationId: string;
+  brand: string;
+  status: "PROHIBITED" | "APPROVAL_REQUIRED" | "APPROVED" | "UNRESTRICTED";
+  approvalReference?: string;
+  expiresAt?: Date;
+}) {
+  return db.brandPolicy.upsert({
+    where: {
+      organizationId_brand: {
+        organizationId: input.organizationId,
+        brand: input.brand,
+      },
+    },
+    create: input,
+    update: {
+      status: input.status,
+      approvalReference: input.approvalReference ?? null,
+      expiresAt: input.expiresAt ?? null,
+    },
+  });
+}
+
+export async function getBrandPolicy(organizationId: string, brand: string) {
+  return db.brandPolicy.findUnique({
+    where: { organizationId_brand: { organizationId, brand } },
+  });
+}
+
+export async function queueProfitCalculation(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findFirst({
+      where: {
+        id: scanJobId,
+        organizationId,
+        jobType: "UPLOAD",
+        status: { in: ["COMPLETED", "PARTIAL_SUCCESS"] },
+      },
+    });
+    const policy = await transaction.financialPolicy.findUnique({
+      where: { organizationId },
+    });
+    if (!scan || !policy) return null;
+    const route = await transaction.shippingRoute.findFirst({
+      where: {
+        organizationId,
+        active: true,
+        effectiveFrom: { lte: new Date() },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+      },
+      select: { id: true },
+    });
+    if (!route) return null;
+    const idempotencyKey = `profit:${scanJobId}:${policy.engineVersion}:${policy.updatedAt.toISOString()}`;
+    const run = await transaction.profitCalculationRun.upsert({
+      where: {
+        organizationId_idempotencyKey: { organizationId, idempotencyKey },
+      },
+      create: {
+        organizationId,
+        scanJobId,
+        financialPolicyId: policy.id,
+        idempotencyKey,
+        status: "PENDING",
+        attemptCount: 1,
+      },
+      update: {
+        status: "PENDING",
+        completedAt: null,
+        attemptCount: { increment: 1 },
+      },
+    });
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "CALCULATING", completedAt: null },
+    });
+    await transaction.outboxEvent.upsert({
+      where: {
+        scanJobId_eventType: {
+          scanJobId,
+          eventType: "scan.calculate.requested",
+        },
+      },
+      create: {
+        organizationId,
+        scanJobId,
+        eventType: "scan.calculate.requested",
+        payload: { scanJobId, kind: "CALCULATE", runAttempt: run.attemptCount },
+      },
+      update: {
+        status: "PENDING",
+        claimToken: null,
+        claimedAt: null,
+        lastError: null,
+        payload: { scanJobId, kind: "CALCULATE", runAttempt: run.attemptCount },
+      },
+    });
+    return run;
+  });
+}
+
+export async function getProfitCalculationForProcessing(scanJobId: string) {
+  const run = await db.profitCalculationRun.findFirst({
+    where: {
+      scanJobId,
+      status: { in: ["PENDING", "FAILED_RETRYABLE"] },
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      financialPolicy: true,
+      organization: { select: { brandPolicies: true } },
+      scanJob: {
+        include: {
+          supplierRows: {
+            orderBy: { sourceRowNumber: "asc" },
+            include: {
+              normalizedOffer: true,
+              matchDecision: {
+                include: {
+                  selectedCandidate: {
+                    include: { catalogProduct: true, packGuard: true },
+                  },
+                },
+              },
+              enrichmentItems: { include: { observations: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!run) return null;
+  const routes = await db.shippingRoute.findMany({
+    where: {
+      organizationId: run.organizationId,
+      active: true,
+      effectiveFrom: { lte: new Date() },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+    },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  return { ...run, routes };
+}
+
+export async function markProfitCalculationRunning(runId: string) {
+  const run = await db.profitCalculationRun.findFirst({
+    where: { id: runId, status: { in: ["PENDING", "FAILED_RETRYABLE"] } },
+    select: { id: true },
+  });
+  if (!run) return false;
+  await db.profitCalculationRun.update({
+    where: { id: runId },
+    data: { status: "RUNNING" },
+  });
+  return true;
+}
+
+export async function failProfitCalculationForScan(
+  scanJobId: string,
+  status: "FAILED_RETRYABLE" | "FAILED_FINAL",
+) {
+  await db.profitCalculationRun.updateMany({
+    where: { scanJobId, status: { in: ["PENDING", "RUNNING"] } },
+    data: { status },
+  });
+}
+
+export async function persistProfitCalculation(input: {
+  organizationId: string;
+  runId: string;
+  results: Array<{
+    supplierRowId: string;
+    shippingRouteId: string;
+    status: "COMPLETED" | "PARTIAL_SUCCESS";
+    recommendation?: ProductRecommendation;
+    currentNetProfit?: string;
+    conservativeNetProfit?: string;
+    stressNetProfit?: string;
+    effectiveCogs?: string;
+    amazonFees?: string;
+    roiPercent?: string;
+    marginPercent?: string;
+    breakEvenPrice?: string;
+    engineVersion: string;
+    inputSnapshot: Prisma.InputJsonValue;
+    evidence: Prisma.InputJsonValue;
+    reasonCodes: Prisma.InputJsonValue;
+  }>;
+  status: "COMPLETED" | "PARTIAL_SUCCESS";
+}) {
+  await db.$transaction(async (transaction) => {
+    const run = await transaction.profitCalculationRun.findFirst({
+      where: { id: input.runId, organizationId: input.organizationId },
+      select: { id: true, scanJobId: true },
+    });
+    if (!run) return;
+    for (const result of input.results) {
+      await transaction.profitResult.upsert({
+        where: {
+          profitCalculationRunId_supplierRowId_shippingRouteId: {
+            profitCalculationRunId: input.runId,
+            supplierRowId: result.supplierRowId,
+            shippingRouteId: result.shippingRouteId,
+          },
+        },
+        create: {
+          ...result,
+          organizationId: input.organizationId,
+          profitCalculationRunId: input.runId,
+        },
+        update: result,
+      });
+    }
+    await transaction.profitCalculationRun.update({
+      where: { id: input.runId },
+      data: { status: input.status, completedAt: new Date() },
+    });
+    await transaction.scanJob.update({
+      where: { id: run.scanJobId },
+      data: {
+        status: input.status === "COMPLETED" ? "COMPLETED" : "PARTIAL_SUCCESS",
+        completedAt: new Date(),
+      },
+    });
+    await transaction.scanCheckpoint.upsert({
+      where: {
+        scanJobId_stage: { scanJobId: run.scanJobId, stage: "CALCULATE" },
+      },
+      create: {
+        scanJobId: run.scanJobId,
+        stage: "CALCULATE",
+        checksum: `${input.runId}:${input.results.length}`,
+        payload: {
+          runId: input.runId,
+          status: input.status,
+          resultCount: input.results.length,
+        },
+      },
+      update: {
+        checksum: `${input.runId}:${input.results.length}`,
+        payload: {
+          runId: input.runId,
+          status: input.status,
+          resultCount: input.results.length,
+        },
+      },
+    });
+  });
+}
+
+export async function listProfitResultsForScan(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.profitResult.findMany({
+    where: {
+      organizationId,
+      profitCalculationRun: { scanJobId, organizationId },
+    },
+    include: {
+      shippingRoute: {
+        select: { name: true, currency: true, effectiveFrom: true },
+      },
+      supplierRow: { select: { sourceRowNumber: true } },
+    },
+    orderBy: [
+      { supplierRow: { sourceRowNumber: "asc" } },
+      { updatedAt: "desc" },
+    ],
   });
 }
 

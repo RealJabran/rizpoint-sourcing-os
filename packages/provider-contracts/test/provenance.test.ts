@@ -17,11 +17,13 @@ describe("provider provenance", () => {
 describe("observed metrics", () => {
   it("requires provenance and decimal strings", () => {
     expect(() =>
-      feeEstimateSchema.parse({ value: { totalFee: "1.25", currency: "USD" } }),
+      feeEstimateSchema.parse({
+        value: { totalFee: "1.25", quotedPrice: "10.00", currency: "USD" },
+      }),
     ).toThrow();
     expect(
       feeEstimateSchema.parse({
-        value: { totalFee: "1.25", currency: "USD" },
+        value: { totalFee: "1.25", quotedPrice: "10.00", currency: "USD" },
         provenance: {
           provider: "mock",
           observedAt: "2026-07-12T00:00:00Z",

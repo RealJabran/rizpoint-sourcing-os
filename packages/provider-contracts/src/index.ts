@@ -132,7 +132,15 @@ export type CompetitivePricing = z.infer<typeof competitivePricingSchema>;
 export const feeEstimateSchema = observedMetricSchema(
   z.object({
     totalFee: decimalStringSchema,
+    quotedPrice: decimalStringSchema,
     currency: z.string().length(3),
+    model: z
+      .object({
+        fixedFee: decimalStringSchema,
+        percentageOfPrice: decimalStringSchema,
+        minimumFee: decimalStringSchema.optional(),
+      })
+      .optional(),
   }),
 );
 export type FeeEstimate = z.infer<typeof feeEstimateSchema>;

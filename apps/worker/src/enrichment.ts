@@ -19,9 +19,11 @@ type CachedResult = {
   metric: Metric;
   value: unknown;
   primaryAmount?: string;
+  quotedPrice?: string;
   currency?: string;
   provider: "MOCK_AMAZON" | "MOCK_HISTORY";
   observedAt: Date;
+  freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
   providerReference?: string;
 };
 
@@ -55,43 +57,69 @@ export async function processEnrichment(scanJobId: string) {
     const existing = cache.get(key);
     if (existing) return existing;
     const task = (async () => {
-      const observedAt = new Date();
       const value =
         metric === "CATALOG"
           ? await provider.getItem(asin, marketplace)
           : metric === "PRICING"
             ? await provider.getCompetitivePricing(asin, marketplace)
             : metric === "FEES"
-              ? await provider.estimateFees({
-                  asin,
-                  marketplace,
-                  fulfillmentChannel: "AMAZON",
-                  price: "17.99",
-                  currency: "USD",
-                  requestId: `${run.id}:${asin}`,
-                })
+              ? await (async () => {
+                  const pricing = await call(asin, "PRICING");
+                  const quotePrice = (
+                    pricing.value as { value?: { lowestPrice?: string } }
+                  ).value?.lowestPrice;
+                  if (!quotePrice) throw new ProviderError("INVALID_RESPONSE");
+                  return provider.estimateFees({
+                    asin,
+                    marketplace,
+                    fulfillmentChannel: "AMAZON",
+                    price: quotePrice,
+                    currency: "USD",
+                    requestId: `${run.id}:${asin}:${quotePrice}`,
+                  });
+                })()
               : metric === "RESTRICTIONS"
                 ? await provider.getRestrictions(asin, marketplace)
                 : await provider.getHistory(asin, marketplace);
       if (value == null) throw new ProviderError("NOT_FOUND");
       const observed = value as {
-        provenance?: { providerReference?: string };
-        value?: { lowestPrice?: string; totalFee?: string; currency?: string };
+        provenance?: {
+          providerReference?: string;
+          observedAt?: string;
+          freshnessState?: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
+        };
+        value?:
+          | {
+              lowestPrice?: string;
+              totalFee?: string;
+              quotedPrice?: string;
+              currency?: string;
+            }
+          | Array<{ currency?: string }>;
       };
+      const observedAt = new Date(observed.provenance?.observedAt ?? "");
+      if (Number.isNaN(observedAt.getTime())) {
+        throw new ProviderError("INVALID_RESPONSE");
+      }
       const amount =
         metric === "PRICING"
-          ? observed.value?.lowestPrice
+          ? (observed.value as { lowestPrice?: string } | undefined)
+              ?.lowestPrice
           : metric === "FEES"
-            ? observed.value?.totalFee
+            ? (observed.value as { totalFee?: string } | undefined)?.totalFee
             : undefined;
       const currency =
         metric === "PRICING" || metric === "FEES"
-          ? observed.value?.currency
-          : undefined;
+          ? (observed.value as { currency?: string } | undefined)?.currency
+          : metric === "HISTORY"
+            ? (observed.value as Array<{ currency?: string }> | undefined)?.[0]
+                ?.currency
+            : undefined;
       return {
         metric,
         value,
         observedAt,
+        freshnessState: observed.provenance?.freshnessState ?? "UNKNOWN",
         provider: (metric === "HISTORY"
           ? "MOCK_HISTORY"
           : "MOCK_AMAZON") as CachedResult["provider"],
@@ -99,6 +127,13 @@ export async function processEnrichment(scanJobId: string) {
           ? { providerReference: observed.provenance.providerReference }
           : {}),
         ...(amount ? { primaryAmount: amount } : {}),
+        ...(metric === "FEES" &&
+        (observed.value as { quotedPrice?: string } | undefined)?.quotedPrice
+          ? {
+              quotedPrice: (observed.value as { quotedPrice: string })
+                .quotedPrice,
+            }
+          : {}),
         ...(currency ? { currency } : {}),
       };
     })();
@@ -135,6 +170,7 @@ export async function processEnrichment(scanJobId: string) {
           provider: result.provider,
           observedAt: result.observedAt,
           freshUntil: new Date(result.observedAt.getTime() + FRESH_FOR_MS),
+          freshnessState: result.freshnessState,
           marketplaceId: marketplace.marketplaceId,
           payload: JSON.parse(JSON.stringify(result.value)),
           ...(result.providerReference
@@ -143,6 +179,7 @@ export async function processEnrichment(scanJobId: string) {
           ...(result.primaryAmount
             ? { primaryAmount: result.primaryAmount }
             : {}),
+          ...(result.quotedPrice ? { quotedPrice: result.quotedPrice } : {}),
           ...(result.currency ? { currency: result.currency } : {}),
         });
       } catch (error) {

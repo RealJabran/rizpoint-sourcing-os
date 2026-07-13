@@ -27,13 +27,13 @@ sequenceDiagram
   K->>P: checkpoint, rows/warnings, state event
 ```
 
-The transactional outbox prevents a request from creating a database job without a recoverable enqueue instruction. Claims carry a token and lease; stale claims are reclaimed. Delivery is at least once, so queue IDs include scan and stage (`UPLOAD_INSPECT`, `NORMALIZE`, `MATCH`, or `ENRICH`), while checkpoints and terminal writes are idempotent. Enrichment stores every metric independently with provider, observed time, expiry/freshness, and explicit missing-data flags; outages end as `PARTIAL_SUCCESS`, never silently complete data.
+The transactional outbox prevents a request from creating a database job without a recoverable enqueue instruction. Claims carry a token and lease; stale claims are reclaimed. Delivery is at least once, so queue IDs include scan and stage (`UPLOAD_INSPECT`, `NORMALIZE`, `MATCH`, `ENRICH`, or `CALCULATE`), while checkpoints and terminal writes are idempotent. Enrichment stores every metric independently with provider, observed time, expiry/freshness, fee quoted price, and explicit missing-data flags. Calculation reads persisted evidence, policy, and effective dated routes, then writes idempotent `ProfitCalculationRun` and `ProfitResult` records. Outages or missing inputs end as `PARTIAL_SUCCESS`, never silently complete data.
 
 The initial and upload migrations are additive and include reviewed manual `rollback.sql` files for disposable/local recovery. Production rollback requires a backup and change-review decision because it deletes job history and uploaded-row state.
 
 ## State model
 
-The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → COMPLETED → MATCHING → COMPLETED`; a terminal inspection or normalization error sets the upload to `REJECTED` and the scan to `FAILED_FINAL`. Retryable failures retain their in-progress upload state and are retried safely. A duplicate request is represented by one outbox event per stage and an idempotent persistence stage. Exactly one upload sheet may be selected for normalization.
+The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → COMPLETED → MATCHING → COMPLETED → ENRICHING → CALCULATING → COMPLETED|PARTIAL_SUCCESS`; a terminal inspection or normalization error sets the upload to `REJECTED` and the scan to `FAILED_FINAL`. Retryable failures retain their in-progress upload state and are retried safely. A duplicate request is represented by one outbox event per stage and an idempotent persistence stage. Exactly one upload sheet may be selected for normalization.
 
 ## Matching flow
 

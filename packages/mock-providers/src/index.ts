@@ -1,4 +1,5 @@
 import { mockCatalogProducts } from "@rizpoint/test-fixtures";
+import { Decimal } from "decimal.js";
 import type {
   CatalogIdentifier,
   CatalogProduct,
@@ -18,7 +19,7 @@ import type {
   Restrictions,
 } from "@rizpoint/provider-contracts";
 
-const observedAt = "2026-07-12T00:00:00Z";
+const observedAt = () => new Date().toISOString();
 
 function toCatalogProduct(
   product: (typeof mockCatalogProducts)[number],
@@ -28,7 +29,7 @@ function toCatalogProduct(
     identifiers: product.identifiers.map((identifier) => ({ ...identifier })),
     provenance: {
       provider: "mock-catalog",
-      observedAt,
+      observedAt: observedAt(),
       freshnessState: "FRESH",
       providerReference: product.asin,
     },
@@ -123,7 +124,7 @@ export class MockAmazonProvider
       ],
       provenance: {
         provider: "mock-amazon",
-        observedAt,
+        observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
       },
@@ -144,7 +145,7 @@ export class MockAmazonProvider
       },
       provenance: {
         provider: "mock-amazon",
-        observedAt,
+        observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
       },
@@ -152,11 +153,21 @@ export class MockAmazonProvider
   }
 
   async estimateFees(request: FeeEstimateRequest): Promise<FeeEstimate> {
+    const fixedFee = "2.0000";
+    const percentageOfPrice = "0.1500";
+    const totalFee = new Decimal(fixedFee)
+      .plus(new Decimal(request.price).mul(percentageOfPrice))
+      .toFixed(4);
     return {
-      value: { totalFee: "6.25", currency: request.currency },
+      value: {
+        totalFee,
+        quotedPrice: request.price,
+        currency: request.currency,
+        model: { fixedFee, percentageOfPrice },
+      },
       provenance: {
         provider: "mock-amazon",
-        observedAt,
+        observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: request.requestId,
       },
@@ -174,7 +185,7 @@ export class MockAmazonProvider
       },
       provenance: {
         provider: "mock-amazon",
-        observedAt,
+        observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
       },
@@ -189,14 +200,14 @@ export class MockAmazonProvider
     return {
       value: [
         {
-          observedAt,
+          observedAt: observedAt(),
           price: asin === "B000000001" ? "18.99" : "22.99",
           currency: "USD",
         },
       ],
       provenance: {
         provider: "mock-history",
-        observedAt,
+        observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
       },
@@ -207,7 +218,7 @@ export class MockAmazonProvider
     return {
       provider: "mock-amazon",
       status: "HEALTHY",
-      checkedAt: observedAt,
+      checkedAt: observedAt(),
     };
   }
 }

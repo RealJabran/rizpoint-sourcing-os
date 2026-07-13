@@ -28,7 +28,17 @@
 
 `CatalogProduct.observed_at` and `freshness_state`, together with its provider and provider reference, are mandatory. `MatchLookup` retains the raw provider response used for the decision. `PackGuardResult.cost_per_sellable_unit` is `NUMERIC(18,4)` and is null whenever PackGuard blocks.
 
-## Required future external metric fields
+## Phase 4 physical schema
+
+| Entity                 | Purpose                                                                                | Tenant boundary   |
+| ---------------------- | -------------------------------------------------------------------------------------- | ----------------- |
+| `FinancialPolicy`      | Decimal thresholds, currency, stress rule, and engine version.                         | `organization_id` |
+| `ShippingRoute`        | Effective-dated per-sellable freight, prep, inbound, storage, return, and other costs. | `organization_id` |
+| `BrandPolicy`          | Supplier/brand restriction and approval status.                                        | `organization_id` |
+| `ProfitCalculationRun` | Idempotent calculation run bound to a scan and policy.                                 | `organization_id` |
+| `ProfitResult`         | Route-specific NUMERIC outputs, evidence/input snapshots, and recommendation.          | `organization_id` |
+
+## Required external metric fields
 
 Every catalog, price, fee, restriction, or history observation must carry `provider`, `observed_at`, `freshness_state`, and the relevant provider reference. Cached or stale values may be displayed only with their freshness state.
 
@@ -38,4 +48,4 @@ Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal
 
 ## Future conceptual entities
 
-Cost scenarios, profit results, shortlists, purchase orders, and audit entities remain planned.
+Shortlists, purchase orders, and further audit entities remain planned.

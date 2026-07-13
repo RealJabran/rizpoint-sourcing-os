@@ -43,6 +43,7 @@ it("returns provenance-bearing enrichment fixtures", async () => {
     provider.getRestrictions("B000000001", marketplace),
   ]);
   expect(pricing.provenance.observedAt).toBeTruthy();
-  expect(fees.value.totalFee).toBe("6.25");
+  expect(fees.value.totalFee).toBe("3.5000");
+  expect(fees.value.quotedPrice).toBe("10.00");
   expect(restrictions.value.status).toBe("ALLOWED");
 });
