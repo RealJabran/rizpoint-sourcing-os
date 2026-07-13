@@ -52,3 +52,33 @@ export type MatchDecisionStatus =
 
 export type MatchEvidenceOutcome =
   "AGREEMENT" | "CONTRADICTION" | "UNKNOWN" | "NOT_APPLICABLE";
+
+/** Phase 5 keeps financial edits typed and auditable instead of accepting free-form JSON keys. */
+export const ANALYSIS_COST_FIELDS = [
+  "SUPPLIER_COST_PER_SELLABLE_UNIT",
+  "ALLOCATED_SUPPLIER_FREIGHT",
+  "PREP_FEE",
+  "LABELING_FEE",
+  "POLYBAG_FEE",
+  "BUNDLE_FEE",
+  "BUBBLEWRAP_FEE",
+  "INBOUND_SHIPPING",
+  "DUTY_OR_TAX",
+  "STORAGE_ALLOWANCE",
+  "RETURN_ALLOWANCE",
+  "OTHER_COSTS",
+] as const;
+
+export type AnalysisCostField = (typeof ANALYSIS_COST_FIELDS)[number];
+
+export const ANALYSIS_SORT_FIELDS = [
+  "sourceRowNumber",
+  "recommendation",
+  "conservativeNetProfit",
+  "roiPercent",
+  "marginPercent",
+  "breakEvenPrice",
+] as const;
+
+export type AnalysisSortField = (typeof ANALYSIS_SORT_FIELDS)[number];
+export const ANALYSIS_VIEW_SCHEMA_VERSION = 1;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 
 const baseUrl = process.env.WEB_BASE_URL ?? "http://localhost:3000";
 const catalog = [
@@ -231,4 +232,96 @@ const results = await poll(async () => {
 assert.equal(results[0]?.recommendation, "BUY");
 assert.ok(results[0]?.evidence);
 assert.ok(results[0]?.inputSnapshot);
+
+const workspaceResponse = await fetch(
+  `${baseUrl}/api/scans/${upload.scanId}/results?limit=100`,
+);
+assert.equal(workspaceResponse.status, 200);
+const workspace = (await workspaceResponse.json()) as {
+  rows: Array<{
+    id: string;
+    currentNetProfit: string | null;
+    evidence?: unknown;
+    supplierRow: {
+      profitCostOverrides: Array<{ revision: number; status: string }>;
+    };
+  }>;
+};
+const workspaceResult = workspace.rows[0];
+assert.ok(workspaceResult);
+assert.equal(workspaceResult?.evidence, undefined);
+assert.ok(workspaceResult?.currentNetProfit);
+
+assert.equal(
+  (
+    await fetch(`${baseUrl}/api/analysis-views`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        scanId: upload.scanId,
+        name: `phase-five-${Date.now()}`,
+        queryState: {
+          schemaVersion: 1,
+          recommendation: "BUY",
+          status: "COMPLETED",
+          minRoiPercent: "-5",
+          sort: "roiPercent",
+          direction: "desc",
+          visibleGroups: ["identity", "decision", "economics"],
+        },
+      }),
+    })
+  ).status,
+  201,
+);
+
+assert.equal(
+  (
+    await fetch(`${baseUrl}/api/results/${workspaceResult?.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        expectedRevision: 0,
+        idempotencyKey: randomUUID(),
+        reason: "Integration cost correction",
+        values: [{ field: "SUPPLIER_COST_PER_SELLABLE_UNIT", value: "0.60" }],
+      }),
+    })
+  ).status,
+  202,
+);
+const recalculated = await poll(async () => {
+  const response = await fetch(
+    `${baseUrl}/api/scans/${upload.scanId}/results?limit=100`,
+  );
+  const value = (await response.json()) as typeof workspace;
+  const result = value.rows[0];
+  return result?.supplierRow.profitCostOverrides[0]?.status === "APPLIED"
+    ? result
+    : null;
+}, "targeted recalculation");
+const replayResponse = await fetch(
+  `${baseUrl}/api/results/${recalculated.id}/replay`,
+  { method: "POST" },
+);
+assert.equal(replayResponse.status, 200);
+assert.equal(
+  ((await replayResponse.json()) as { matchesPersisted: boolean })
+    .matchesPersisted,
+  true,
+);
+assert.equal(
+  (
+    await fetch(`${baseUrl}/api/results/bulk-action`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "RECALCULATE",
+        resultIds: [recalculated.id],
+        idempotencyKey: randomUUID(),
+      }),
+    })
+  ).status,
+  202,
+);
 console.log(`integration profit calculation completed: ${upload.scanId}`);

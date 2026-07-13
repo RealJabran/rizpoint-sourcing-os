@@ -13,9 +13,12 @@
   },
   "dependencies": {
     "@rizpoint/database": "workspace:*",
+    "@rizpoint/domain": "workspace:*",
     "@rizpoint/mock-providers": "workspace:*",
     "@rizpoint/object-storage": "workspace:*",
     "@rizpoint/profit-engine": "workspace:*",
+    "@tanstack/react-table": "8.21.3",
+    "@tanstack/react-virtual": "3.14.6",
     "decimal.js": "10.6.0",
     "next": "16.2.10",
     "react": "19.2.7",

@@ -23,6 +23,10 @@ Phase 2 adds deterministic catalog matching after normalization. It cascades fro
 
 Phase 4 adds an idempotent, tenant-scoped calculation stage after enrichment. A configured financial policy, dated shipping route, verified PackGuard result, and fresh price, fee, history, and restriction evidence are required. It stores Decimal/NUMERIC scenario outputs and evidence snapshots. Missing or unsupported fee evidence remains explicit `PARTIAL_SUCCESS`; it never becomes an optimistic profit estimate.
 
+## Phase 5 scope
+
+Phase 5 adds a server-windowed analysis workspace with a virtualized grid, filters, saved views, typed inline cost/stress assumptions, bounded bulk recalculation, evidence inspection, and read-only decision replay. Overrides are versioned and reasoned; they never mutate supplier source rows or provider evidence.
+
 ## Future workflow
 
 `upload → inspect/map → normalize → match → enrich → calculate → review → shortlist → purchase order`

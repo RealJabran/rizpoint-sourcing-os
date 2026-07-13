@@ -12,6 +12,10 @@ export default function HomePage() {
       <p>
         <Link href="/uploads">Upload and map a supplier catalog</Link>
       </p>
+      <p>
+        Complete matching, enrichment, and calculation, then open the scan’s
+        Analysis workspace.
+      </p>
     </main>
   );
 }

@@ -225,6 +225,32 @@ enum ProfitScenarioType {
   MAP
 }
 
+enum ProfitCalculationScope {
+  FULL
+  TARGETED
+}
+
+enum AnalysisOverrideStatus {
+  PENDING_RECALCULATION
+  APPLIED
+  FAILED
+}
+
+enum CostOverrideField {
+  SUPPLIER_COST_PER_SELLABLE_UNIT
+  ALLOCATED_SUPPLIER_FREIGHT
+  PREP_FEE
+  LABELING_FEE
+  POLYBAG_FEE
+  BUNDLE_FEE
+  BUBBLEWRAP_FEE
+  INBOUND_SHIPPING
+  DUTY_OR_TAX
+  STORAGE_ALLOWANCE
+  RETURN_ALLOWANCE
+  OTHER_COSTS
+}
+
 enum ProductRecommendation {
   BUY
   WATCH
@@ -242,23 +268,26 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  scanJobs ScanJob[]
-  outbox   OutboxEvent[]
-  suppliers Supplier[]
-  uploads Upload[]
-  sheetProfiles SheetProfile[]
-  matchLookups MatchLookup[]
-  listingCandidates ListingCandidate[]
-  matchDecisions MatchDecision[]
-  providerConnections ProviderConnection[]
+  scanJobs                    ScanJob[]
+  outbox                      OutboxEvent[]
+  suppliers                   Supplier[]
+  uploads                     Upload[]
+  sheetProfiles               SheetProfile[]
+  matchLookups                MatchLookup[]
+  listingCandidates           ListingCandidate[]
+  matchDecisions              MatchDecision[]
+  providerConnections         ProviderConnection[]
   providerAuthorizationStates ProviderAuthorizationState[]
-  enrichmentRuns EnrichmentRun[]
-  providerCallAttempts ProviderCallAttempt[]
-  financialPolicy FinancialPolicy?
-  shippingRoutes ShippingRoute[]
-  brandPolicies BrandPolicy[]
-  profitCalculationRuns ProfitCalculationRun[]
-  profitResults ProfitResult[]
+  enrichmentRuns              EnrichmentRun[]
+  providerCallAttempts        ProviderCallAttempt[]
+  financialPolicy             FinancialPolicy?
+  shippingRoutes              ShippingRoute[]
+  brandPolicies               BrandPolicy[]
+  profitCalculationRuns       ProfitCalculationRun[]
+  profitResults               ProfitResult[]
+  analysisViews               AnalysisView[]
+  profitCostOverrides         ProfitCostOverride[]
+  profitCostOverrideEvents    ProfitCostOverrideEvent[]
 
   @@map("organizations")
 }
@@ -277,17 +306,20 @@ model ScanJob {
   updatedAt      DateTime      @updatedAt @map("updated_at")
   completedAt    DateTime?     @map("completed_at")
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  supplier     Supplier?        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  upload       Upload?          @relation(fields: [uploadId], references: [id], onDelete: Restrict)
-  checkpoints  ScanCheckpoint[]
-  events       ScanEvent[]
-  outboxEvents OutboxEvent[]
-  columnMappings ColumnMapping[]
-  supplierRows SupplierRow[]
-  matchLookups MatchLookup[]
-  enrichmentRuns EnrichmentRun[]
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplier              Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  upload                Upload?                @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+  checkpoints           ScanCheckpoint[]
+  events                ScanEvent[]
+  outboxEvents          OutboxEvent[]
+  columnMappings        ColumnMapping[]
+  supplierRows          SupplierRow[]
+  matchLookups          MatchLookup[]
+  enrichmentRuns        EnrichmentRun[]
   profitCalculationRuns ProfitCalculationRun[]
+  profitResults         ProfitResult[]
+  analysisViews         AnalysisView[]
+  profitCostOverrides   ProfitCostOverride[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status])
@@ -304,9 +336,9 @@ model Supplier {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  uploads Upload[]
-  scans ScanJob[]
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploads       Upload[]
+  scans         ScanJob[]
   sheetProfiles SheetProfile[]
 
   @@unique([organizationId, code])
@@ -331,10 +363,10 @@ model Upload {
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  sheets UploadSheet[]
-  scan ScanJob?
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplier     Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  sheets       UploadSheet[]
+  scan         ScanJob?
 
   @@index([organizationId, status])
   @@index([supplierId, createdAt])
@@ -342,20 +374,20 @@ model Upload {
 }
 
 model UploadSheet {
-  id                  String   @id @default(cuid())
-  uploadId            String   @map("upload_id")
-  sheetIndex          Int      @map("sheet_index")
-  name                String
-  rowCount            Int      @map("row_count")
-  columnCount         Int      @map("column_count")
-  headerCandidates    Json     @map("header_candidates")
-  selectedHeaderRow   Int?     @map("selected_header_row")
-  columns             Json
-  preview             Json
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(cuid())
+  uploadId          String   @map("upload_id")
+  sheetIndex        Int      @map("sheet_index")
+  name              String
+  rowCount          Int      @map("row_count")
+  columnCount       Int      @map("column_count")
+  headerCandidates  Json     @map("header_candidates")
+  selectedHeaderRow Int?     @map("selected_header_row")
+  columns           Json
+  preview           Json
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  upload       Upload        @relation(fields: [uploadId], references: [id], onDelete: Cascade)
   supplierRows SupplierRow[]
 
   @@unique([uploadId, sheetIndex])
@@ -363,20 +395,20 @@ model UploadSheet {
 }
 
 model SheetProfile {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
-  supplierId     String   @map("supplier_id")
+  id             String      @id @default(cuid())
+  organizationId String      @map("organization_id")
+  supplierId     String      @map("supplier_id")
   name           String
   fileFormat     FileFormat? @map("file_format")
-  sheetName      String?   @map("sheet_name")
-  headerRow      Int       @map("header_row")
+  sheetName      String?     @map("sheet_name")
+  headerRow      Int         @map("header_row")
   mapping        Json
-  version        Int      @default(1)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  version        Int         @default(1)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
 
   @@unique([supplierId, name])
   @@map("sheet_profiles")
@@ -409,14 +441,16 @@ model SupplierRow {
   createdAt           DateTime            @default(now()) @map("created_at")
   updatedAt           DateTime            @updatedAt @map("updated_at")
 
-  scanJob ScanJob @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
-  uploadSheet UploadSheet @relation(fields: [uploadSheetId], references: [id], onDelete: Restrict)
-  normalizedOffer NormalizedOffer?
-  warnings NormalizationWarning[]
-  listingCandidates ListingCandidate[]
-  matchDecision MatchDecision?
-  enrichmentItems EnrichmentItem[]
-  profitResults ProfitResult[]
+  scanJob                  ScanJob                   @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  uploadSheet              UploadSheet               @relation(fields: [uploadSheetId], references: [id], onDelete: Restrict)
+  normalizedOffer          NormalizedOffer?
+  warnings                 NormalizationWarning[]
+  listingCandidates        ListingCandidate[]
+  matchDecision            MatchDecision?
+  enrichmentItems          EnrichmentItem[]
+  profitResults            ProfitResult[]
+  profitCostOverrides      ProfitCostOverride[]
+  profitCalculationTargets ProfitCalculationTarget[]
 
   @@unique([scanJobId, sourceRowNumber])
   @@index([scanJobId, normalizationStatus])
@@ -434,7 +468,7 @@ model NormalizedOffer {
   mpn           String?
   description   String?
   brand         String?
-  unitCost      Decimal? @db.Decimal(18, 4) @map("unit_cost")
+  unitCost      Decimal? @map("unit_cost") @db.Decimal(18, 4)
   currency      String?
   quantity      Int?
   caseCount     Int?     @map("case_count")
@@ -542,11 +576,11 @@ model ListingCandidate {
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
-  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  supplierRow          SupplierRow    @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
-  catalogProduct       CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplierRow          SupplierRow      @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  catalogProduct       CatalogProduct   @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
   evidence             MatchEvidence[]
-  selectedForDecisions MatchDecision[] @relation("selected_candidate")
+  selectedForDecisions MatchDecision[]  @relation("selected_candidate")
   packGuard            PackGuardResult?
 
   @@unique([supplierRowId, catalogProductId, source])
@@ -583,9 +617,9 @@ model MatchDecision {
   createdAt           DateTime            @default(now()) @map("created_at")
   updatedAt           DateTime            @updatedAt @map("updated_at")
 
-  organization       Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  supplierRow        SupplierRow       @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
-  selectedCandidate  ListingCandidate? @relation("selected_candidate", fields: [selectedCandidateId], references: [id], onDelete: SetNull)
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplierRow       SupplierRow       @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  selectedCandidate ListingCandidate? @relation("selected_candidate", fields: [selectedCandidateId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, updatedAt])
   @@map("match_decisions")
@@ -599,7 +633,7 @@ model PackGuardResult {
   amazonUnitsPerPack   Int?            @map("amazon_units_per_pack")
   sellableUnitsPerCase Int?            @map("sellable_units_per_case")
   remainderUnits       Int?            @map("remainder_units")
-  costPerSellableUnit  Decimal?        @db.Decimal(18, 4) @map("cost_per_sellable_unit")
+  costPerSellableUnit  Decimal?        @map("cost_per_sellable_unit") @db.Decimal(18, 4)
   reasonCode           String          @map("reason_code")
   createdAt            DateTime        @default(now()) @map("created_at")
   updatedAt            DateTime        @updatedAt @map("updated_at")
@@ -630,9 +664,9 @@ model ProviderConnection {
   createdAt             DateTime                 @default(now()) @map("created_at")
   updatedAt             DateTime                 @updatedAt @map("updated_at")
 
-  organization Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization        Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   authorizationStates ProviderAuthorizationState[]
-  enrichmentRuns EnrichmentRun[]
+  enrichmentRuns      EnrichmentRun[]
 
   @@unique([organizationId, provider, marketplaceId])
   @@index([organizationId, status])
@@ -640,19 +674,19 @@ model ProviderConnection {
 }
 
 model ProviderAuthorizationState {
-  id                   String          @id @default(cuid())
-  organizationId       String          @map("organization_id")
-  providerConnectionId String?         @map("provider_connection_id")
+  id                   String       @id @default(cuid())
+  organizationId       String       @map("organization_id")
+  providerConnectionId String?      @map("provider_connection_id")
   provider             ProviderKind
-  stateHash            String          @unique @map("state_hash")
-  marketplaceId        String          @map("marketplace_id")
+  stateHash            String       @unique @map("state_hash")
+  marketplaceId        String       @map("marketplace_id")
   region               String
-  returnPath           String          @map("return_path")
-  expiresAt            DateTime        @map("expires_at")
-  consumedAt           DateTime?       @map("consumed_at")
-  createdAt            DateTime        @default(now()) @map("created_at")
+  returnPath           String       @map("return_path")
+  expiresAt            DateTime     @map("expires_at")
+  consumedAt           DateTime?    @map("consumed_at")
+  createdAt            DateTime     @default(now()) @map("created_at")
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   providerConnection ProviderConnection? @relation(fields: [providerConnectionId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, expiresAt])
@@ -671,10 +705,10 @@ model EnrichmentRun {
   createdAt            DateTime            @default(now()) @map("created_at")
   updatedAt            DateTime            @updatedAt @map("updated_at")
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  scanJob ScanJob                @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
-  providerConnection ProviderConnection? @relation(fields: [providerConnectionId], references: [id], onDelete: Restrict)
-  items EnrichmentItem[]
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scanJob              ScanJob               @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  providerConnection   ProviderConnection?   @relation(fields: [providerConnectionId], references: [id], onDelete: Restrict)
+  items                EnrichmentItem[]
   providerCallAttempts ProviderCallAttempt[]
 
   @@unique([scanJobId, providerConnectionId])
@@ -693,9 +727,9 @@ model EnrichmentItem {
   createdAt       DateTime             @default(now()) @map("created_at")
   updatedAt       DateTime             @updatedAt @map("updated_at")
 
-  enrichmentRun EnrichmentRun @relation(fields: [enrichmentRunId], references: [id], onDelete: Cascade)
-  supplierRow SupplierRow     @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
-  observations ProviderObservation[]
+  enrichmentRun EnrichmentRun         @relation(fields: [enrichmentRunId], references: [id], onDelete: Cascade)
+  supplierRow   SupplierRow           @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  observations  ProviderObservation[]
 
   @@unique([enrichmentRunId, supplierRowId])
   @@index([enrichmentRunId, status])
@@ -703,25 +737,25 @@ model EnrichmentItem {
 }
 
 model ProviderObservation {
-  id               String                @id @default(cuid())
-  enrichmentItemId String                @map("enrichment_item_id")
-  metricType       EnrichmentMetricType  @map("metric_type")
-  provider         ProviderKind
-  providerReference String?               @map("provider_reference")
-  marketplaceId    String                 @map("marketplace_id")
-  observedAt       DateTime               @map("observed_at")
-  freshUntil       DateTime               @map("fresh_until")
-  freshnessState   ExternalFreshnessState @map("freshness_state")
-  currency         String?
-  primaryAmount    Decimal?               @db.Decimal(18, 4) @map("primary_amount")
-  secondaryAmount  Decimal?               @db.Decimal(18, 4) @map("secondary_amount")
-  quotedPrice      Decimal?               @db.Decimal(18, 4) @map("quoted_price")
-  rank             Int?
-  payload          Json                   @map("payload")
-  responseChecksum String?                @map("response_checksum")
-  errorCode        String?                @map("error_code")
-  createdAt        DateTime               @default(now()) @map("created_at")
-  updatedAt        DateTime               @updatedAt @map("updated_at")
+  id                String                 @id @default(cuid())
+  enrichmentItemId  String                 @map("enrichment_item_id")
+  metricType        EnrichmentMetricType   @map("metric_type")
+  provider          ProviderKind
+  providerReference String?                @map("provider_reference")
+  marketplaceId     String                 @map("marketplace_id")
+  observedAt        DateTime               @map("observed_at")
+  freshUntil        DateTime               @map("fresh_until")
+  freshnessState    ExternalFreshnessState @map("freshness_state")
+  currency          String?
+  primaryAmount     Decimal?               @map("primary_amount") @db.Decimal(18, 4)
+  secondaryAmount   Decimal?               @map("secondary_amount") @db.Decimal(18, 4)
+  quotedPrice       Decimal?               @map("quoted_price") @db.Decimal(18, 4)
+  rank              Int?
+  payload           Json                   @map("payload")
+  responseChecksum  String?                @map("response_checksum")
+  errorCode         String?                @map("error_code")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
 
   enrichmentItem EnrichmentItem @relation(fields: [enrichmentItemId], references: [id], onDelete: Cascade)
 
@@ -731,49 +765,51 @@ model ProviderObservation {
 }
 
 model FinancialPolicy {
-  id                  String   @id @default(cuid())
-  organizationId      String   @unique @map("organization_id")
-  currency            String
-  engineVersion       String   @map("engine_version")
-  minNetProfit        Decimal  @db.Decimal(18, 4) @map("min_net_profit")
-  minRoiPercent       Decimal  @db.Decimal(12, 4) @map("min_roi_percent")
-  minMarginPercent    Decimal  @db.Decimal(12, 4) @map("min_margin_percent")
-  maxStressLoss       Decimal  @db.Decimal(18, 4) @map("max_stress_loss")
-  stressDiscountPercent Decimal @db.Decimal(12, 4) @map("stress_discount_percent")
-  minimumDemandScore  Int      @default(1) @map("minimum_demand_score")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id                    String   @id @default(cuid())
+  organizationId        String   @unique @map("organization_id")
+  currency              String
+  engineVersion         String   @map("engine_version")
+  minNetProfit          Decimal  @map("min_net_profit") @db.Decimal(18, 4)
+  minRoiPercent         Decimal  @map("min_roi_percent") @db.Decimal(12, 4)
+  minMarginPercent      Decimal  @map("min_margin_percent") @db.Decimal(12, 4)
+  maxStressLoss         Decimal  @map("max_stress_loss") @db.Decimal(18, 4)
+  stressDiscountPercent Decimal  @map("stress_discount_percent") @db.Decimal(12, 4)
+  minimumDemandScore    Int      @default(1) @map("minimum_demand_score")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   calculationRuns ProfitCalculationRun[]
 
   @@map("financial_policies")
 }
 
 model ShippingRoute {
-  id                       String   @id @default(cuid())
-  organizationId           String   @map("organization_id")
+  id                       String    @id @default(cuid())
+  organizationId           String    @map("organization_id")
   name                     String
   currency                 String
-  active                   Boolean  @default(true)
-  effectiveFrom            DateTime @map("effective_from")
+  active                   Boolean   @default(true)
+  effectiveFrom            DateTime  @map("effective_from")
   effectiveTo              DateTime? @map("effective_to")
-  allocatedSupplierFreight Decimal  @db.Decimal(18, 4) @map("allocated_supplier_freight")
-  prepFee                  Decimal  @db.Decimal(18, 4) @map("prep_fee")
-  labelingFee              Decimal  @db.Decimal(18, 4) @map("labeling_fee")
-  polybagFee               Decimal  @db.Decimal(18, 4) @map("polybag_fee")
-  bundleFee                Decimal  @db.Decimal(18, 4) @map("bundle_fee")
-  bubblewrapFee            Decimal  @db.Decimal(18, 4) @map("bubblewrap_fee")
-  inboundShipping          Decimal  @db.Decimal(18, 4) @map("inbound_shipping")
-  dutyOrTax                Decimal  @db.Decimal(18, 4) @map("duty_or_tax")
-  storageAllowance         Decimal  @db.Decimal(18, 4) @map("storage_allowance")
-  returnAllowance          Decimal  @db.Decimal(18, 4) @map("return_allowance")
-  otherCosts               Decimal  @db.Decimal(18, 4) @map("other_costs")
-  createdAt                DateTime @default(now()) @map("created_at")
-  updatedAt                DateTime @updatedAt @map("updated_at")
+  allocatedSupplierFreight Decimal   @map("allocated_supplier_freight") @db.Decimal(18, 4)
+  prepFee                  Decimal   @map("prep_fee") @db.Decimal(18, 4)
+  labelingFee              Decimal   @map("labeling_fee") @db.Decimal(18, 4)
+  polybagFee               Decimal   @map("polybag_fee") @db.Decimal(18, 4)
+  bundleFee                Decimal   @map("bundle_fee") @db.Decimal(18, 4)
+  bubblewrapFee            Decimal   @map("bubblewrap_fee") @db.Decimal(18, 4)
+  inboundShipping          Decimal   @map("inbound_shipping") @db.Decimal(18, 4)
+  dutyOrTax                Decimal   @map("duty_or_tax") @db.Decimal(18, 4)
+  storageAllowance         Decimal   @map("storage_allowance") @db.Decimal(18, 4)
+  returnAllowance          Decimal   @map("return_allowance") @db.Decimal(18, 4)
+  otherCosts               Decimal   @map("other_costs") @db.Decimal(18, 4)
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  profitResults ProfitResult[]
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  profitResults            ProfitResult[]
+  profitCostOverrides      ProfitCostOverride[]
+  profitCalculationTargets ProfitCalculationTarget[]
 
   @@unique([organizationId, name, effectiveFrom])
   @@index([organizationId, active, effectiveFrom])
@@ -798,21 +834,25 @@ model BrandPolicy {
 }
 
 model ProfitCalculationRun {
-  id              String                  @id @default(cuid())
-  organizationId  String                  @map("organization_id")
-  scanJobId       String                  @map("scan_job_id")
-  financialPolicyId String                 @map("financial_policy_id")
-  idempotencyKey  String                  @map("idempotency_key")
-  status          ProfitCalculationStatus @default(PENDING)
-  attemptCount    Int                     @default(0) @map("attempt_count")
-  completedAt     DateTime?               @map("completed_at")
-  createdAt       DateTime                @default(now()) @map("created_at")
-  updatedAt       DateTime                @updatedAt @map("updated_at")
+  id                String                  @id @default(cuid())
+  organizationId    String                  @map("organization_id")
+  scanJobId         String                  @map("scan_job_id")
+  financialPolicyId String                  @map("financial_policy_id")
+  idempotencyKey    String                  @map("idempotency_key")
+  scope             ProfitCalculationScope  @default(FULL)
+  requestChecksum   String?                 @map("request_checksum")
+  status            ProfitCalculationStatus @default(PENDING)
+  attemptCount      Int                     @default(0) @map("attempt_count")
+  completedAt       DateTime?               @map("completed_at")
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  scanJob ScanJob             @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
-  financialPolicy FinancialPolicy @relation(fields: [financialPolicyId], references: [id], onDelete: Restrict)
-  results ProfitResult[]
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scanJob         ScanJob                   @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  financialPolicy FinancialPolicy           @relation(fields: [financialPolicyId], references: [id], onDelete: Restrict)
+  results         ProfitResult[]
+  targets         ProfitCalculationTarget[]
+  overrides       ProfitCostOverride[]      @relation("override_calculation_run")
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, scanJobId, status])
@@ -820,56 +860,152 @@ model ProfitCalculationRun {
 }
 
 model ProfitResult {
-  id                    String                @id @default(cuid())
-  organizationId        String                @map("organization_id")
-  profitCalculationRunId String               @map("profit_calculation_run_id")
-  supplierRowId         String                @map("supplier_row_id")
-  shippingRouteId       String                @map("shipping_route_id")
-  status                ProfitCalculationStatus
-  recommendation        ProductRecommendation?
-  scenarioType          ProfitScenarioType    @default(CURRENT) @map("scenario_type")
-  currentNetProfit      Decimal?              @db.Decimal(18, 4) @map("current_net_profit")
-  conservativeNetProfit Decimal?              @db.Decimal(18, 4) @map("conservative_net_profit")
-  stressNetProfit       Decimal?              @db.Decimal(18, 4) @map("stress_net_profit")
-  effectiveCogs         Decimal?              @db.Decimal(18, 4) @map("effective_cogs")
-  amazonFees            Decimal?              @db.Decimal(18, 4) @map("amazon_fees")
-  roiPercent            Decimal?              @db.Decimal(12, 4) @map("roi_percent")
-  marginPercent         Decimal?              @db.Decimal(12, 4) @map("margin_percent")
-  breakEvenPrice        Decimal?              @db.Decimal(18, 4) @map("break_even_price")
-  engineVersion         String                @map("engine_version")
-  inputSnapshot         Json                  @map("input_snapshot")
-  evidence              Json                  @map("evidence")
-  reasonCodes           Json                  @map("reason_codes")
-  overrides             Json                  @default("[]")
-  createdAt             DateTime              @default(now()) @map("created_at")
-  updatedAt             DateTime              @updatedAt @map("updated_at")
+  id                      String                  @id @default(cuid())
+  organizationId          String                  @map("organization_id")
+  scanJobId               String                  @map("scan_job_id")
+  profitCalculationRunId  String                  @map("profit_calculation_run_id")
+  supplierRowId           String                  @map("supplier_row_id")
+  shippingRouteId         String                  @map("shipping_route_id")
+  status                  ProfitCalculationStatus
+  recommendation          ProductRecommendation?
+  scenarioType            ProfitScenarioType      @default(CURRENT) @map("scenario_type")
+  currentNetProfit        Decimal?                @map("current_net_profit") @db.Decimal(18, 4)
+  conservativeNetProfit   Decimal?                @map("conservative_net_profit") @db.Decimal(18, 4)
+  stressNetProfit         Decimal?                @map("stress_net_profit") @db.Decimal(18, 4)
+  effectiveCogs           Decimal?                @map("effective_cogs") @db.Decimal(18, 4)
+  amazonFees              Decimal?                @map("amazon_fees") @db.Decimal(18, 4)
+  roiPercent              Decimal?                @map("roi_percent") @db.Decimal(12, 4)
+  marginPercent           Decimal?                @map("margin_percent") @db.Decimal(12, 4)
+  breakEvenPrice          Decimal?                @map("break_even_price") @db.Decimal(18, 4)
+  engineVersion           String                  @map("engine_version")
+  inputSnapshot           Json                    @map("input_snapshot")
+  evidence                Json                    @map("evidence")
+  reasonCodes             Json                    @map("reason_codes")
+  overrides               Json                    @default("[]")
+  isCurrent               Boolean                 @default(true) @map("is_current")
+  appliedOverrideRevision Int?                    @map("applied_override_revision")
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scanJob              ScanJob              @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
   profitCalculationRun ProfitCalculationRun @relation(fields: [profitCalculationRunId], references: [id], onDelete: Cascade)
-  supplierRow SupplierRow @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
-  shippingRoute ShippingRoute @relation(fields: [shippingRouteId], references: [id], onDelete: Restrict)
+  supplierRow          SupplierRow          @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  shippingRoute        ShippingRoute        @relation(fields: [shippingRouteId], references: [id], onDelete: Restrict)
 
   @@unique([profitCalculationRunId, supplierRowId, shippingRouteId])
-  @@index([organizationId, recommendation, updatedAt])
+  @@index([organizationId, scanJobId, shippingRouteId, isCurrent, updatedAt])
+  @@index([organizationId, scanJobId, recommendation, isCurrent])
   @@map("profit_results")
 }
 
-model ProviderCallAttempt {
-  id              String                @id @default(cuid())
-  organizationId  String                @map("organization_id")
-  enrichmentRunId String?               @map("enrichment_run_id")
-  provider        ProviderKind
-  operation       String
-  requestKey      String                @map("request_key")
-  status          ProviderAttemptStatus
-  attempt         Int
-  httpStatus      Int?                  @map("http_status")
-  errorCode       String?               @map("error_code")
-  providerRequestId String?             @map("provider_request_id")
-  retryAt         DateTime?             @map("retry_at")
-  createdAt       DateTime              @default(now()) @map("created_at")
+model AnalysisView {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  scanJobId      String?  @map("scan_job_id")
+  name           String
+  schemaVersion  Int      @default(1) @map("schema_version")
+  queryState     Json     @map("query_state")
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scanJob      ScanJob?     @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, scanJobId, name])
+  @@index([organizationId, scanJobId, updatedAt])
+  @@map("analysis_views")
+}
+
+model ProfitCostOverride {
+  id                    String                 @id @default(cuid())
+  organizationId        String                 @map("organization_id")
+  scanJobId             String                 @map("scan_job_id")
+  supplierRowId         String                 @map("supplier_row_id")
+  shippingRouteId       String                 @map("shipping_route_id")
+  revision              Int                    @default(0)
+  status                AnalysisOverrideStatus @default(PENDING_RECALCULATION)
+  reason                String
+  stressDiscountPercent Decimal?               @map("stress_discount_percent") @db.Decimal(12, 4)
+  calculationRunId      String?                @map("calculation_run_id")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+
+  organization   Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scanJob        ScanJob                   @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  supplierRow    SupplierRow               @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  shippingRoute  ShippingRoute             @relation(fields: [shippingRouteId], references: [id], onDelete: Restrict)
+  calculationRun ProfitCalculationRun?     @relation("override_calculation_run", fields: [calculationRunId], references: [id], onDelete: SetNull)
+  values         ProfitCostOverrideValue[]
+  events         ProfitCostOverrideEvent[]
+
+  @@unique([organizationId, supplierRowId, shippingRouteId])
+  @@index([organizationId, scanJobId, status])
+  @@map("profit_cost_overrides")
+}
+
+model ProfitCostOverrideValue {
+  id         String            @id @default(cuid())
+  overrideId String            @map("override_id")
+  field      CostOverrideField
+  value      Decimal           @db.Decimal(18, 4)
+
+  override ProfitCostOverride @relation(fields: [overrideId], references: [id], onDelete: Cascade)
+
+  @@unique([overrideId, field])
+  @@map("profit_cost_override_values")
+}
+
+model ProfitCostOverrideEvent {
+  id             String   @id @default(cuid())
+  overrideId     String   @map("override_id")
+  organizationId String   @map("organization_id")
+  revision       Int
+  idempotencyKey String   @map("idempotency_key")
+  reason         String
+  previousValues Json     @map("previous_values")
+  nextValues     Json     @map("next_values")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  override     ProfitCostOverride @relation(fields: [overrideId], references: [id], onDelete: Cascade)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([overrideId, revision])
+  @@map("profit_cost_override_events")
+}
+
+model ProfitCalculationTarget {
+  id                     String @id @default(cuid())
+  profitCalculationRunId String @map("profit_calculation_run_id")
+  supplierRowId          String @map("supplier_row_id")
+  shippingRouteId        String @map("shipping_route_id")
+
+  profitCalculationRun ProfitCalculationRun @relation(fields: [profitCalculationRunId], references: [id], onDelete: Cascade)
+  supplierRow          SupplierRow          @relation(fields: [supplierRowId], references: [id], onDelete: Cascade)
+  shippingRoute        ShippingRoute        @relation(fields: [shippingRouteId], references: [id], onDelete: Restrict)
+
+  @@unique([profitCalculationRunId, supplierRowId, shippingRouteId])
+  @@map("profit_calculation_targets")
+}
+
+model ProviderCallAttempt {
+  id                String                @id @default(cuid())
+  organizationId    String                @map("organization_id")
+  enrichmentRunId   String?               @map("enrichment_run_id")
+  provider          ProviderKind
+  operation         String
+  requestKey        String                @map("request_key")
+  status            ProviderAttemptStatus
+  attempt           Int
+  httpStatus        Int?                  @map("http_status")
+  errorCode         String?               @map("error_code")
+  providerRequestId String?               @map("provider_request_id")
+  retryAt           DateTime?             @map("retry_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   enrichmentRun EnrichmentRun? @relation(fields: [enrichmentRunId], references: [id], onDelete: Cascade)
 
   @@unique([provider, operation, requestKey, attempt])
@@ -906,18 +1042,18 @@ model ScanEvent {
 }
 
 model OutboxEvent {
-  id             String      @id @default(cuid())
-  organizationId String      @map("organization_id")
-  scanJobId      String      @map("scan_job_id")
-  eventType      String      @map("event_type")
-  payload        Json
-  status         OutboxStatus @default(PENDING)
-  claimToken     String?     @map("claim_token")
-  claimedAt      DateTime?   @map("claimed_at")
-  deliveryAttempts Int       @default(0) @map("delivery_attempts")
-  lastError      String?     @map("last_error")
-  publishedAt    DateTime?   @map("published_at")
-  createdAt      DateTime    @default(now()) @map("created_at")
+  id               String       @id @default(cuid())
+  organizationId   String       @map("organization_id")
+  scanJobId        String       @map("scan_job_id")
+  eventType        String       @map("event_type")
+  payload          Json
+  status           OutboxStatus @default(PENDING)
+  claimToken       String?      @map("claim_token")
+  claimedAt        DateTime?    @map("claimed_at")
+  deliveryAttempts Int          @default(0) @map("delivery_attempts")
+  lastError        String?      @map("last_error")
+  publishedAt      DateTime?    @map("published_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   scanJob      ScanJob      @relation(fields: [scanJobId], references: [id], onDelete: Cascade)

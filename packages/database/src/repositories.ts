@@ -1,4 +1,5 @@
 import type {
+  CostOverrideField,
   Prisma,
   ProductRecommendation,
   ScanJobStatus,
@@ -1362,62 +1363,81 @@ export async function queueProfitCalculation(
       where: { id: scanJobId },
       data: { status: "CALCULATING", completedAt: null },
     });
+    // A calculation run is the idempotency boundary. A scan can have a full
+    // calculation and later targeted recalculations in flight.
     await transaction.outboxEvent.upsert({
       where: {
         scanJobId_eventType: {
           scanJobId,
-          eventType: "scan.calculate.requested",
+          eventType: `scan.calculate.requested.${run.id}`,
         },
       },
       create: {
         organizationId,
         scanJobId,
-        eventType: "scan.calculate.requested",
-        payload: { scanJobId, kind: "CALCULATE", runAttempt: run.attemptCount },
+        eventType: `scan.calculate.requested.${run.id}`,
+        payload: {
+          scanJobId,
+          runId: run.id,
+          kind: "CALCULATE",
+          runAttempt: run.attemptCount,
+        },
       },
       update: {
         status: "PENDING",
         claimToken: null,
         claimedAt: null,
         lastError: null,
-        payload: { scanJobId, kind: "CALCULATE", runAttempt: run.attemptCount },
+        payload: {
+          scanJobId,
+          runId: run.id,
+          kind: "CALCULATE",
+          runAttempt: run.attemptCount,
+        },
       },
     });
     return run;
   });
 }
 
-export async function getProfitCalculationForProcessing(scanJobId: string) {
+export async function getProfitCalculationForProcessing(runId: string) {
   const run = await db.profitCalculationRun.findFirst({
     where: {
-      scanJobId,
+      id: runId,
       status: { in: ["PENDING", "FAILED_RETRYABLE"] },
     },
     orderBy: { createdAt: "desc" },
     include: {
       financialPolicy: true,
       organization: { select: { brandPolicies: true } },
+      targets: true,
       scanJob: {
-        include: {
-          supplierRows: {
-            orderBy: { sourceRowNumber: "asc" },
-            include: {
-              normalizedOffer: true,
-              matchDecision: {
-                include: {
-                  selectedCandidate: {
-                    include: { catalogProduct: true, packGuard: true },
-                  },
-                },
-              },
-              enrichmentItems: { include: { observations: true } },
-            },
-          },
-        },
+        select: { id: true },
       },
     },
   });
   if (!run) return null;
+  const supplierRows = await db.supplierRow.findMany({
+    where: {
+      scanJobId: run.scanJobId,
+      ...(run.scope === "TARGETED"
+        ? { id: { in: run.targets.map((target) => target.supplierRowId) } }
+        : {}),
+    },
+    orderBy: { sourceRowNumber: "asc" },
+    include: {
+      normalizedOffer: true,
+      matchDecision: {
+        include: {
+          selectedCandidate: {
+            include: { catalogProduct: true, packGuard: true },
+          },
+        },
+      },
+      enrichmentItems: { include: { observations: true } },
+      profitCostOverrides: { include: { values: true } },
+    },
+  });
   const routes = await db.shippingRoute.findMany({
     where: {
       organizationId: run.organizationId,
@@ -1427,7 +1447,7 @@ export async function getProfitCalculationForProcessing(scanJobId: string) {
     },
     orderBy: { effectiveFrom: "desc" },
   });
-  return { ...run, routes };
+  return { ...run, scanJob: { ...run.scanJob, supplierRows }, routes };
 }
 
 export async function markProfitCalculationRunning(runId: string) {
@@ -1443,14 +1463,52 @@ export async function markProfitCalculationRunning(runId: string) {
   return true;
 }
 
-export async function failProfitCalculationForScan(
-  scanJobId: string,
+export async function failProfitCalculation(
+  runId: string,
   status: "FAILED_RETRYABLE" | "FAILED_FINAL",
 ) {
-  await db.profitCalculationRun.updateMany({
-    where: { scanJobId, status: { in: ["PENDING", "RUNNING"] } },
-    data: { status },
+  await db.$transaction(async (transaction) => {
+    const run = await transaction.profitCalculationRun.findFirst({
+      where: { id: runId, status: { in: ["PENDING", "RUNNING"] } },
+      select: { scanJobId: true, scope: true },
+    });
+    if (!run) return;
+    await transaction.profitCalculationRun.update({
+      where: { id: runId },
+      data: { status },
+    });
+    await transaction.profitCostOverride.updateMany({
+      where: { calculationRunId: runId },
+      data: { status: "FAILED" },
+    });
+    if (run.scope === "FULL") {
+      await transaction.scanJob.update({
+        where: { id: run.scanJobId },
+        data: { status },
+      });
+      await transaction.scanEvent.create({
+        data: {
+          scanJobId: run.scanJobId,
+          eventType: status,
+          payload: { message: "profit_calculation_failed", runId },
+        },
+      });
+    }
   });
+}
+
+export function shouldPromoteProfitResult(input: {
+  appliedOverrideRevision?: number | undefined;
+  currentOverride?:
+    { revision: number; calculationRunId: string | null } | null | undefined;
+  runId: string;
+}): boolean {
+  if (!input.currentOverride)
+    return input.appliedOverrideRevision === undefined;
+  return (
+    input.currentOverride?.revision === input.appliedOverrideRevision &&
+    input.currentOverride.calculationRunId === input.runId
+  );
 }
 
 export async function persistProfitCalculation(input: {
@@ -1473,16 +1531,45 @@ export async function persistProfitCalculation(input: {
     inputSnapshot: Prisma.InputJsonValue;
     evidence: Prisma.InputJsonValue;
     reasonCodes: Prisma.InputJsonValue;
+    appliedOverrideRevision?: number;
   }>;
   status: "COMPLETED" | "PARTIAL_SUCCESS";
 }) {
   await db.$transaction(async (transaction) => {
     const run = await transaction.profitCalculationRun.findFirst({
       where: { id: input.runId, organizationId: input.organizationId },
-      select: { id: true, scanJobId: true },
+      select: { id: true, scanJobId: true, scope: true },
     });
     if (!run) return;
     for (const result of input.results) {
+      const currentOverride = await transaction.profitCostOverride.findUnique({
+        where: {
+          organizationId_supplierRowId_shippingRouteId: {
+            organizationId: input.organizationId,
+            supplierRowId: result.supplierRowId,
+            shippingRouteId: result.shippingRouteId,
+          },
+        },
+        select: { revision: true, calculationRunId: true },
+      });
+      if (
+        !shouldPromoteProfitResult({
+          appliedOverrideRevision: result.appliedOverrideRevision,
+          currentOverride,
+          runId: input.runId,
+        })
+      )
+        continue;
+      await transaction.profitResult.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          scanJobId: run.scanJobId,
+          supplierRowId: result.supplierRowId,
+          shippingRouteId: result.shippingRouteId,
+          isCurrent: true,
+        },
+        data: { isCurrent: false },
+      });
       await transaction.profitResult.upsert({
         where: {
           profitCalculationRunId_supplierRowId_shippingRouteId: {
@@ -1494,21 +1581,30 @@ export async function persistProfitCalculation(input: {
         create: {
           ...result,
           organizationId: input.organizationId,
+          scanJobId: run.scanJobId,
           profitCalculationRunId: input.runId,
+          isCurrent: true,
         },
-        update: result,
+        update: { ...result, isCurrent: true, scanJobId: run.scanJobId },
       });
     }
     await transaction.profitCalculationRun.update({
       where: { id: input.runId },
       data: { status: input.status, completedAt: new Date() },
     });
-    await transaction.scanJob.update({
-      where: { id: run.scanJobId },
-      data: {
-        status: input.status === "COMPLETED" ? "COMPLETED" : "PARTIAL_SUCCESS",
-        completedAt: new Date(),
-      },
+    if (run.scope === "FULL") {
+      await transaction.scanJob.update({
+        where: { id: run.scanJobId },
+        data: {
+          status:
+            input.status === "COMPLETED" ? "COMPLETED" : "PARTIAL_SUCCESS",
+          completedAt: new Date(),
+        },
+      });
+    }
+    await transaction.profitCostOverride.updateMany({
+      where: { calculationRunId: input.runId },
+      data: { status: "APPLIED" },
     });
     await transaction.scanCheckpoint.upsert({
       where: {
@@ -1555,6 +1651,589 @@ export async function listProfitResultsForScan(
       { supplierRow: { sourceRowNumber: "asc" } },
       { updatedAt: "desc" },
     ],
+  });
+}
+
+type AnalysisFilters = {
+  recommendation?: ProductRecommendation | undefined;
+  search?: string | undefined;
+  minRoiPercent?: string | undefined;
+  maxRoiPercent?: string | undefined;
+  status?: "COMPLETED" | "PARTIAL_SUCCESS" | undefined;
+};
+
+type AnalysisSort =
+  | "sourceRowNumber"
+  | "recommendation"
+  | "conservativeNetProfit"
+  | "roiPercent"
+  | "marginPercent"
+  | "breakEvenPrice";
+
+function analysisWhere(
+  organizationId: string,
+  scanJobId: string,
+  shippingRouteId: string,
+  filters: AnalysisFilters,
+): Prisma.ProfitResultWhereInput {
+  const search = filters.search?.trim();
+  return {
+    organizationId,
+    scanJobId,
+    shippingRouteId,
+    isCurrent: true,
+    ...(filters.recommendation
+      ? { recommendation: filters.recommendation }
+      : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.minRoiPercent
+      ? { roiPercent: { gte: filters.minRoiPercent } }
+      : {}),
+    ...(filters.maxRoiPercent
+      ? { roiPercent: { lte: filters.maxRoiPercent } }
+      : {}),
+    ...(search
+      ? {
+          OR: [
+            {
+              supplierRow: {
+                normalizedOffer: {
+                  asin: { contains: search, mode: "insensitive" },
+                },
+              },
+            },
+            {
+              supplierRow: {
+                matchDecision: {
+                  selectedCandidate: {
+                    catalogProduct: {
+                      asin: { contains: search, mode: "insensitive" },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              supplierRow: {
+                normalizedOffer: {
+                  itemNumber: { contains: search, mode: "insensitive" },
+                },
+              },
+            },
+            {
+              supplierRow: {
+                normalizedOffer: {
+                  description: { contains: search, mode: "insensitive" },
+                },
+              },
+            },
+            {
+              supplierRow: {
+                normalizedOffer: {
+                  brand: { contains: search, mode: "insensitive" },
+                },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
+function analysisOrderBy(
+  sort: AnalysisSort,
+  direction: "asc" | "desc",
+): Prisma.ProfitResultOrderByWithRelationInput[] {
+  if (sort === "sourceRowNumber")
+    return [{ supplierRow: { sourceRowNumber: direction } }, { id: "asc" }];
+  if (sort === "recommendation")
+    return [{ recommendation: direction }, { id: "asc" }];
+  return [{ [sort]: direction }, { id: "asc" }];
+}
+
+export async function listAnalysisResults(input: {
+  organizationId: string;
+  scanJobId: string;
+  shippingRouteId?: string;
+  offset: number;
+  limit: number;
+  filters: AnalysisFilters;
+  sort: AnalysisSort;
+  direction: "asc" | "desc";
+}) {
+  let shippingRouteId: string | undefined;
+  if (input.shippingRouteId) {
+    const route = await db.shippingRoute.findFirst({
+      where: {
+        id: input.shippingRouteId,
+        organizationId: input.organizationId,
+      },
+      select: { id: true },
+    });
+    shippingRouteId = route?.id;
+  } else {
+    const route = await db.profitResult.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        scanJobId: input.scanJobId,
+        isCurrent: true,
+      },
+      select: { shippingRouteId: true },
+      orderBy: { updatedAt: "desc" },
+    });
+    shippingRouteId = route?.shippingRouteId;
+  }
+  if (!shippingRouteId) return { total: 0, rows: [], routes: [] };
+  const where = analysisWhere(
+    input.organizationId,
+    input.scanJobId,
+    shippingRouteId,
+    input.filters,
+  );
+  const [total, rows, routes] = await db.$transaction([
+    db.profitResult.count({ where }),
+    db.profitResult.findMany({
+      where,
+      skip: input.offset,
+      take: input.limit,
+      orderBy: analysisOrderBy(input.sort, input.direction),
+      select: {
+        id: true,
+        status: true,
+        recommendation: true,
+        currentNetProfit: true,
+        conservativeNetProfit: true,
+        stressNetProfit: true,
+        effectiveCogs: true,
+        roiPercent: true,
+        marginPercent: true,
+        breakEvenPrice: true,
+        reasonCodes: true,
+        supplierRow: {
+          select: {
+            sourceRowNumber: true,
+            normalizedOffer: {
+              select: {
+                asin: true,
+                itemNumber: true,
+                description: true,
+                brand: true,
+              },
+            },
+            warnings: { select: { code: true, severity: true } },
+            matchDecision: {
+              select: {
+                status: true,
+                confidence: true,
+                selectedCandidate: {
+                  select: {
+                    catalogProduct: {
+                      select: { asin: true, title: true, brand: true },
+                    },
+                    packGuard: { select: { status: true, reasonCode: true } },
+                  },
+                },
+              },
+            },
+            profitCostOverrides: {
+              where: { organizationId: input.organizationId, shippingRouteId },
+              select: {
+                revision: true,
+                status: true,
+                stressDiscountPercent: true,
+                values: { select: { field: true, value: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+    db.shippingRoute.findMany({
+      where: {
+        organizationId: input.organizationId,
+        profitResults: {
+          some: { scanJobId: input.scanJobId, isCurrent: true },
+        },
+      },
+      select: { id: true, name: true, currency: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+  return { total, rows, routes, shippingRouteId };
+}
+
+export async function getAnalysisResult(
+  organizationId: string,
+  resultId: string,
+) {
+  return db.profitResult.findFirst({
+    where: { id: resultId, organizationId },
+    include: {
+      shippingRoute: true,
+      supplierRow: {
+        include: {
+          normalizedOffer: true,
+          warnings: true,
+          matchDecision: {
+            include: {
+              selectedCandidate: {
+                include: {
+                  catalogProduct: true,
+                  evidence: true,
+                  packGuard: true,
+                },
+              },
+            },
+          },
+          enrichmentItems: { include: { observations: true } },
+          profitCostOverrides: {
+            include: {
+              values: true,
+              events: { orderBy: { createdAt: "desc" } },
+            },
+          },
+          profitResults: {
+            where: { isCurrent: true },
+            include: {
+              shippingRoute: { select: { name: true, currency: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function getAnalysisOverrideForResult(
+  organizationId: string,
+  resultId: string,
+) {
+  return db.profitResult.findFirst({
+    where: { id: resultId, organizationId, isCurrent: true },
+    select: {
+      id: true,
+      supplierRowId: true,
+      shippingRouteId: true,
+      supplierRow: {
+        select: {
+          profitCostOverrides: {
+            where: { organizationId },
+            select: {
+              shippingRouteId: true,
+              revision: true,
+              stressDiscountPercent: true,
+              values: { select: { field: true, value: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function listAnalysisViews(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.analysisView.findMany({
+    where: { organizationId, OR: [{ scanJobId }, { scanJobId: null }] },
+    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+  });
+}
+
+export async function saveAnalysisView(input: {
+  organizationId: string;
+  scanJobId: string;
+  name: string;
+  queryState: Prisma.InputJsonValue;
+  isDefault?: boolean | undefined;
+}) {
+  return db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findFirst({
+      where: { id: input.scanJobId, organizationId: input.organizationId },
+      select: { id: true },
+    });
+    if (!scan) throw new Error("SCAN_NOT_FOUND");
+    if (input.isDefault)
+      await transaction.analysisView.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          scanJobId: input.scanJobId,
+        },
+        data: { isDefault: false },
+      });
+    return transaction.analysisView.upsert({
+      where: {
+        organizationId_scanJobId_name: {
+          organizationId: input.organizationId,
+          scanJobId: input.scanJobId,
+          name: input.name,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        scanJobId: input.scanJobId,
+        name: input.name,
+        queryState: input.queryState,
+        schemaVersion: 1,
+        isDefault: input.isDefault ?? false,
+      },
+      update: {
+        queryState: input.queryState,
+        isDefault: input.isDefault ?? false,
+      },
+    });
+  });
+}
+
+export async function deleteAnalysisView(
+  organizationId: string,
+  viewId: string,
+) {
+  return db.analysisView.deleteMany({ where: { id: viewId, organizationId } });
+}
+
+const OVERRIDE_FIELD_TO_COST: Record<CostOverrideField, string> = {
+  SUPPLIER_COST_PER_SELLABLE_UNIT: "supplierCostPerSellableUnit",
+  ALLOCATED_SUPPLIER_FREIGHT: "allocatedSupplierFreight",
+  PREP_FEE: "prepFee",
+  LABELING_FEE: "labelingFee",
+  POLYBAG_FEE: "polybagFee",
+  BUNDLE_FEE: "bundleFee",
+  BUBBLEWRAP_FEE: "bubblewrapFee",
+  INBOUND_SHIPPING: "inboundShipping",
+  DUTY_OR_TAX: "dutyOrTax",
+  STORAGE_ALLOWANCE: "storageAllowance",
+  RETURN_ALLOWANCE: "returnAllowance",
+  OTHER_COSTS: "otherCosts",
+};
+
+export { OVERRIDE_FIELD_TO_COST };
+
+export async function queueAnalysisRecalculation(input: {
+  organizationId: string;
+  resultId: string;
+  idempotencyKey: string;
+}) {
+  return db.$transaction(async (transaction) => {
+    const result = await transaction.profitResult.findFirst({
+      where: {
+        id: input.resultId,
+        organizationId: input.organizationId,
+        isCurrent: true,
+      },
+      select: { scanJobId: true, supplierRowId: true, shippingRouteId: true },
+    });
+    const policy = await transaction.financialPolicy.findUnique({
+      where: { organizationId: input.organizationId },
+      select: { id: true },
+    });
+    if (!result || !policy) return null;
+    const idempotencyKey = `analysis-recalculate:${input.idempotencyKey}`;
+    const existing = await transaction.profitCalculationRun.findUnique({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey,
+        },
+      },
+      select: { id: true },
+    });
+    const run = await transaction.profitCalculationRun.upsert({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        scanJobId: result.scanJobId,
+        financialPolicyId: policy.id,
+        idempotencyKey,
+        scope: "TARGETED",
+        requestChecksum: `${result.supplierRowId}:${result.shippingRouteId}:recalculate`,
+        status: "PENDING",
+        attemptCount: 1,
+        targets: {
+          create: {
+            supplierRowId: result.supplierRowId,
+            shippingRouteId: result.shippingRouteId,
+          },
+        },
+      },
+      update: {},
+    });
+    await transaction.outboxEvent.upsert({
+      where: {
+        scanJobId_eventType: {
+          scanJobId: result.scanJobId,
+          eventType: `scan.calculate.requested.${run.id}`,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        scanJobId: result.scanJobId,
+        eventType: `scan.calculate.requested.${run.id}`,
+        payload: {
+          scanJobId: result.scanJobId,
+          runId: run.id,
+          kind: "CALCULATE",
+          runAttempt: 1,
+        },
+      },
+      update: {},
+    });
+    return { run, duplicate: Boolean(existing) };
+  });
+}
+
+export async function applyAnalysisOverride(input: {
+  organizationId: string;
+  resultId: string;
+  expectedRevision: number;
+  idempotencyKey: string;
+  reason: string;
+  values: Array<{ field: CostOverrideField; value: string | null }>;
+  stressDiscountPercent?: string | null | undefined;
+}) {
+  return db.$transaction(async (transaction) => {
+    const result = await transaction.profitResult.findFirst({
+      where: {
+        id: input.resultId,
+        organizationId: input.organizationId,
+        isCurrent: true,
+      },
+      select: { scanJobId: true, supplierRowId: true, shippingRouteId: true },
+    });
+    const policy = await transaction.financialPolicy.findUnique({
+      where: { organizationId: input.organizationId },
+    });
+    if (!result || !policy) return null;
+    const existingEvent = await transaction.profitCostOverrideEvent.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        idempotencyKey: input.idempotencyKey,
+      },
+      include: { override: true },
+    });
+    if (existingEvent) {
+      if (
+        existingEvent.override.supplierRowId !== result.supplierRowId ||
+        existingEvent.override.shippingRouteId !== result.shippingRouteId
+      )
+        throw new Error("IDEMPOTENCY_KEY_TARGET_MISMATCH");
+      return { override: existingEvent.override, duplicate: true };
+    }
+    const existing = await transaction.profitCostOverride.findUnique({
+      where: {
+        organizationId_supplierRowId_shippingRouteId: {
+          organizationId: input.organizationId,
+          supplierRowId: result.supplierRowId,
+          shippingRouteId: result.shippingRouteId,
+        },
+      },
+      include: { values: true },
+    });
+    if (existing && existing.revision !== input.expectedRevision)
+      throw new Error("OVERRIDE_REVISION_CONFLICT");
+    const nextRevision = (existing?.revision ?? 0) + 1;
+    const nextValues = new Map<CostOverrideField, string>(
+      existing?.values.map((value) => [value.field, value.value.toString()]) ??
+        [],
+    );
+    for (const value of input.values) {
+      if (value.value === null) nextValues.delete(value.field);
+      else nextValues.set(value.field, value.value);
+    }
+    const checksum = `${result.supplierRowId}:${result.shippingRouteId}:${nextRevision}`;
+    const run = await transaction.profitCalculationRun.create({
+      data: {
+        organizationId: input.organizationId,
+        scanJobId: result.scanJobId,
+        financialPolicyId: policy.id,
+        idempotencyKey: `analysis:${input.idempotencyKey}`,
+        scope: "TARGETED",
+        requestChecksum: checksum,
+        status: "PENDING",
+        attemptCount: 1,
+        targets: {
+          create: {
+            supplierRowId: result.supplierRowId,
+            shippingRouteId: result.shippingRouteId,
+          },
+        },
+      },
+    });
+    const override = existing
+      ? await transaction.profitCostOverride.update({
+          where: { id: existing.id },
+          data: {
+            revision: nextRevision,
+            reason: input.reason,
+            status: "PENDING_RECALCULATION",
+            calculationRunId: run.id,
+            stressDiscountPercent:
+              input.stressDiscountPercent === undefined
+                ? (existing.stressDiscountPercent?.toString() ?? null)
+                : input.stressDiscountPercent,
+            values: {
+              deleteMany: {},
+              create: [...nextValues].map(([field, value]) => ({
+                field: field as never,
+                value,
+              })),
+            },
+          },
+        })
+      : await transaction.profitCostOverride.create({
+          data: {
+            organizationId: input.organizationId,
+            scanJobId: result.scanJobId,
+            supplierRowId: result.supplierRowId,
+            shippingRouteId: result.shippingRouteId,
+            revision: nextRevision,
+            reason: input.reason,
+            stressDiscountPercent: input.stressDiscountPercent ?? null,
+            calculationRunId: run.id,
+            values: {
+              create: [...nextValues].map(([field, value]) => ({
+                field: field as never,
+                value,
+              })),
+            },
+          },
+        });
+    await transaction.profitCostOverrideEvent.create({
+      data: {
+        overrideId: override.id,
+        organizationId: input.organizationId,
+        revision: nextRevision,
+        idempotencyKey: input.idempotencyKey,
+        reason: input.reason,
+        previousValues: Object.fromEntries(
+          existing?.values.map((value) => [
+            value.field,
+            value.value.toString(),
+          ]) ?? [],
+        ),
+        nextValues: Object.fromEntries(nextValues),
+      },
+    });
+    await transaction.outboxEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        scanJobId: result.scanJobId,
+        eventType: `scan.calculate.requested.${run.id}`,
+        payload: {
+          scanJobId: result.scanJobId,
+          runId: run.id,
+          kind: "CALCULATE",
+          runAttempt: 1,
+        },
+      },
+    });
+    return { override, run, duplicate: false };
   });
 }
 

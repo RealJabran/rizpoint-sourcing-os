@@ -2,6 +2,7 @@ import {
   buildScenarios,
   decide,
   PROFIT_ENGINE_VERSION,
+  type DecisionInput,
   type FeeQuote,
   type PriceEvidence,
 } from "@rizpoint/profit-engine";
@@ -172,12 +173,37 @@ function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-export async function processProfitCalculation(scanJobId: string) {
-  const run = await getProfitCalculationForProcessing(scanJobId);
+const overrideFieldToCost = {
+  SUPPLIER_COST_PER_SELLABLE_UNIT: "supplierCostPerSellableUnit",
+  ALLOCATED_SUPPLIER_FREIGHT: "allocatedSupplierFreight",
+  PREP_FEE: "prepFee",
+  LABELING_FEE: "labelingFee",
+  POLYBAG_FEE: "polybagFee",
+  BUNDLE_FEE: "bundleFee",
+  BUBBLEWRAP_FEE: "bubblewrapFee",
+  INBOUND_SHIPPING: "inboundShipping",
+  DUTY_OR_TAX: "dutyOrTax",
+  STORAGE_ALLOWANCE: "storageAllowance",
+  RETURN_ALLOWANCE: "returnAllowance",
+  OTHER_COSTS: "otherCosts",
+} as const;
+
+export async function processProfitCalculation(runId: string) {
+  const run = await getProfitCalculationForProcessing(runId);
   if (!run || !(await markProfitCalculationRunning(run.id))) return;
   const results: Parameters<typeof persistProfitCalculation>[0]["results"] = [];
   let partial = run.routes.length === 0;
+  const targetKeys = new Set(
+    run.targets.map(
+      (target) => `${target.supplierRowId}:${target.shippingRouteId}`,
+    ),
+  );
   for (const row of run.scanJob.supplierRows) {
+    if (
+      run.scope === "TARGETED" &&
+      !run.targets.some((target) => target.supplierRowId === row.id)
+    )
+      continue;
     const observations = row.enrichmentItems.flatMap(
       (item) => item.observations,
     ) as Observation[];
@@ -200,6 +226,43 @@ export async function processProfitCalculation(scanJobId: string) {
         ? "UNKNOWN"
         : (storedBrandPolicy?.status ?? "UNKNOWN");
     for (const route of run.routes) {
+      if (run.scope === "TARGETED" && !targetKeys.has(`${row.id}:${route.id}`))
+        continue;
+      const override = row.profitCostOverrides.find(
+        (candidate) => candidate.shippingRouteId === route.id,
+      );
+      const baseCosts = costInputs(
+        route,
+        packGuard?.costPerSellableUnit?.toString() ?? "0",
+      );
+      const overriddenCosts = { ...baseCosts };
+      for (const value of override?.values ?? []) {
+        const target =
+          overrideFieldToCost[value.field as keyof typeof overrideFieldToCost];
+        if (target) overriddenCosts[target] = value.value.toString();
+      }
+      const calculatedAt = new Date();
+      const matchVerified = ["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(
+        row.matchDecision?.status ?? "UNMATCHED",
+      );
+      const demandEvidenceSufficient =
+        historyObservationCount(history) >=
+        run.financialPolicy.minimumDemandScore;
+      const decisionInputs: Omit<
+        DecisionInput,
+        "currentProfit" | "conservativeProfit" | "stressProfit"
+      > = {
+        matchVerified,
+        sellerEligibility: eligibility,
+        brandPolicy,
+        demandEvidenceSufficient,
+        thresholds: {
+          minNetProfit: run.financialPolicy.minNetProfit.toString(),
+          minRoiPercent: run.financialPolicy.minRoiPercent.toString(),
+          minMarginPercent: run.financialPolicy.minMarginPercent.toString(),
+          maxStressLoss: run.financialPolicy.maxStressLoss.toString(),
+        },
+      };
       const evidence = {
         current,
         conservative,
@@ -212,6 +275,8 @@ export async function processProfitCalculation(scanJobId: string) {
           name: route.name,
           effectiveFrom: route.effectiveFrom.toISOString(),
         },
+        calculatedAt: calculatedAt.toISOString(),
+        decisionInputs,
       };
       const currencyMismatch =
         !current ||
@@ -236,7 +301,29 @@ export async function processProfitCalculation(scanJobId: string) {
           status: "PARTIAL_SUCCESS",
           recommendation: !candidate ? "REVIEW_MATCH" : "INSUFFICIENT_DATA",
           engineVersion: PROFIT_ENGINE_VERSION,
-          inputSnapshot: json({ supplierRowId: row.id }),
+          inputSnapshot: json({
+            supplierRowId: row.id,
+            costs: overriddenCosts,
+            policy: {
+              id: run.financialPolicy.id,
+              currency: run.financialPolicy.currency,
+              engineVersion: run.financialPolicy.engineVersion,
+              minNetProfit: run.financialPolicy.minNetProfit.toString(),
+              minRoiPercent: run.financialPolicy.minRoiPercent.toString(),
+              minMarginPercent: run.financialPolicy.minMarginPercent.toString(),
+              maxStressLoss: run.financialPolicy.maxStressLoss.toString(),
+              stressDiscountPercent:
+                override?.stressDiscountPercent?.toString() ??
+                run.financialPolicy.stressDiscountPercent.toString(),
+            },
+            override: override
+              ? {
+                  id: override.id,
+                  revision: override.revision,
+                  reason: override.reason,
+                }
+              : null,
+          }),
           evidence: json(evidence),
           reasonCodes: json(
             !candidate
@@ -245,6 +332,7 @@ export async function processProfitCalculation(scanJobId: string) {
                 ? ["CURRENCY_MISMATCH"]
                 : ["MISSING_OR_STALE_EVIDENCE"],
           ),
+          ...(override ? { appliedOverrideRevision: override.revision } : {}),
         });
         continue;
       }
@@ -253,29 +341,17 @@ export async function processProfitCalculation(scanJobId: string) {
         current,
         conservative,
         feeQuote: fees,
-        costs: costInputs(route, packGuard.costPerSellableUnit.toString()),
+        costs: overriddenCosts,
         stressDiscountPercent:
+          override?.stressDiscountPercent?.toString() ??
           run.financialPolicy.stressDiscountPercent.toString(),
-        calculatedAt: new Date(),
+        calculatedAt,
       });
       const decision = decide({
         currentProfit: scenarios.CURRENT!,
         conservativeProfit: scenarios.CONSERVATIVE!,
         stressProfit: scenarios.STRESS!,
-        matchVerified: ["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(
-          row.matchDecision?.status ?? "UNMATCHED",
-        ),
-        sellerEligibility: eligibility,
-        brandPolicy,
-        demandEvidenceSufficient:
-          historyObservationCount(history) >=
-          run.financialPolicy.minimumDemandScore,
-        thresholds: {
-          minNetProfit: run.financialPolicy.minNetProfit.toString(),
-          minRoiPercent: run.financialPolicy.minRoiPercent.toString(),
-          minMarginPercent: run.financialPolicy.minMarginPercent.toString(),
-          maxStressLoss: run.financialPolicy.maxStressLoss.toString(),
-        },
+        ...decisionInputs,
       });
       const currentProfit = scenarios.CURRENT!;
       const conservativeProfit = scenarios.CONSERVATIVE!;
@@ -315,7 +391,7 @@ export async function processProfitCalculation(scanJobId: string) {
           : {}),
         engineVersion: PROFIT_ENGINE_VERSION,
         inputSnapshot: json({
-          costs: costInputs(route, packGuard.costPerSellableUnit.toString()),
+          costs: overriddenCosts,
           policy: {
             id: run.financialPolicy.id,
             currency: run.financialPolicy.currency,
@@ -325,8 +401,16 @@ export async function processProfitCalculation(scanJobId: string) {
             minMarginPercent: run.financialPolicy.minMarginPercent.toString(),
             maxStressLoss: run.financialPolicy.maxStressLoss.toString(),
             stressDiscountPercent:
+              override?.stressDiscountPercent?.toString() ??
               run.financialPolicy.stressDiscountPercent.toString(),
           },
+          override: override
+            ? {
+                id: override.id,
+                revision: override.revision,
+                reason: override.reason,
+              }
+            : null,
         }),
         evidence: json({ ...evidence, scenarios, decision }),
         reasonCodes: json([
@@ -336,6 +420,7 @@ export async function processProfitCalculation(scanJobId: string) {
           ...decision.reasonCodes,
           ...decision.failedRules,
         ]),
+        ...(override ? { appliedOverrideRevision: override.revision } : {}),
       });
     }
   }

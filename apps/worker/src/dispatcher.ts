@@ -14,12 +14,14 @@ export async function dispatchOutboxOnce(): Promise<number> {
         scanJobId: string;
         kind?: Exclude<UploadJobKind, "MOCK">;
         runAttempt?: number;
+        runId?: string;
       };
       await mockScanQueue.add("mock-scan", payload, {
         jobId: mockScanQueueJobId(
           payload.scanJobId,
           payload.kind ?? "MOCK",
           payload.runAttempt,
+          payload.runId,
         ),
         attempts: 3,
         backoff: { type: "exponential", delay: 1_000 },

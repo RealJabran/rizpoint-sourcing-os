@@ -7,8 +7,9 @@ export function mockScanQueueJobId(
   scanJobId: string,
   kind: UploadJobKind = "MOCK",
   attempt?: number,
+  runId?: string,
 ): string {
-  return `scan-${scanJobId}-${kind.toLowerCase()}${attempt ? `-${attempt}` : ""}`;
+  return `scan-${scanJobId}-${kind.toLowerCase()}${runId ? `-${runId}` : ""}${attempt ? `-${attempt}` : ""}`;
 }
 
 export function failureStatusForAttempt(

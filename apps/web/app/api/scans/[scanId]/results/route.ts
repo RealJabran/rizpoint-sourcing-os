@@ -1,0 +1,40 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  ensurePhaseZeroOrganization,
+  listAnalysisResults,
+} from "@rizpoint/database";
+import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { analysisQuerySchema } from "@/src/analysis/contracts";
+
+export const runtime = "nodejs";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ scanId: string }> },
+) {
+  if (!phaseZeroDemoEnabled())
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const parsed = analysisQuerySchema.safeParse(
+    Object.fromEntries(request.nextUrl.searchParams),
+  );
+  if (!parsed.success)
+    return NextResponse.json(
+      { error: "INVALID_ANALYSIS_QUERY" },
+      { status: 400 },
+    );
+  const organization = await ensurePhaseZeroOrganization();
+  return NextResponse.json(
+    await listAnalysisResults({
+      organizationId: organization.id,
+      scanJobId: (await params).scanId,
+      ...parsed.data,
+      filters: {
+        recommendation: parsed.data.recommendation,
+        status: parsed.data.status,
+        search: parsed.data.search,
+        minRoiPercent: parsed.data.minRoiPercent,
+        maxRoiPercent: parsed.data.maxRoiPercent,
+      },
+    }),
+  );
+}

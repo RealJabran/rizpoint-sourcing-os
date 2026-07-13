@@ -38,6 +38,16 @@
 | `ProfitCalculationRun` | Idempotent calculation run bound to a scan and policy.                                 | `organization_id` |
 | `ProfitResult`         | Route-specific NUMERIC outputs, evidence/input snapshots, and recommendation.          | `organization_id` |
 
+## Phase 5 physical schema
+
+| Entity                                 | Purpose                                                                 | Tenant boundary         |
+| -------------------------------------- | ----------------------------------------------------------------------- | ----------------------- |
+| `AnalysisView`                         | Versioned saved filters, sort, route, and visible-column state.         | `organization_id`       |
+| `ProfitCostOverride` / values / events | Current typed Decimal assumptions and append-only override audit trail. | `organization_id`       |
+| `ProfitCalculationTarget`              | Exact row/route scope of a targeted recalculation.                      | Through calculation run |
+
+`ProfitResult.is_current` is the fast workspace projection; prior calculation records remain historical evidence. Override money is `NUMERIC(18,4)` and no supplier or provider value is overwritten.
+
 ## Required external metric fields
 
 Every catalog, price, fee, restriction, or history observation must carry `provider`, `observed_at`, `freshness_state`, and the relevant provider reference. Cached or stale values may be displayed only with their freshness state.

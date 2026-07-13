@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import {
   completeMockScanJob,
   db,
-  failProfitCalculationForScan,
+  failProfitCalculation,
   failUploadStage,
   failScanJob,
   markScanJobRunning,
@@ -50,6 +50,7 @@ function errorCode(error: unknown): string {
 
 export const mockScanWorker = new Worker<{
   scanJobId: string;
+  runId?: string;
   kind?: "UPLOAD_INSPECT" | "NORMALIZE" | "MATCH" | "ENRICH" | "CALCULATE";
 }>(
   "mock-scan",
@@ -129,7 +130,8 @@ export const mockScanWorker = new Worker<{
         return;
       }
       if (job.data.kind === "CALCULATE") {
-        await processProfitCalculation(job.data.scanJobId);
+        if (!job.data.runId) throw new Error("profit_calculation_run_missing");
+        await processProfitCalculation(job.data.runId);
         return;
       }
       const shouldProcess = await markScanJobRunning(job.data.scanJobId);
@@ -156,19 +158,19 @@ export const mockScanWorker = new Worker<{
         if (terminal) return;
       } else {
         if (job.data.kind === "CALCULATE") {
-          await failProfitCalculationForScan(job.data.scanJobId, status);
+          if (job.data.runId)
+            await failProfitCalculation(job.data.runId, status);
         }
-        await failScanJob(
-          job.data.scanJobId,
-          status,
-          job.data.kind === "MATCH"
-            ? "matching_failed"
-            : job.data.kind === "ENRICH"
-              ? "enrichment_failed"
-              : job.data.kind === "CALCULATE"
-                ? "profit_calculation_failed"
+        if (job.data.kind !== "CALCULATE")
+          await failScanJob(
+            job.data.scanJobId,
+            status,
+            job.data.kind === "MATCH"
+              ? "matching_failed"
+              : job.data.kind === "ENRICH"
+                ? "enrichment_failed"
                 : "scanner_request_failed",
-        );
+          );
       }
       throw error;
     }

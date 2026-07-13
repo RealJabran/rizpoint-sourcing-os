@@ -17,6 +17,9 @@ describe("queue idempotency", () => {
     expect(mockScanQueueJobId("scan_123", "CALCULATE", 2)).toBe(
       "scan-scan_123-calculate-2",
     );
+    expect(mockScanQueueJobId("scan_123", "CALCULATE", 1, "run_456")).toBe(
+      "scan-scan_123-calculate-run_456-1",
+    );
     expect(mockScanQueueJobId("scan_123", "UPLOAD_INSPECT")).not.toBe(
       mockScanQueueJobId("scan_123", "NORMALIZE"),
     );

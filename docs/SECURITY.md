@@ -15,6 +15,7 @@ The browser is untrusted. Web routes enforce an organization context before quer
 - Spreadsheet values are treated as data, never formulas. Formula-like input cells are retained as source evidence and flagged; exports remain unimplemented and must escape them before delivery.
 - The worker records only synthetic metadata in Phase 0 and redacts credential-shaped error text before logging.
 - External provider contracts require provenance/freshness and never expose credential fields to the browser.
+- Analysis filters and sort keys are allowlisted; evidence payloads are loaded only through tenant-scoped result-detail routes. Inline cost/stress edits require an idempotency key, revision, and reason, and retain an audit event rather than mutating supplier or provider evidence.
 - CI rejects spreadsheets outside the synthetic fixture allowlist, preventing accidental supplier-catalog commits.
 
 ## Required before production rollout
