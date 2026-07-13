@@ -8,6 +8,7 @@ type Decision = {
   confidence: number;
   reasonCodes: string[];
   supplierRow: {
+    id: string;
     sourceRowNumber: number;
     normalizedOffer: { description: string | null } | null;
     listingCandidates: Array<{
@@ -32,6 +33,32 @@ export default function MatchesPage({
 }) {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  async function review(
+    supplierRowId: string,
+    status: "USER_ACCEPTED" | "USER_REJECTED",
+    selectedCandidateId: string | null,
+  ): Promise<void> {
+    const response = await fetch(
+      `/api/supplier-rows/${supplierRowId}/match-review`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status, selectedCandidateId }),
+      },
+    );
+    if (!response.ok) {
+      setError("Unable to save the match review.");
+      return;
+    }
+    setDecisions((current) =>
+      current.map((decision) =>
+        decision.supplierRow.id === supplierRowId
+          ? { ...decision, status }
+          : decision,
+      ),
+    );
+  }
 
   useEffect(() => {
     void params.then(async ({ scanId }) => {
@@ -83,9 +110,29 @@ export default function MatchesPage({
                   {candidate.packGuard ? (
                     <span> — PackGuard: {candidate.packGuard.status}</span>
                   ) : null}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void review(
+                        decision.supplierRow.id,
+                        "USER_ACCEPTED",
+                        candidate.id,
+                      )
+                    }
+                  >
+                    Accept candidate
+                  </button>
                 </li>
               ))}
             </ul>
+            <button
+              type="button"
+              onClick={() =>
+                void review(decision.supplierRow.id, "USER_REJECTED", null)
+              }
+            >
+              Reject all candidates
+            </button>
           </li>
         ))}
       </ul>

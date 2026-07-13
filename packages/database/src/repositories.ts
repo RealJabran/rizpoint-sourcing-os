@@ -891,6 +891,8 @@ export async function reviewMatchDecision(input: {
     },
   });
   if (!decision) return null;
+  if (input.status === "USER_ACCEPTED" && !input.selectedCandidateId)
+    return null;
   if (input.selectedCandidateId) {
     const candidate = await db.listingCandidate.findFirst({
       where: {
@@ -907,6 +909,7 @@ export async function reviewMatchDecision(input: {
       selectedCandidateId: input.selectedCandidateId,
       status: input.status,
       source: "HUMAN",
+      reviewedAt: new Date(),
     },
   });
 }

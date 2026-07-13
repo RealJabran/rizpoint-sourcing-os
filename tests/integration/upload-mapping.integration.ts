@@ -17,8 +17,9 @@ function upcFor(index: number): string {
 
 const catalog = [
   "UPC,Description,Unit Cost",
+  "012345678905,Acme Lemon Soda 12 oz Pack of 6,12.50",
   ...Array.from(
-    { length: 4_969 },
+    { length: 4_968 },
     (_, index) => `${upcFor(index)},Synthetic VSI item ${index},12.50`,
   ),
   "",
@@ -175,4 +176,43 @@ assert.equal(normalizationResponse.status, 202);
 const complete = await waitFor("COMPLETED");
 assert.equal(complete.scan?.status, "COMPLETED");
 assert.equal(complete.scan?.supplierRows.length, 4_969);
+
+const matchingResponse = await fetch(
+  `${baseUrl}/api/scans/${created.scanId}/match`,
+  { method: "POST" },
+);
+assert.equal(matchingResponse.status, 202);
+
+async function waitForMatching(): Promise<void> {
+  for (let attempt = 0; attempt < 160; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const response = await fetch(`${baseUrl}/api/scans/${created.scanId}`);
+    assert.equal(response.status, 200);
+    if (((await response.json()) as { status: string }).status === "COMPLETED")
+      return;
+  }
+  throw new Error("matching did not reach COMPLETED");
+}
+
+await waitForMatching();
+const matchesResponse = await fetch(
+  `${baseUrl}/api/scans/${created.scanId}/matches`,
+);
+assert.equal(matchesResponse.status, 200);
+const matches = (await matchesResponse.json()) as Array<{
+  status: string;
+  selectedCandidate: {
+    catalogProduct: { asin: string };
+    packGuard: { status: string } | null;
+  } | null;
+}>;
+assert.equal(matches.length, 4_969);
+const acme = matches.find(
+  (match) => match.selectedCandidate?.catalogProduct.asin === "B000000001",
+);
+assert.equal(acme?.status, "AUTO_ACCEPTED");
+assert.equal(
+  acme?.selectedCandidate?.packGuard?.status,
+  "BLOCKED_PACK_UNCERTAIN",
+);
 console.log(`integration upload/mapping completed: ${created.uploadId}`);

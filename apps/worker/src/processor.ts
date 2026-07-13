@@ -144,7 +144,13 @@ export const mockScanWorker = new Worker<{
         );
         if (terminal) return;
       } else {
-        await failScanJob(job.data.scanJobId, status, "scanner_request_failed");
+        await failScanJob(
+          job.data.scanJobId,
+          status,
+          job.data.kind === "MATCH"
+            ? "matching_failed"
+            : "scanner_request_failed",
+        );
       }
       throw error;
     }

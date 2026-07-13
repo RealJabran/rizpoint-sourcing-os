@@ -6,6 +6,7 @@ import {
   validateFilename,
   validateMappings,
 } from "../src/phase-one.js";
+import { matchReviewInputSchema } from "../src/match-review.js";
 
 describe("Phase 1 upload validation", () => {
   it("accepts supported filenames and enforces the size limit through the exported policy", () => {
@@ -113,6 +114,21 @@ describe("Phase 1 upload validation", () => {
             required: true,
           },
         ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires a selected candidate to accept a match review", () => {
+    expect(
+      matchReviewInputSchema.safeParse({
+        status: "USER_ACCEPTED",
+        selectedCandidateId: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      matchReviewInputSchema.safeParse({
+        status: "USER_ACCEPTED",
+        selectedCandidateId: "candidate_123",
       }).success,
     ).toBe(true);
   });

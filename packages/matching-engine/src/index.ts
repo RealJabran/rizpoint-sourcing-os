@@ -76,6 +76,7 @@ export interface PackGuardResult {
 
 const AUTO_ACCEPT_THRESHOLD = 95;
 const REVIEW_THRESHOLD = 80;
+const AMBIGUITY_MARGIN = 5;
 
 export function normalizeText(value: string | null | undefined): string {
   return (value ?? "")
@@ -92,6 +93,31 @@ export function normalizeIdentifier(
   return normalized || null;
 }
 
+function hasValidGs1CheckDigit(value: string): boolean {
+  if (!/^[0-9]+$/.test(value) || ![8, 12, 13, 14].includes(value.length))
+    return false;
+  const total = [...value.slice(0, -1)]
+    .reverse()
+    .reduce(
+      (sum, digit, index) => sum + Number(digit) * (index % 2 === 0 ? 3 : 1),
+      0,
+    );
+  return (10 - (total % 10)) % 10 === Number(value.at(-1));
+}
+
+export function isValidIdentifier(
+  type: CatalogIdentifier["type"],
+  value: string,
+): boolean {
+  if (type === "ASIN") return /^B[A-Z0-9]{9}$/.test(value);
+  if (type === "MPN") return value.length > 0;
+  if (type === "UPC")
+    return value.length === 12 && hasValidGs1CheckDigit(value);
+  if (type === "EAN")
+    return value.length === 13 && hasValidGs1CheckDigit(value);
+  return hasValidGs1CheckDigit(value);
+}
+
 export function matchingIdentifiers(
   input: SupplierMatchInput,
 ): readonly CatalogIdentifier[] {
@@ -105,7 +131,9 @@ export function matchingIdentifiers(
     ];
   return values.flatMap(([type, value]) => {
     const normalized = normalizeIdentifier(value);
-    return normalized ? [{ type, value: normalized }] : [];
+    return normalized && isValidIdentifier(type, normalized)
+      ? [{ type, value: normalized }]
+      : [];
   });
 }
 
@@ -219,6 +247,39 @@ function extractedSize(description: string | null | undefined): string | null {
   return match ? `${match[1]} ${match[2]}` : null;
 }
 
+export function extractSupplierPackCount(
+  description: string | null | undefined,
+): number | null {
+  const text = description ?? "";
+  const match =
+    text.match(/\bpack\s+of\s+(\d+)\b/i) ??
+    text.match(/\b(\d+)\s*(?:-?pack|pk|count|ct)\b/i);
+  return match?.[1] && Number(match[1]) > 0 ? Number(match[1]) : null;
+}
+
+export function extractSupplierUnitsPerCase(
+  description: string | null | undefined,
+): number | null {
+  const match = (description ?? "").match(
+    /\b(?:(\d+)\s*\/\s*(?:cs|case)|case\s+of\s+(\d+))\b/i,
+  );
+  const value = match?.[1] ?? match?.[2];
+  return value && Number(value) > 0 ? Number(value) : null;
+}
+
+function notApplicable(
+  feature: EvidenceFeature,
+  reasonCode: string,
+): MatchEvidence {
+  return {
+    feature,
+    outcome: "NOT_APPLICABLE",
+    score: 0,
+    reasonCode,
+    details: {},
+  };
+}
+
 export function scoreCandidate(
   input: SupplierMatchInput,
   product: CatalogProduct,
@@ -226,15 +287,12 @@ export function scoreCandidate(
 ): ScoredCandidate {
   const identifier = identifierEvidence(input, product);
   const brand = feature("BRAND", input.brand, product.brand, 15);
-  const model = feature(
-    "MODEL",
-    input.mpn ?? input.itemNumber,
-    product.mpn ?? product.model,
-    15,
-  );
+  const model = input.mpn
+    ? notApplicable("MODEL", "MODEL_DUPLICATES_MPN_IDENTIFIER")
+    : feature("MODEL", input.itemNumber, product.mpn ?? product.model, 15);
   const pack = feature(
     "PACK",
-    input.packCount ?? input.caseCount,
+    input.packCount ?? extractSupplierPackCount(input.description),
     product.packCount,
     10,
   );
@@ -254,7 +312,7 @@ export function scoreCandidate(
         : similarity === 0
           ? "UNKNOWN"
           : "CONTRADICTION",
-    score: Math.round((similarity * 10) / 100),
+    score: Math.round((similarity * 70) / 100),
     reasonCode: similarity >= 60 ? "TITLE_SIMILAR" : "TITLE_WEAK",
     details: { similarity },
   };
@@ -283,10 +341,10 @@ export function scoreCandidate(
 export function decideMatch(
   candidates: readonly ScoredCandidate[],
 ): MatchDecisionProposal {
-  const selected =
-    [...candidates].sort(
-      (left, right) => right.confidence - left.confidence,
-    )[0] ?? null;
+  const ordered = [...candidates].sort(
+    (left, right) => right.confidence - left.confidence,
+  );
+  const selected = ordered[0] ?? null;
   if (!selected)
     return {
       status: "UNMATCHED",
@@ -306,6 +364,32 @@ export function decideMatch(
           .map((item) => item.reasonCode),
       ],
     };
+  const runnerUp = ordered[1];
+  if (
+    runnerUp &&
+    selected.confidence >= REVIEW_THRESHOLD &&
+    selected.confidence - runnerUp.confidence <= AMBIGUITY_MARGIN
+  )
+    return {
+      status: "REVIEW_REQUIRED",
+      confidence: selected.confidence,
+      selected,
+      reasonCodes: ["AMBIGUOUS_CANDIDATES"],
+    };
+  if (selected.source === "TITLE_SEARCH")
+    return selected.confidence >= REVIEW_THRESHOLD
+      ? {
+          status: "REVIEW_REQUIRED",
+          confidence: selected.confidence,
+          selected,
+          reasonCodes: ["TITLE_CANDIDATE_REQUIRES_REVIEW"],
+        }
+      : {
+          status: "UNMATCHED",
+          confidence: selected.confidence,
+          selected: null,
+          reasonCodes: ["CONFIDENCE_BELOW_REVIEW_THRESHOLD"],
+        };
   if (selected.confidence >= AUTO_ACCEPT_THRESHOLD)
     return {
       status: "AUTO_ACCEPTED",
@@ -366,15 +450,30 @@ export function evaluatePackGuard(input: PackGuardInput): PackGuardResult {
       reasonCode: "SUPPLIER_COST_UNKNOWN",
     };
   }
+  let supplierCost;
+  try {
+    supplierCost = money(input.supplierUnitCost);
+  } catch {
+    supplierCost = null;
+  }
+  if (!supplierCost || !supplierCost.isFinite() || supplierCost.lte(0)) {
+    return {
+      status: "BLOCKED_PACK_UNCERTAIN",
+      supplierUnitsPerCase: supplierUnits,
+      amazonUnitsPerPack: amazonUnits,
+      sellableUnitsPerCase: sellable,
+      remainderUnits: 0,
+      costPerSellableUnit: null,
+      reasonCode: "SUPPLIER_COST_INVALID",
+    };
+  }
   return {
     status: "VERIFIED",
     supplierUnitsPerCase: supplierUnits,
     amazonUnitsPerPack: amazonUnits,
     sellableUnitsPerCase: sellable,
     remainderUnits: 0,
-    costPerSellableUnit: money(input.supplierUnitCost)
-      .mul(amazonUnits)
-      .toFixed(4),
+    costPerSellableUnit: supplierCost.mul(amazonUnits).toFixed(4),
     reasonCode: "PACK_VERIFIED",
   };
 }

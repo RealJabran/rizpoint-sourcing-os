@@ -8,6 +8,7 @@ import {
 import {
   decideMatch,
   evaluatePackGuard,
+  extractSupplierUnitsPerCase,
   matchingIdentifiers,
   normalizeText,
   scoreCandidate,
@@ -37,6 +38,10 @@ type MatchingOffer = {
   quantity: number | null;
   unitCost: { toString(): string } | null;
 } | null;
+
+export function isMatchingAttemptRunnable(status: string | null): boolean {
+  return status === "MATCHING" || status === "FAILED_RETRYABLE";
+}
 
 function asInput(offer: MatchingOffer): SupplierMatchInput {
   return {
@@ -71,7 +76,7 @@ async function cachedLookup(
   if (cached?.status === "COMPLETED") {
     return catalogProductSchema.array().parse(cached.payload);
   }
-  const products = await request();
+  const products = catalogProductSchema.array().parse(await request());
   const first = products[0];
   await saveMatchLookup({
     organizationId,
@@ -98,15 +103,20 @@ async function cascade(
     string,
     { product: CatalogProduct; source: CandidateSource }
   >();
-  if (input.asin) {
-    const asin = input.asin.trim().toUpperCase();
-    const product = await provider.getItem(asin);
+  const suppliedAsin = matchingIdentifiers(input).find(
+    ({ type }) => type === "ASIN",
+  );
+  if (suppliedAsin) {
+    const asin = suppliedAsin.value;
     const products = await cachedLookup(
       organizationId,
       scanJobId,
       "SUPPLIED_ASIN",
       asin,
-      async () => (product ? [product] : []),
+      async () => {
+        const product = await provider.getItem(asin);
+        return product ? [product] : [];
+      },
     );
     for (const result of products)
       candidates.set(result.asin, { product: result, source: "SUPPLIED_ASIN" });
@@ -156,7 +166,7 @@ async function cascade(
 
 export async function processMatching(scanJobId: string) {
   const scan = await getScanRowsForMatching(scanJobId);
-  if (!scan || scan.status !== "MATCHING") return;
+  if (!scan || !isMatchingAttemptRunnable(scan.status)) return;
   for (const row of scan.supplierRows) {
     const input = asInput(row.normalizedOffer);
     const candidates = await cascade(scan.organizationId, scanJobId, input);
@@ -174,7 +184,7 @@ export async function processMatching(scanJobId: string) {
         evidence: [...candidate.evidence],
         packGuard: evaluatePackGuard({
           supplierUnitsPerCase:
-            input.caseCount ?? input.quantity ?? input.packCount ?? null,
+            input.caseCount ?? extractSupplierUnitsPerCase(input.description),
           amazonUnitsPerPack: candidate.product.packCount ?? null,
           supplierUnitCost: input.unitCost ?? null,
         }),

@@ -25,7 +25,7 @@ export const mockCatalogProducts = [
     sizeText: "12 oz",
     packCount: 12,
     variation: "Lemon",
-    identifiers: [{ type: "UPC", value: "012345678906" }],
+    identifiers: [{ type: "UPC", value: "012345678912" }],
   },
   {
     asin: "B000000003",

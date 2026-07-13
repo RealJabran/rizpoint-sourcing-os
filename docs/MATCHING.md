@@ -8,16 +8,20 @@ A candidate can be auto-accepted only with a qualifying score and no brand, mode
 
 The worker executes the cascade in priority order and only advances when the prior
 stage returns no candidates: supplied ASIN, exact UPC/EAN/GTIN, MPN plus normalized
-brand, then title search. The Phase 2 provider is `MockCatalogProvider`; it is an
+brand, then title search. Invalid ASIN, UPC, EAN, and GTIN values are never used
+for exact lookup. The Phase 2 provider is `MockCatalogProvider`; it is an
 explicit test boundary and does not call Amazon or scrape web pages.
 
 Each candidate persists feature-level evidence, score, source, provider response
 provenance (`provider`, `observed_at`, and freshness), and a system decision. A
 hard contradiction for brand, model, extracted/explicit size, pack count, or
 variation always produces `REVIEW_REQUIRED`, even when a supplied ASIN or exact
-identifier otherwise scores highly. Human review is explicit and tenant-scoped.
+identifier otherwise scores highly. Near-tied candidates and every strong title
+candidate also require review; title search cannot auto-accept.
 
-PackGuard runs for every persisted candidate. Missing case/quantity, Amazon pack,
-or supplier cost is `BLOCKED_PACK_UNCERTAIN`; a non-divisible supplier case is
+PackGuard runs for every persisted candidate. Only an explicit case-count mapping
+or an unambiguous `12/cs` / `case of 12` supplier phrase establishes units per
+case; generic inventory quantity and consumer pack count do not. Missing case,
+Amazon pack, or supplier cost is `BLOCKED_PACK_UNCERTAIN`; a non-divisible supplier case is
 `BLOCKED_PACK_CONTRADICTION`; only a divisible relationship with a decimal supplier
 cost is `VERIFIED`. Profitability consumers must reject both blocked states.
