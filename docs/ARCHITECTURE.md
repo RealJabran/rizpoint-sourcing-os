@@ -27,7 +27,7 @@ sequenceDiagram
   K->>P: checkpoint, rows/warnings, state event
 ```
 
-The transactional outbox prevents a request from creating a database job without a recoverable enqueue instruction. Claims carry a token and lease; stale claims are reclaimed. Delivery is at least once, so queue IDs include scan and stage (`UPLOAD_INSPECT`, `NORMALIZE`, or `MATCH`), while checkpoints and terminal writes are idempotent.
+The transactional outbox prevents a request from creating a database job without a recoverable enqueue instruction. Claims carry a token and lease; stale claims are reclaimed. Delivery is at least once, so queue IDs include scan and stage (`UPLOAD_INSPECT`, `NORMALIZE`, `MATCH`, or `ENRICH`), while checkpoints and terminal writes are idempotent. Enrichment stores every metric independently with provider, observed time, expiry/freshness, and explicit missing-data flags; outages end as `PARTIAL_SUCCESS`, never silently complete data.
 
 The initial and upload migrations are additive and include reviewed manual `rollback.sql` files for disposable/local recovery. Production rollback requires a backup and change-review decision because it deletes job history and uploaded-row state.
 
@@ -41,7 +41,7 @@ The matching worker calls the typed catalog interface, validates provider payloa
 
 ## Provider boundary
 
-Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Adapters are mocks in Phase 0. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
+Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Mock/recorded adapters are the default; the optional Amazon SP-API adapter is isolated in `packages/amazon-sp-api`, server-side only, and configuration-gated. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
 
 The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Redis, and the scanner are reachable.
 

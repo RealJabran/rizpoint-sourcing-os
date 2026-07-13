@@ -3,6 +3,19 @@ import type {
   CatalogIdentifier,
   CatalogProduct,
   CatalogProvider,
+  CompetitivePricing,
+  CurrentOffers,
+  FeeEstimate,
+  FeeEstimateRequest,
+  FeeProvider,
+  MarketHistory,
+  MarketHistoryProvider,
+  MarketplaceContext,
+  PricingProvider,
+  ProviderHealth,
+  ProviderHealthProvider,
+  RestrictionProvider,
+  Restrictions,
 } from "@rizpoint/provider-contracts";
 
 const observedAt = "2026-07-12T00:00:00Z";
@@ -57,5 +70,144 @@ export class MockCatalogProvider implements CatalogProvider {
       (candidate) => candidate.asin === asin,
     );
     return product ? toCatalogProduct(product) : null;
+  }
+}
+
+export class MockAmazonProvider
+  implements
+    CatalogProvider,
+    PricingProvider,
+    FeeProvider,
+    RestrictionProvider,
+    MarketHistoryProvider,
+    ProviderHealthProvider
+{
+  private readonly catalog = new MockCatalogProvider();
+
+  async searchByIdentifier(
+    identifier: CatalogIdentifier,
+    _marketplace?: MarketplaceContext,
+  ): Promise<readonly CatalogProduct[]> {
+    void _marketplace;
+    return this.catalog.searchByIdentifier(identifier);
+  }
+
+  async searchByKeywords(
+    keywords: string,
+    _marketplace?: MarketplaceContext,
+  ): Promise<readonly CatalogProduct[]> {
+    void _marketplace;
+    return this.catalog.searchByKeywords(keywords);
+  }
+
+  async getItem(
+    asin: string,
+    _marketplace?: MarketplaceContext,
+  ): Promise<CatalogProduct | null> {
+    void _marketplace;
+    return this.catalog.getItem(asin);
+  }
+
+  async getCurrentOffers(
+    asin: string,
+    _marketplace: MarketplaceContext,
+  ): Promise<CurrentOffers> {
+    void _marketplace;
+    return {
+      value: [
+        {
+          sellerId: "mock-seller",
+          price: asin === "B000000001" ? "18.99" : "22.99",
+          currency: "USD",
+        },
+      ],
+      provenance: {
+        provider: "mock-amazon",
+        observedAt,
+        freshnessState: "FRESH",
+        providerReference: asin,
+      },
+    };
+  }
+
+  async getCompetitivePricing(
+    asin: string,
+    _marketplace: MarketplaceContext,
+  ): Promise<CompetitivePricing> {
+    void _marketplace;
+    return {
+      value: {
+        currency: "USD",
+        buyBoxPrice: asin === "B000000001" ? "18.99" : "22.99",
+        lowestPrice: asin === "B000000001" ? "17.99" : "21.99",
+        offerCount: 4,
+      },
+      provenance: {
+        provider: "mock-amazon",
+        observedAt,
+        freshnessState: "FRESH",
+        providerReference: asin,
+      },
+    };
+  }
+
+  async estimateFees(request: FeeEstimateRequest): Promise<FeeEstimate> {
+    return {
+      value: { totalFee: "6.25", currency: request.currency },
+      provenance: {
+        provider: "mock-amazon",
+        observedAt,
+        freshnessState: "FRESH",
+        providerReference: request.requestId,
+      },
+    };
+  }
+
+  async getRestrictions(
+    asin: string,
+    _marketplace: MarketplaceContext,
+  ): Promise<Restrictions> {
+    void _marketplace;
+    return {
+      value: {
+        status: asin === "B000000003" ? "REQUIRES_APPROVAL" : "ALLOWED",
+      },
+      provenance: {
+        provider: "mock-amazon",
+        observedAt,
+        freshnessState: "FRESH",
+        providerReference: asin,
+      },
+    };
+  }
+
+  async getHistory(
+    asin: string,
+    _marketplace: MarketplaceContext,
+  ): Promise<MarketHistory> {
+    void _marketplace;
+    return {
+      value: [
+        {
+          observedAt,
+          price: asin === "B000000001" ? "18.99" : "22.99",
+          currency: "USD",
+        },
+      ],
+      provenance: {
+        provider: "mock-history",
+        observedAt,
+        freshnessState: "FRESH",
+        providerReference: asin,
+      },
+    };
+  }
+
+  async health(): Promise<ProviderHealth> {
+    return {
+      provider: "mock-amazon",
+      status: "HEALTHY",
+      checkedAt: observedAt,
+    };
   }
 }

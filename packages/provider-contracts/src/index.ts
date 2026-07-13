@@ -16,6 +16,42 @@ export const provenanceSchema = z.object({
 
 export const decimalStringSchema = z.string().regex(/^-?\d+(\.\d+)?$/);
 
+export const marketplaceContextSchema = z.object({
+  marketplaceId: z.string().min(1),
+  region: z.enum(["NA", "EU", "FE"]),
+  sellerId: z.string().min(1).optional(),
+  connectionId: z.string().min(1).optional(),
+});
+export type MarketplaceContext = z.infer<typeof marketplaceContextSchema>;
+
+export const providerHealthSchema = z.object({
+  provider: z.string().min(1),
+  status: z.enum(["HEALTHY", "DEGRADED", "AUTH_REQUIRED", "UNAVAILABLE"]),
+  checkedAt: z.iso.datetime(),
+  lastErrorCode: z.string().min(1).optional(),
+});
+export type ProviderHealth = z.infer<typeof providerHealthSchema>;
+
+export class ProviderError extends Error {
+  constructor(
+    readonly code:
+      | "THROTTLED"
+      | "UNAUTHORIZED"
+      | "FORBIDDEN"
+      | "NOT_FOUND"
+      | "TRANSIENT"
+      | "PERMANENT"
+      | "INVALID_RESPONSE",
+    readonly options: {
+      readonly retryAfterMs?: number;
+      readonly httpStatus?: number;
+      readonly providerRequestId?: string;
+    } = {},
+  ) {
+    super(code);
+  }
+}
+
 export const observedMetricSchema = <T extends z.ZodType>(valueSchema: T) =>
   z.object({
     value: valueSchema,
@@ -46,6 +82,23 @@ export const catalogProductSchema = z.object({
   sizeText: z.string().min(1).optional(),
   packCount: z.number().int().positive().optional(),
   variation: z.string().min(1).optional(),
+  salesRanks: z
+    .array(
+      z.object({
+        classificationId: z.string().min(1),
+        rank: z.number().int().positive(),
+      }),
+    )
+    .optional(),
+  dimensions: z
+    .object({
+      height: decimalStringSchema.optional(),
+      length: decimalStringSchema.optional(),
+      width: decimalStringSchema.optional(),
+      weight: decimalStringSchema.optional(),
+      unit: z.string().min(1).optional(),
+    })
+    .optional(),
   identifiers: z.array(catalogIdentifierSchema),
   provenance: provenanceSchema,
 });
@@ -66,6 +119,16 @@ export const currentOffersSchema = observedMetricSchema(
 );
 export type CurrentOffers = z.infer<typeof currentOffersSchema>;
 
+export const competitivePricingSchema = observedMetricSchema(
+  z.object({
+    currency: z.string().length(3),
+    buyBoxPrice: decimalStringSchema.optional(),
+    lowestPrice: decimalStringSchema.optional(),
+    offerCount: z.number().int().nonnegative().optional(),
+  }),
+);
+export type CompetitivePricing = z.infer<typeof competitivePricingSchema>;
+
 export const feeEstimateSchema = observedMetricSchema(
   z.object({
     totalFee: decimalStringSchema,
@@ -73,6 +136,16 @@ export const feeEstimateSchema = observedMetricSchema(
   }),
 );
 export type FeeEstimate = z.infer<typeof feeEstimateSchema>;
+
+export const feeEstimateRequestSchema = z.object({
+  asin: z.string().regex(/^B[A-Z0-9]{9}$/),
+  price: decimalStringSchema,
+  currency: z.string().length(3),
+  fulfillmentChannel: z.enum(["AMAZON", "MERCHANT"]),
+  marketplace: marketplaceContextSchema,
+  requestId: z.string().min(1),
+});
+export type FeeEstimateRequest = z.infer<typeof feeEstimateRequestSchema>;
 
 export const restrictionsSchema = observedMetricSchema(
   z.object({
@@ -102,25 +175,49 @@ export type AiMatchRanking = z.infer<typeof aiMatchRankingSchema>;
 export interface CatalogProvider {
   searchByIdentifier(
     identifier: CatalogIdentifier,
+    marketplace?: MarketplaceContext,
   ): Promise<readonly CatalogProduct[]>;
-  searchByKeywords(keywords: string): Promise<readonly ListingCandidate[]>;
-  getItem(asin: string): Promise<CatalogProduct | null>;
+  searchByKeywords(
+    keywords: string,
+    marketplace?: MarketplaceContext,
+  ): Promise<readonly ListingCandidate[]>;
+  getItem(
+    asin: string,
+    marketplace?: MarketplaceContext,
+  ): Promise<CatalogProduct | null>;
 }
 
 export interface PricingProvider {
-  getCurrentOffers(asin: string): Promise<CurrentOffers>;
+  getCurrentOffers(
+    asin: string,
+    marketplace: MarketplaceContext,
+  ): Promise<CurrentOffers>;
+  getCompetitivePricing(
+    asin: string,
+    marketplace: MarketplaceContext,
+  ): Promise<CompetitivePricing>;
 }
 
 export interface FeeProvider {
-  estimateFees(asin: string): Promise<FeeEstimate>;
+  estimateFees(request: FeeEstimateRequest): Promise<FeeEstimate>;
 }
 
 export interface RestrictionProvider {
-  getRestrictions(asin: string, sellerAccountId: string): Promise<Restrictions>;
+  getRestrictions(
+    asin: string,
+    marketplace: MarketplaceContext,
+  ): Promise<Restrictions>;
 }
 
 export interface MarketHistoryProvider {
-  getHistory(asin: string): Promise<MarketHistory>;
+  getHistory(
+    asin: string,
+    marketplace: MarketplaceContext,
+  ): Promise<MarketHistory>;
+}
+
+export interface ProviderHealthProvider {
+  health(marketplace?: MarketplaceContext): Promise<ProviderHealth>;
 }
 
 export interface AiMatchProvider {

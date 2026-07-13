@@ -914,6 +914,289 @@ export async function reviewMatchDecision(input: {
   });
 }
 
+const DEFAULT_MARKETPLACE_ID = "ATVPDKIKX0DER";
+
+/** Creates the fixture-only connection used by local development and tests. */
+export async function ensureMockAmazonConnection(organizationId: string) {
+  return db.providerConnection.upsert({
+    where: {
+      organizationId_provider_marketplaceId: {
+        organizationId,
+        provider: "MOCK_AMAZON",
+        marketplaceId: DEFAULT_MARKETPLACE_ID,
+      },
+    },
+    create: {
+      organizationId,
+      provider: "MOCK_AMAZON",
+      mode: "MOCK",
+      status: "ACTIVE",
+      marketplaceId: DEFAULT_MARKETPLACE_ID,
+      region: "NA",
+    },
+    update: {},
+  });
+}
+
+export async function queueEnrichment(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.$transaction(async (transaction) => {
+    const scan = await transaction.scanJob.findFirst({
+      where: { id: scanJobId, organizationId, jobType: "UPLOAD" },
+      include: { _count: { select: { supplierRows: true } } },
+    });
+    if (!scan || scan._count.supplierRows === 0) return null;
+    if (!["COMPLETED", "PARTIAL_SUCCESS"].includes(scan.status)) return null;
+    const connection = await transaction.providerConnection.upsert({
+      where: {
+        organizationId_provider_marketplaceId: {
+          organizationId,
+          provider: "MOCK_AMAZON",
+          marketplaceId: DEFAULT_MARKETPLACE_ID,
+        },
+      },
+      create: {
+        organizationId,
+        provider: "MOCK_AMAZON",
+        mode: "MOCK",
+        status: "ACTIVE",
+        marketplaceId: DEFAULT_MARKETPLACE_ID,
+        region: "NA",
+      },
+      update: {},
+    });
+    const run = await transaction.enrichmentRun.upsert({
+      where: {
+        scanJobId_providerConnectionId: {
+          scanJobId,
+          providerConnectionId: connection.id,
+        },
+      },
+      create: {
+        organizationId,
+        scanJobId,
+        providerConnectionId: connection.id,
+        status: "PENDING",
+        attemptCount: 1,
+      },
+      update: {
+        status: "PENDING",
+        completedAt: null,
+        attemptCount: { increment: 1 },
+      },
+    });
+    const selected = await transaction.matchDecision.findMany({
+      where: {
+        organizationId,
+        supplierRow: { scanJobId },
+        status: { in: ["AUTO_ACCEPTED", "USER_ACCEPTED"] },
+        selectedCandidateId: { not: null },
+      },
+      select: {
+        supplierRowId: true,
+        selectedCandidate: {
+          select: { catalogProduct: { select: { asin: true } } },
+        },
+      },
+    });
+    if (selected.length === 0) return null;
+    await transaction.enrichmentItem.createMany({
+      data: selected.flatMap((decision) =>
+        decision.selectedCandidate?.catalogProduct.asin
+          ? [
+              {
+                enrichmentRunId: run.id,
+                supplierRowId: decision.supplierRowId,
+                asin: decision.selectedCandidate.catalogProduct.asin,
+              },
+            ]
+          : [],
+      ),
+      skipDuplicates: true,
+    });
+    await transaction.enrichmentItem.updateMany({
+      where: { enrichmentRunId: run.id, status: "PARTIAL_SUCCESS" },
+      data: { status: "PENDING" },
+    });
+    await transaction.scanJob.update({
+      where: { id: scanJobId },
+      data: { status: "ENRICHING", completedAt: null },
+    });
+    await transaction.outboxEvent.upsert({
+      where: {
+        scanJobId_eventType: { scanJobId, eventType: "scan.enrich.requested" },
+      },
+      create: {
+        organizationId,
+        scanJobId,
+        eventType: "scan.enrich.requested",
+        payload: { scanJobId, kind: "ENRICH", runAttempt: run.attemptCount },
+      },
+      update: {
+        status: "PENDING",
+        claimToken: null,
+        claimedAt: null,
+        lastError: null,
+        payload: { scanJobId, kind: "ENRICH", runAttempt: run.attemptCount },
+      },
+    });
+    return run;
+  });
+}
+
+export async function getEnrichmentRunForProcessing(scanJobId: string) {
+  return db.enrichmentRun.findFirst({
+    where: { scanJobId },
+    include: {
+      providerConnection: true,
+      items: { include: { observations: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function recordProviderCallAttempt(input: {
+  organizationId: string;
+  enrichmentRunId: string;
+  provider: "MOCK_AMAZON" | "AMAZON_SP_API" | "MOCK_HISTORY";
+  operation: string;
+  requestKey: string;
+  attempt: number;
+  status: "SUCCESS" | "RETRYABLE_ERROR" | "PERMANENT_ERROR" | "THROTTLED";
+  errorCode?: string;
+  httpStatus?: number;
+  providerRequestId?: string;
+  retryAt?: Date;
+}) {
+  return db.providerCallAttempt.upsert({
+    where: {
+      provider_operation_requestKey_attempt: {
+        provider: input.provider,
+        operation: input.operation,
+        requestKey: input.requestKey,
+        attempt: input.attempt,
+      },
+    },
+    create: input,
+    update: input,
+  });
+}
+
+export async function persistEnrichmentItem(input: {
+  enrichmentItemId: string;
+  observations: Array<{
+    metricType: "CATALOG" | "PRICING" | "FEES" | "RESTRICTIONS" | "HISTORY";
+    provider: "MOCK_AMAZON" | "AMAZON_SP_API" | "MOCK_HISTORY";
+    observedAt: Date;
+    freshUntil: Date;
+    marketplaceId: string;
+    providerReference?: string;
+    payload: Prisma.InputJsonValue;
+    primaryAmount?: string;
+    secondaryAmount?: string;
+    currency?: string;
+  }>;
+  missingMetrics: string[];
+  errorCode?: string;
+}) {
+  await db.$transaction(async (transaction) => {
+    for (const observation of input.observations) {
+      await transaction.providerObservation.upsert({
+        where: {
+          enrichmentItemId_metricType_provider: {
+            enrichmentItemId: input.enrichmentItemId,
+            metricType: observation.metricType,
+            provider: observation.provider,
+          },
+        },
+        create: {
+          ...observation,
+          enrichmentItemId: input.enrichmentItemId,
+          freshnessState: "FRESH",
+        },
+        update: { ...observation, freshnessState: "FRESH", errorCode: null },
+      });
+    }
+    await transaction.enrichmentItem.update({
+      where: { id: input.enrichmentItemId },
+      data: {
+        status: input.missingMetrics.length ? "PARTIAL_SUCCESS" : "COMPLETED",
+        missingMetrics: input.missingMetrics,
+        lastErrorCode: input.errorCode ?? null,
+      },
+    });
+  });
+}
+
+export async function completeEnrichmentRun(enrichmentRunId: string) {
+  await db.$transaction(async (transaction) => {
+    const run = await transaction.enrichmentRun.findUnique({
+      where: { id: enrichmentRunId },
+      include: { items: true },
+    });
+    if (!run) return;
+    const partial = run.items.some((item) => item.status !== "COMPLETED");
+    const status = partial ? "PARTIAL_SUCCESS" : "COMPLETED";
+    await transaction.enrichmentRun.update({
+      where: { id: run.id },
+      data: {
+        status,
+        completedAt: new Date(),
+        missingMetricCount: run.items.filter(
+          (item) => item.status !== "COMPLETED",
+        ).length,
+      },
+    });
+    await transaction.scanJob.update({
+      where: { id: run.scanJobId },
+      data: { status, completedAt: new Date() },
+    });
+    await transaction.scanCheckpoint.upsert({
+      where: { scanJobId_stage: { scanJobId: run.scanJobId, stage: "ENRICH" } },
+      create: {
+        scanJobId: run.scanJobId,
+        stage: "ENRICH",
+        checksum: String(run.items.length),
+        payload: { runId: run.id, status },
+      },
+      update: {
+        checksum: String(run.items.length),
+        payload: { runId: run.id, status },
+      },
+    });
+    await transaction.scanEvent.create({
+      data: {
+        scanJobId: run.scanJobId,
+        eventType: status,
+        payload: { stage: "ENRICH", partial },
+      },
+    });
+  });
+}
+
+export async function listEnrichmentForScan(
+  organizationId: string,
+  scanJobId: string,
+) {
+  return db.enrichmentRun.findMany({
+    where: { organizationId, scanJobId },
+    include: {
+      providerConnection: {
+        select: {
+          provider: true,
+          status: true,
+          marketplaceId: true,
+          updatedAt: true,
+        },
+      },
+      items: { include: { observations: true }, orderBy: { createdAt: "asc" } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 function stringOrNull(
   value: string | number | null | undefined,
 ): string | null {

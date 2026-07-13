@@ -21,5 +21,5 @@ The browser is untrusted. Web routes enforce an organization context before quer
 
 - Add identity-aware authorization; the current demo organization is not production authentication.
 - Reject unsafe formulas on export (`=`, `+`, `-`, `@`) when exports are implemented.
-- Encrypt provider credentials at rest with rotation support.
+- Provider refresh tokens are encrypted at rest with AES-256-GCM and versioned `PROVIDER_CREDENTIAL_KEY_V1`; this key is server/worker-only and must be supplied by the deployment secret manager. Browser APIs expose connection status only, never token material.
 - Add authentication, authorization tests, audit logging, retention/deletion controls, and operational incident procedures.

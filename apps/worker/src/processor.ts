@@ -20,6 +20,7 @@ import {
   ScannerRequestError,
 } from "./scanner-client.js";
 import { processMatching } from "./matching.js";
+import { processEnrichment } from "./enrichment.js";
 
 const terminalUploadErrorCodes = new Set([
   "EMPTY_FILE",
@@ -47,7 +48,7 @@ function errorCode(error: unknown): string {
 
 export const mockScanWorker = new Worker<{
   scanJobId: string;
-  kind?: "UPLOAD_INSPECT" | "NORMALIZE" | "MATCH";
+  kind?: "UPLOAD_INSPECT" | "NORMALIZE" | "MATCH" | "ENRICH";
 }>(
   "mock-scan",
   async (job) => {
@@ -121,6 +122,10 @@ export const mockScanWorker = new Worker<{
         await processMatching(job.data.scanJobId);
         return;
       }
+      if (job.data.kind === "ENRICH") {
+        await processEnrichment(job.data.scanJobId);
+        return;
+      }
       const shouldProcess = await markScanJobRunning(job.data.scanJobId);
       if (!shouldProcess) return;
       const result = await requestMockScan(job.data.scanJobId);
@@ -149,7 +154,9 @@ export const mockScanWorker = new Worker<{
           status,
           job.data.kind === "MATCH"
             ? "matching_failed"
-            : "scanner_request_failed",
+            : job.data.kind === "ENRICH"
+              ? "enrichment_failed"
+              : "scanner_request_failed",
         );
       }
       throw error;

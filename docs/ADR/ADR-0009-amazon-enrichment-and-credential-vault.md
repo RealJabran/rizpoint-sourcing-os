@@ -1,0 +1,3 @@
+# ADR-0009: Amazon enrichment and credential vault
+
+Phase 3 retains catalog, pricing, fees, restrictions, and history behind typed provider contracts. Local and CI runs use recorded/mock adapters only. A real SP-API adapter is server-side and configuration-gated; refresh tokens are AES-256-GCM encrypted with authenticated organization/connection context and are never returned by browser routes. Enrichment is an idempotent outbox job keyed by scan stage. Each metric is stored independently with provider, observed time, expiry, freshness, and explicit missing-data flags. Provider outages complete the run as `PARTIAL_SUCCESS`, never as silent complete data.
