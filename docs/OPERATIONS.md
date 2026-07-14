@@ -1,0 +1,21 @@
+# Private production operations
+
+## Deployment
+
+Use immutable image digests built by CI. Supply secrets through the deployment secret manager, not an environment file in Git. Set `RIZPOINT_PRIVATE_MODE=true`, `PHASE_ZERO_DEMO_MODE=false`, a unique `NEXTAUTH_SECRET`, and a private organization slug. Run migrations once with the migrator identity before releasing worker and web containers. Only the web service is public behind TLS; PostgreSQL, Redis, scanner, ClamAV, worker metrics, and object storage remain private.
+
+Bootstrap the owner in a controlled maintenance session: pass the password through protected standard input to `node scripts/create-password-hash.mjs` (never as an argument or environment variable), create the organization and `users`/`organization_memberships` rows through the approved database administration channel, then discard the plaintext input. The hash is safe to store only in the database.
+
+## Backups and restore verification
+
+Use managed PostgreSQL point-in-time recovery with an RPO of 15 minutes or better, daily encrypted logical dumps retained for 30 days, and private-object versioning retained for 30 days. Run `scripts/backup-postgres.sh` from a backup runner with `PGHOST`, `PGDATABASE`, `PGUSER`, and a protected `PGPASSFILE`; upload the dump and checksum to encrypted backup storage. At least monthly and before a schema release, restore into an isolated database named `rizpoint_restore_*` with `RIZPOINT_RESTORE_CONFIRM=RESTORE_ISOLATED` and `scripts/verify-postgres-restore.sh`.
+
+Redis is not backed up as business state. Restore PostgreSQL and object versions first, then start the worker so idempotent jobs can resume from database checkpoints.
+
+## Retention
+
+Exports receive a seven-day expiry. `RIZPOINT_RETENTION_MODE=report` only records candidates. Set it to `delete` only after reviewing the report and a successful restore drill; deletion removes expired private export objects and records an audit event. Uploaded originals, financial evidence, and audit history remain retained until a separate approved data-deletion feature exists.
+
+## Alerts
+
+Alert on failed-final jobs, queue age, outbox publish/reconciliation errors, provider throttling, scan partial-success spikes, dependency readiness failures, ClamAV unavailability, backup age, restore failure, and any Sev-1 calculation or data-integrity incident. Configure `RIZPOINT_ERROR_TRACKING_WEBHOOK_URL` to a private HTTPS collector. Logs and telemetry must carry IDs only, never workbook cells, tokens, supplier prices, or refresh credentials.

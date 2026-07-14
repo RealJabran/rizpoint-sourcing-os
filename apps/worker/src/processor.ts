@@ -24,6 +24,8 @@ import { processMatching } from "./matching.js";
 import { processEnrichment } from "./enrichment.js";
 import { processProfitCalculation } from "./profit.js";
 import { processExport } from "./export.js";
+import { jobFailures, logger, redactText } from "./observability.js";
+import { reportOperationalError } from "./error-tracking.js";
 
 const terminalUploadErrorCodes = new Set([
   "EMPTY_FILE",
@@ -153,6 +155,20 @@ export const mockScanWorker = new Worker<{
       const result = await requestMockScan(job.data.scanJobId);
       await completeMockScanJob(job.data.scanJobId, result.checksum, result);
     } catch (error) {
+      jobFailures.inc({ kind: job.data.kind ?? "MOCK" });
+      logger.error({
+        event: "job_failed",
+        kind: job.data.kind ?? "MOCK",
+        scanJobId: job.data.scanJobId,
+        exportJobId: job.data.exportJobId,
+        message: error instanceof Error ? redactText(error.message) : "unknown",
+      });
+      void reportOperationalError({
+        event: "job_failed",
+        error,
+        ...(job.data.scanJobId ? { scanJobId: job.data.scanJobId } : {}),
+        ...(job.data.exportJobId ? { exportJobId: job.data.exportJobId } : {}),
+      }).catch(() => undefined);
       if (job.data.kind === "EXPORT") throw error;
       const status = failureStatusForAttempt(
         job.attemptsMade,

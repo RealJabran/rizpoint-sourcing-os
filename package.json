@@ -16,7 +16,8 @@
     "test:integration": "tsx tests/integration/mock-scan.integration.ts && tsx tests/integration/upload-mapping.integration.ts && tsx tests/integration/profit-decision.integration.ts",
     "typecheck": "turbo run typecheck",
     "check:private-assets": "node scripts/check-private-assets.mjs",
-    "verify": "pnpm check:private-assets && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check:production-hardening": "node scripts/check-production-hardening.mjs",
+    "verify": "pnpm check:private-assets && pnpm check:production-hardening && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "db:generate": "pnpm --filter @rizpoint/database prisma:generate",
     "db:migrate": "pnpm --filter @rizpoint/database prisma:migrate"
   },

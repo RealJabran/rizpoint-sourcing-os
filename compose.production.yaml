@@ -1,0 +1,26 @@
+# Reference topology only. Production uses managed PostgreSQL, Redis, and S3;
+# do not publish worker, scanner, database, Redis, or object-storage ports.
+services:
+  web:
+    environment:
+      NODE_ENV: production
+      RIZPOINT_PRIVATE_MODE: "true"
+      PHASE_ZERO_DEMO_MODE: "false"
+      MALWARE_SCAN_MODE: clamav
+      RIZPOINT_RETENTION_MODE: report
+    ports: []
+  worker:
+    environment:
+      NODE_ENV: production
+      RIZPOINT_PRIVATE_MODE: "true"
+      MALWARE_SCAN_MODE: clamav
+      RIZPOINT_RETENTION_MODE: report
+  scanner:
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')",
+        ]

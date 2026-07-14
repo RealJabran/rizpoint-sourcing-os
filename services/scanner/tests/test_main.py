@@ -41,3 +41,17 @@ def test_inspection_requires_malware_scanner_when_not_in_local_mock_mode(
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "MALWARE_SCAN_CONFIGURATION"
+
+
+def test_readiness_fails_when_required_malware_scanner_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MALWARE_SCAN_MODE", "invalid")
+
+    async def check_ready() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get("/ready")
+
+    response = asyncio.run(check_ready())
+    assert response.status_code == 503

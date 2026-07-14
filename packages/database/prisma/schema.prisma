@@ -296,6 +296,10 @@ enum ExportKind {
   AUDIT_REPORT
 }
 
+enum OrganizationRole {
+  OWNER
+}
+
 model Organization {
   id        String   @id @default(cuid())
   slug      String   @unique
@@ -330,8 +334,40 @@ model Organization {
   purchaseOrderLines          PurchaseOrderLine[]
   exportJobs                  ExportJob[]
   workflowAuditEvents         WorkflowAuditEvent[]
+  memberships                 OrganizationMembership[]
 
   @@map("organizations")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  displayName  String?
+  passwordHash String   @map("password_hash")
+  active       Boolean  @default(true)
+  sessionEpoch Int      @default(0) @map("session_epoch")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships OrganizationMembership[]
+
+  @@map("users")
+}
+
+model OrganizationMembership {
+  id             String           @id @default(cuid())
+  organizationId String           @map("organization_id")
+  userId         String           @map("user_id")
+  role           OrganizationRole @default(OWNER)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([userId, organizationId])
+  @@map("organization_memberships")
 }
 
 model ScanJob {
@@ -1061,7 +1097,7 @@ model ProviderCallAttempt {
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   enrichmentRun EnrichmentRun? @relation(fields: [enrichmentRunId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, operation, requestKey, attempt])
+  @@unique([organizationId, provider, operation, requestKey, attempt])
   @@index([organizationId, provider, createdAt])
   @@map("provider_call_attempts")
 }

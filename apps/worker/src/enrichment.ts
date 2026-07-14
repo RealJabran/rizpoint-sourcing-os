@@ -3,9 +3,11 @@ import {
   getEnrichmentRunForProcessing,
   persistEnrichmentItem,
   recordProviderCallAttempt,
+  scheduleEnrichmentRetry,
 } from "@rizpoint/database";
 import { MockAmazonProvider } from "@rizpoint/mock-providers";
 import { ProviderError } from "@rizpoint/provider-contracts";
+import { providerCalls } from "./observability.js";
 
 const marketplace = {
   marketplaceId: "ATVPDKIKX0DER",
@@ -13,6 +15,7 @@ const marketplace = {
   sellerId: "mock-seller",
 };
 const FRESH_FOR_MS = 15 * 60_000;
+const TRANSIENT_RETRY_DELAY_MS = 30_000;
 
 type Metric = "CATALOG" | "PRICING" | "FEES" | "RESTRICTIONS" | "HISTORY";
 type CachedResult = {
@@ -52,6 +55,7 @@ export async function processEnrichment(scanJobId: string) {
   if (!run) return;
   const provider = new MockAmazonProvider();
   const cache = new Map<string, Promise<CachedResult>>();
+  let retryAt: Date | undefined;
   const call = (asin: string, metric: Metric): Promise<CachedResult> => {
     const key = `${metric}:${asin}`;
     const existing = cache.get(key);
@@ -154,6 +158,12 @@ export async function processEnrichment(scanJobId: string) {
       "RESTRICTIONS",
       "HISTORY",
     ] as const) {
+      if (
+        item.observations.some(
+          (observation) => observation.metricType === metric,
+        )
+      )
+        continue;
       try {
         const result = await call(item.asin, metric);
         await recordProviderCallAttempt({
@@ -165,6 +175,7 @@ export async function processEnrichment(scanJobId: string) {
           attempt: run.attemptCount,
           status: "SUCCESS",
         });
+        providerCalls.inc({ operation: metric, outcome: "success" });
         observations.push({
           metricType: metric,
           provider: result.provider,
@@ -201,6 +212,18 @@ export async function processEnrichment(scanJobId: string) {
           ...(detail.retryAt ? { retryAt: detail.retryAt } : {}),
           errorCode: detail.code,
         });
+        providerCalls.inc({
+          operation: metric,
+          outcome: detail.status.toLowerCase(),
+        });
+        if (
+          detail.status === "THROTTLED" ||
+          detail.status === "RETRYABLE_ERROR"
+        ) {
+          const candidate =
+            detail.retryAt ?? new Date(Date.now() + TRANSIENT_RETRY_DELAY_MS);
+          if (!retryAt || candidate > retryAt) retryAt = candidate;
+        }
       }
     }
     await persistEnrichmentItem({
@@ -210,5 +233,6 @@ export async function processEnrichment(scanJobId: string) {
       ...(lastErrorCode ? { errorCode: lastErrorCode } : {}),
     });
   }
+  if (retryAt && (await scheduleEnrichmentRetry(run.id, retryAt))) return;
   await completeEnrichmentRun(run.id);
 }

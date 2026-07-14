@@ -10,6 +10,9 @@ import { phaseZeroDemoEnabled } from "./phase-zero";
 export function requirePrivateAccess(
   request: NextRequest,
 ): NextResponse | null {
+  // Production authorization is enforced by proxy.ts using a signed Auth.js
+  // session. The shared token remains only as a local/demo compatibility gate.
+  if (process.env.RIZPOINT_PRIVATE_MODE === "true") return null;
   if (!phaseZeroDemoEnabled())
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   const expected = process.env.RIZPOINT_PRIVATE_ACCESS_TOKEN;

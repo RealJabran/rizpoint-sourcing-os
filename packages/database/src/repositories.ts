@@ -13,6 +13,8 @@ import {
 import { db } from "./client.js";
 
 export const PHASE_ZERO_ORGANIZATION_SLUG = "rizpoint-demo";
+export const PRIVATE_ORGANIZATION_SLUG =
+  process.env.RIZPOINT_PRIVATE_ORGANIZATION_SLUG ?? "rizpoint-private";
 
 function requestFingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -48,6 +50,13 @@ function assertIdempotentEvent(
 }
 
 export async function ensurePhaseZeroOrganization() {
+  if (process.env.PHASE_ZERO_DEMO_MODE !== "true") {
+    const organization = await db.organization.findUnique({
+      where: { slug: PRIVATE_ORGANIZATION_SLUG },
+    });
+    if (!organization) throw new Error("PRIVATE_ORGANIZATION_NOT_BOOTSTRAPPED");
+    return organization;
+  }
   const organization = await db.organization.upsert({
     where: { slug: PHASE_ZERO_ORGANIZATION_SLUG },
     create: {
@@ -1131,7 +1140,8 @@ export async function recordProviderCallAttempt(input: {
 }) {
   return db.providerCallAttempt.upsert({
     where: {
-      provider_operation_requestKey_attempt: {
+      organizationId_provider_operation_requestKey_attempt: {
+        organizationId: input.organizationId,
         provider: input.provider,
         operation: input.operation,
         requestKey: input.requestKey,
@@ -1234,6 +1244,60 @@ export async function completeEnrichmentRun(enrichmentRunId: string) {
         payload: { stage: "ENRICH", partial },
       },
     });
+  });
+}
+
+/** Schedule a retry through the transactional outbox rather than sleeping a worker. */
+export async function scheduleEnrichmentRetry(
+  enrichmentRunId: string,
+  retryAt: Date,
+  maxAttempts = 3,
+): Promise<boolean> {
+  return db.$transaction(async (transaction) => {
+    const run = await transaction.enrichmentRun.findUnique({
+      where: { id: enrichmentRunId },
+      select: {
+        id: true,
+        scanJobId: true,
+        organizationId: true,
+        attemptCount: true,
+      },
+    });
+    if (!run || run.attemptCount >= maxAttempts) return false;
+    const nextAttempt = run.attemptCount + 1;
+    await transaction.enrichmentRun.update({
+      where: { id: run.id },
+      data: { status: "PENDING", completedAt: null, attemptCount: nextAttempt },
+    });
+    await transaction.enrichmentItem.updateMany({
+      where: { enrichmentRunId: run.id, status: "PARTIAL_SUCCESS" },
+      data: { status: "PENDING" },
+    });
+    await transaction.scanJob.update({
+      where: { id: run.scanJobId },
+      data: { status: "ENRICHING", completedAt: null },
+    });
+    await transaction.outboxEvent.update({
+      where: {
+        scanJobId_eventType: {
+          scanJobId: run.scanJobId,
+          eventType: "scan.enrich.requested",
+        },
+      },
+      data: {
+        status: "PENDING",
+        claimToken: null,
+        claimedAt: null,
+        lastError: null,
+        payload: {
+          scanJobId: run.scanJobId,
+          kind: "ENRICH",
+          runAttempt: nextAttempt,
+          notBefore: retryAt.toISOString(),
+        },
+      },
+    });
+    return true;
   });
 }
 
@@ -2317,12 +2381,60 @@ function decimalOrNull(
 }
 
 const OUTBOX_CLAIM_LEASE_MS = 60_000;
+const OUTBOX_PUBLISHED_RECONCILE_MS = 60_000;
 
 export type ClaimedOutboxEvent = {
   id: string;
   payload: Prisma.JsonValue;
   claimToken: string;
 };
+
+/**
+ * Redis is transport, not truth. A published event may disappear with Redis
+ * before its deterministic job runs, so periodically make unfinished targets
+ * eligible for another idempotent enqueue.
+ */
+export async function recoverPublishedOutboxEvents(
+  limit: number,
+): Promise<number> {
+  const staleBefore = new Date(Date.now() - OUTBOX_PUBLISHED_RECONCILE_MS);
+  const events = await db.outboxEvent.findMany({
+    where: {
+      status: "PUBLISHED",
+      publishedAt: { lt: staleBefore },
+      OR: [
+        {
+          scanJob: {
+            is: {
+              status: {
+                notIn: ["COMPLETED", "PARTIAL_SUCCESS", "FAILED_FINAL"],
+              },
+            },
+          },
+        },
+        {
+          exportJob: {
+            is: { status: { notIn: ["COMPLETED", "FAILED_FINAL"] } },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+    orderBy: { publishedAt: "asc" },
+    take: limit,
+  });
+  if (events.length === 0) return 0;
+  const result = await db.outboxEvent.updateMany({
+    where: { id: { in: events.map((event) => event.id) }, status: "PUBLISHED" },
+    data: {
+      status: "PENDING",
+      claimToken: null,
+      claimedAt: null,
+      lastError: "published_event_reconciled",
+    },
+  });
+  return result.count;
+}
 
 export async function claimPendingOutboxEvents(
   limit: number,
@@ -3270,6 +3382,79 @@ export async function getExportForOrganization(
   exportJobId: string,
 ) {
   return db.exportJob.findFirst({ where: { id: exportJobId, organizationId } });
+}
+
+/** Returns only expired private artifacts. Callers must delete storage first, then acknowledge. */
+export async function listExpiredExportObjects(now: Date, limit = 100) {
+  return db.exportJob.findMany({
+    where: {
+      status: "COMPLETED",
+      expiresAt: { lte: now },
+      objectKey: { not: null },
+    },
+    select: { id: true, organizationId: true, objectKey: true },
+    orderBy: { expiresAt: "asc" },
+    take: limit,
+  });
+}
+
+/** Persist report-mode retention candidates so an operator can review them. */
+export async function recordExpiredExportRetentionReport(
+  items: Array<{ id: string; organizationId: string }>,
+  now: Date,
+) {
+  const day = now.toISOString().slice(0, 10);
+  for (const item of items) {
+    await db.workflowAuditEvent.upsert({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: item.organizationId,
+          idempotencyKey: `retention-report:${item.id}:${day}`,
+        },
+      },
+      create: {
+        organizationId: item.organizationId,
+        entityType: "ExportJob",
+        entityId: item.id,
+        eventType: "export.retention_reported",
+        idempotencyKey: `retention-report:${item.id}:${day}`,
+        payload: {
+          retention: "expired_export_object",
+          reportedAt: now.toISOString(),
+        },
+      },
+      update: {},
+    });
+  }
+}
+
+export async function acknowledgeExpiredExportObject(
+  id: string,
+  organizationId: string,
+) {
+  return db.$transaction(async (transaction) => {
+    const updated = await transaction.exportJob.updateMany({
+      where: {
+        id,
+        organizationId,
+        status: "COMPLETED",
+        objectKey: { not: null },
+        expiresAt: { lte: new Date() },
+      },
+      data: { objectKey: null },
+    });
+    if (updated.count)
+      await transaction.workflowAuditEvent.create({
+        data: {
+          organizationId,
+          entityType: "ExportJob",
+          entityId: id,
+          eventType: "export.retention_deleted",
+          payload: { retention: "expired_export_object" },
+        },
+      });
+    return updated.count === 1;
+  });
 }
 
 export async function listWorkflowAuditEvents(input: {

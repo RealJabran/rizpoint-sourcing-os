@@ -12,6 +12,7 @@ import {
   ShortlistItemStatus,
   ProfitCalculationStatus,
 } from "../src/index.js";
+import { readFile } from "node:fs/promises";
 
 describe("database policy", () => {
   it("uses a named synthetic organization for Phase 0", () => {
@@ -59,5 +60,15 @@ describe("database policy", () => {
         runId: "full-run",
       }),
     ).toBe(false);
+  });
+
+  it("scopes provider-attempt idempotency by organization", async () => {
+    const schema = await readFile(
+      new URL("../prisma/schema.prisma", import.meta.url),
+      "utf8",
+    );
+    expect(schema).toContain(
+      "@@unique([organizationId, provider, operation, requestKey, attempt])",
+    );
   });
 });

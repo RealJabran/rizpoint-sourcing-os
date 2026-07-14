@@ -2,9 +2,9 @@
 
 An explainable Amazon wholesale sourcing platform. It is intentionally built around evidence, pack correctness, tenant boundaries, and deterministic Decimal-based financial calculations.
 
-## Phase 2 status
+## Current status
 
-This repository includes the Phase 0 foundation, Phase 1 upload/mapping slice, and Phase 2 deterministic matching slice. A local demo user can upload CSV, XLSX, or XLS supplier catalogs, select a sheet/header row, save validated mappings (including a VSI profile), normalize rows with persisted warnings, and queue mocked catalog matching. Match decisions preserve provider provenance, feature-level evidence, and PackGuard status. It does not call Amazon, calculate profits, or provide production authentication yet.
+This repository includes Phases 0–7 foundations: upload/mapping, deterministic matching and PackGuard, fixture-first enrichment, Decimal profit/decision calculations, analysis, shortlists, purchase orders, safe exports, and private-production safeguards. Real Amazon enrichment remains configuration-gated and must be approved separately from local fixture mode.
 
 ## Local development
 
@@ -49,6 +49,9 @@ Outside local Compose, set the server-only `RIZPOINT_PRIVATE_ACCESS_TOKEN` and s
 - [Matching policy](docs/MATCHING.md)
 - [Security](docs/SECURITY.md)
 - [Architecture decisions](docs/ADR)
+- [Private operations](docs/OPERATIONS.md)
+- [Recovery runbook](docs/RECOVERY_RUNBOOK.md)
+- [Private user guide](docs/USER_GUIDE.md)
 
 ## Guardrails
 

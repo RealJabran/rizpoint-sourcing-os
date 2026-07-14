@@ -22,6 +22,7 @@ jobs:
           python-version: "3.13"
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:private-assets
+      - run: pnpm check:production-hardening
       - run: DATABASE_URL=postgresql://invalid:invalid@127.0.0.1:1/invalid pnpm db:generate
       - run: pnpm verify
       - run: python -m pip install --upgrade pip

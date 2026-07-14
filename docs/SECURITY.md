@@ -24,3 +24,11 @@ The browser is untrusted. Web routes enforce an organization context before quer
 - Reject unsafe formulas on export (`=`, `+`, `-`, `@`) when exports are implemented.
 - Provider refresh tokens are encrypted at rest with AES-256-GCM and versioned `PROVIDER_CREDENTIAL_KEY_V1`; this key is server/worker-only and must be supplied by the deployment secret manager. Browser APIs expose connection status only, never token material.
 - Add authentication, authorization tests, audit logging, retention/deletion controls, and operational incident procedures.
+
+## Phase 7 private-production controls
+
+- Private production validates the signed Auth.js session against the active owner membership and session epoch on every protected request. Demo mode is local-only; a production request rejects it before routing.
+- Production configuration is fail-closed for placeholders, weak session secrets, non-TLS database/Redis/storage endpoints, disabled malware scanning, missing private organization context, and missing storage encryption/versioning/lifecycle declarations.
+- Worker logs redact credential-shaped text and payload-bearing fields. Private production requires an HTTPS error-tracking collector and sends it only allowlisted IDs, release, event code, and redacted message. Metrics use IDs and counters only; supplier sheets, price rows, tokens, and raw provider payloads are never sent.
+- PostgreSQL requires PITR plus tested encrypted backups. The application verifies private bucket versioning, encryption, and lifecycle configuration at production readiness; Redis is recoverable transport, not business truth.
+- Export retention persists report-mode candidates as audit events before deletion is enabled. Deleted export objects retain an audit event. Production recovery and Sev-1 response are documented in `RECOVERY_RUNBOOK.md`.

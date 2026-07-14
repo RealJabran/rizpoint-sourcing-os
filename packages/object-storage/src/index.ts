@@ -1,7 +1,12 @@
 import {
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  DeleteObjectCommand,
+  GetBucketEncryptionCommand,
+  GetBucketLifecycleConfigurationCommand,
+  GetBucketVersioningCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -47,6 +52,39 @@ export async function getObjectMetadata(objectKey: string) {
   return client.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey }));
 }
 
+export async function storageReady(): Promise<boolean> {
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.RIZPOINT_PRIVATE_MODE === "true"
+    ) {
+      const [versioning, encryption, lifecycle] = await Promise.all([
+        client.send(new GetBucketVersioningCommand({ Bucket: bucket })),
+        client.send(new GetBucketEncryptionCommand({ Bucket: bucket })),
+        client.send(
+          new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }),
+        ),
+      ]);
+      if (
+        versioning.Status !== "Enabled" ||
+        !encryption.ServerSideEncryptionConfiguration ||
+        !lifecycle.Rules?.length
+      )
+        return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deletePrivateObject(objectKey: string): Promise<void> {
+  await client.send(
+    new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }),
+  );
+}
+
 export async function getObjectBytes(objectKey: string): Promise<Uint8Array> {
   const response = await client.send(
     new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
@@ -61,6 +99,7 @@ export async function putPrivateObject(input: {
   contentType: string;
   contentDisposition: string;
 }): Promise<void> {
+  const encryption = serverSideEncryption();
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
@@ -68,8 +107,22 @@ export async function putPrivateObject(input: {
       Body: input.body,
       ContentType: input.contentType,
       ContentDisposition: input.contentDisposition,
+      ...encryption,
     }),
   );
+}
+
+function serverSideEncryption():
+  | { ServerSideEncryption: "AES256" | "aws:kms"; SSEKMSKeyId?: string }
+  | Record<string, never> {
+  const mode = process.env.S3_SERVER_SIDE_ENCRYPTION;
+  if (mode !== "AES256" && mode !== "aws:kms") return {};
+  return {
+    ServerSideEncryption: mode,
+    ...(mode === "aws:kms" && process.env.S3_KMS_KEY_ID
+      ? { SSEKMSKeyId: process.env.S3_KMS_KEY_ID }
+      : {}),
+  };
 }
 
 export async function createDownloadUrl(

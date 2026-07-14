@@ -1,0 +1,5 @@
+# Private user guide
+
+Sign in at `/login` using the owner account provisioned by the deployment operator. Start a scan from Uploads, choose the worksheet and header, save or select a mapping profile, then wait for normalization, matching, enrichment, and calculation states. Treat `PARTIAL_SUCCESS`, stale evidence, PackGuard blocks, and review states as required actions rather than successful purchasing decisions. Only shortlist results with complete evidence and use a validated purchase order before exporting. Export links are private and expire.
+
+If a scan fails, retain the scan ID and retry through the workflow; do not re-upload solely to bypass a transient provider or worker failure. Report any unexplained financial value, duplicate work, cross-organization data, or accepted pack contradiction as a Sev-1 issue.

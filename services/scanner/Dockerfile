@@ -4,5 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir .
+RUN useradd --create-home --uid 10001 rizpoint
+USER rizpoint
 EXPOSE 8000
 CMD ["fastapi", "run", "src/rizpoint_scanner/main.py", "--host", "0.0.0.0", "--port", "8000"]

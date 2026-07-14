@@ -137,6 +137,7 @@ export async function createXlsxExport(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ sheets }),
+    signal: AbortSignal.timeout(60_000),
   });
   const body = (await response.json().catch(() => null)) as {
     content_base64?: string;

@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 describe("web health contract", () => {
   it("has a stable health shape", () => {
-    expect({ status: "ok", service: "web" }).toEqual({
+    expect({ status: "ok", service: "web", release: "development" }).toEqual({
       status: "ok",
       service: "web",
+      release: "development",
     });
   });
 });

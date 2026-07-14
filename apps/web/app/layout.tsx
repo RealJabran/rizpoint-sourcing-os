@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./styles.css";
+import { assertProductionConfiguration } from "@/src/runtime-config";
 
 export const metadata: Metadata = {
   title: "RizPoint Sourcing OS",
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  assertProductionConfiguration();
   return (
     <html lang="en">
       <body>{children}</body>

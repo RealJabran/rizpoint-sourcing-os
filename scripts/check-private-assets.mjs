@@ -33,7 +33,7 @@ const violations = (await walk(root))
     const filename = path.split("/").at(-1) ?? "";
     const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
     return (
-      (filename.startsWith(".env") && filename !== ".env.example") ||
+      (filename.startsWith(".env") && !filename.endsWith(".example")) ||
       (spreadsheetExtensions.has(extension) &&
         !path.startsWith(allowedFixturePrefix))
     );
