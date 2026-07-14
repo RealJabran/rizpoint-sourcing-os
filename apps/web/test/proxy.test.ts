@@ -44,6 +44,40 @@ describe("private production proxy", () => {
     ).rejects.toThrow("production_configuration_invalid:demo_mode");
   });
 
+  it("never permits the local demo bypass in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
+    vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "true");
+    const { proxy } = await import("../proxy.js");
+    await expect(
+      proxy(new NextRequest("http://localhost:3000/api/ready")),
+    ).rejects.toThrow("production_configuration_invalid:private_mode_required");
+  });
+
+  it("permits the demo bypass only with both explicit local flags", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
+    vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "true");
+    const { proxy } = await import("../proxy.js");
+    const response = await proxy(
+      new NextRequest("http://localhost:3000/api/ready"),
+    );
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("rejects a local demo bypass when either explicit flag is absent", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
+    vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "false");
+    const { proxy } = await import("../proxy.js");
+    await expect(
+      proxy(new NextRequest("http://localhost:3000/api/ready")),
+    ).rejects.toThrow("local_configuration_invalid:demo_flags_required");
+  });
+
   it("rejects a revoked or missing membership session", async () => {
     productionEnvironment();
     getToken.mockResolvedValue({

@@ -15,14 +15,16 @@ export async function proxy(request: NextRequest) {
   assertProductionConfiguration();
   const { pathname } = request.nextUrl;
   const privateMode = process.env.RIZPOINT_PRIVATE_MODE === "true";
+  if (process.env.NODE_ENV === "production" && !privateMode)
+    throw new Error("production_configuration_invalid:private_mode_required");
   const localDemo =
     !privateMode &&
+    process.env.NODE_ENV !== "production" &&
     process.env.PHASE_ZERO_DEMO_MODE === "true" &&
     process.env.RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO === "true";
-  if (process.env.NODE_ENV === "production" && !privateMode && !localDemo)
-    throw new Error("production_configuration_invalid:private_mode_required");
+  if (!privateMode && !localDemo)
+    throw new Error("local_configuration_invalid:demo_flags_required");
   if (localDemo) return NextResponse.next();
-  if (!privateMode) return NextResponse.next();
   if (
     publicPaths.some(
       (path) => pathname === path || pathname.startsWith(`${path}/`),

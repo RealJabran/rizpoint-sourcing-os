@@ -1,43 +1,25 @@
-import { readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { execFileSync } from "node:child_process";
 
-const ignoredDirectories = new Set([
-  ".git",
-  ".next",
-  ".turbo",
-  ".venv",
-  "dist",
-  "node_modules",
-]);
 const spreadsheetExtensions = new Set([".csv", ".xls", ".xlsx"]);
 const allowedFixturePrefix = "packages/test-fixtures/";
 
-async function walk(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const paths = [];
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      if (!ignoredDirectories.has(entry.name))
-        paths.push(...(await walk(join(directory, entry.name))));
-      continue;
-    }
-    paths.push(join(directory, entry.name));
-  }
-  return paths;
-}
+const repositoryFiles = execFileSync(
+  "git",
+  ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+  { encoding: "utf8" },
+)
+  .split("\0")
+  .filter(Boolean);
 
-const root = process.cwd();
-const violations = (await walk(root))
-  .map((path) => relative(root, path).replaceAll("\\", "/"))
-  .filter((path) => {
-    const filename = path.split("/").at(-1) ?? "";
-    const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
-    return (
-      (filename.startsWith(".env") && !filename.endsWith(".example")) ||
-      (spreadsheetExtensions.has(extension) &&
-        !path.startsWith(allowedFixturePrefix))
-    );
-  });
+const violations = repositoryFiles.filter((path) => {
+  const filename = path.split("/").at(-1) ?? "";
+  const extension = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+  return (
+    (filename.startsWith(".env") && !filename.endsWith(".example")) ||
+    (spreadsheetExtensions.has(extension) &&
+      !path.startsWith(allowedFixturePrefix))
+  );
+});
 
 if (violations.length > 0) {
   throw new Error(
