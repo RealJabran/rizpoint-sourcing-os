@@ -4,6 +4,7 @@ import {
   isProfitCalculationAttemptRunnable,
   mockScanQueueJobId,
 } from "../src/job-policy.js";
+import { isExportAttemptRunnable } from "../src/export.js";
 
 describe("queue idempotency", () => {
   it("derives a BullMQ-safe deterministic queue job id", () => {
@@ -36,5 +37,25 @@ describe("queue idempotency", () => {
     expect(isProfitCalculationAttemptRunnable("FAILED_RETRYABLE")).toBe(true);
     expect(isProfitCalculationAttemptRunnable("RUNNING")).toBe(false);
     expect(isProfitCalculationAttemptRunnable("COMPLETED")).toBe(false);
+  });
+  it("recovers only expired export leases", () => {
+    const now = new Date("2026-07-14T00:00:00.000Z");
+    expect(isExportAttemptRunnable("PENDING", now, now)).toBe(true);
+    expect(isExportAttemptRunnable("FAILED_RETRYABLE", now, now)).toBe(true);
+    expect(
+      isExportAttemptRunnable(
+        "RUNNING",
+        new Date(now.getTime() - 15 * 60_001),
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      isExportAttemptRunnable(
+        "RUNNING",
+        new Date(now.getTime() - 15 * 60_000),
+        now,
+      ),
+    ).toBe(false);
+    expect(isExportAttemptRunnable("COMPLETED", now, now)).toBe(false);
   });
 });

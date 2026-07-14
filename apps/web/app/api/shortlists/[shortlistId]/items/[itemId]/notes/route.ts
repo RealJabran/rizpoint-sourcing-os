@@ -3,15 +3,15 @@ import {
   addShortlistNote,
   ensurePhaseZeroOrganization,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 import { noteSchema } from "@/src/phase-six/contracts";
 export const runtime = "nodejs";
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ shortlistId: string; itemId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = noteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ error: "INVALID_NOTE" }, { status: 400 });

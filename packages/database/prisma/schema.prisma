@@ -375,6 +375,11 @@ model Supplier {
   code           String
   name           String
   isVsiPreset    Boolean  @default(false) @map("is_vsi_preset")
+  minimumOrderCases Int   @default(1) @map("minimum_order_cases")
+  orderMultipleCases Int  @default(1) @map("order_multiple_cases")
+  minimumOrderAmount Decimal? @map("minimum_order_amount") @db.Decimal(18, 4)
+  orderingRulesSource String? @map("ordering_rules_source")
+  orderingRulesObservedAt DateTime? @map("ordering_rules_observed_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

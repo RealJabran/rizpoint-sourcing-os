@@ -148,7 +148,7 @@ export default function PurchaseOrderPage({
             <li key={job.id}>
               {job.kind} {job.format}: {job.status}{" "}
               {job.status === "COMPLETED" ? (
-                <a href={`/api/exports/${job.id}`}>Download</a>
+                <a href={`/api/exports/${job.id}?download=1`}>Download</a>
               ) : null}
             </li>
           ))}

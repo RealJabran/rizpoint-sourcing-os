@@ -1,5 +1,6 @@
 ALTER TABLE "outbox_events" DROP CONSTRAINT IF EXISTS "outbox_events_one_aggregate";
 ALTER TABLE "outbox_events" DROP CONSTRAINT IF EXISTS "outbox_events_export_job_id_fkey";
+DELETE FROM "outbox_events" WHERE "export_job_id" IS NOT NULL;
 DROP TABLE IF EXISTS "workflow_audit_events";
 DROP TABLE IF EXISTS "export_jobs";
 DROP TABLE IF EXISTS "purchase_order_lines";

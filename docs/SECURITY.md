@@ -8,7 +8,7 @@ The browser is untrusted. Web routes enforce an organization context before quer
 
 - Environment templates contain placeholders only; all real `.env*` files are ignored and CI rejects them.
 - Supplier files, exports, local object-store data, and test-private fixtures are ignored.
-- Every tenant-owned query is scoped by `organization_id`. Phase 0 mock routes require explicit local-demo opt-in and must not be exposed as an authentication substitute.
+- Every tenant-owned query is scoped by `organization_id`. Phase 0 mock routes require explicit local-demo opt-in and must not be exposed as an authentication substitute. Phase 6 private routes require the server-side `RIZPOINT_PRIVATE_ACCESS_TOKEN` outside the explicit local-compose demo exception; browser access can use an HttpOnly `rizpoint_private_access` cookie.
 - MinIO is configured as a private bucket. Browser upload uses a five-minute signed URL and an origin-scoped local CORS rule.
 - Uploads are limited to 50 MiB using object-store metadata before bytes are downloaded. CSV/XLS/XLSX filename and file signature must agree; XLSX archive expansion, sheet, row, and column limits reject rather than truncate.
 - Inspection fails closed unless ClamAV reports a clean file. `MALWARE_SCAN_MODE=mock` is test-only and must not be used in a deployed environment.
@@ -20,7 +20,7 @@ The browser is untrusted. Web routes enforce an organization context before quer
 
 ## Required before production rollout
 
-- Add identity-aware authorization; the current demo organization is not production authentication.
+- Replace the temporary private-access token with identity-aware, organization membership authorization and roles before any multi-user release.
 - Reject unsafe formulas on export (`=`, `+`, `-`, `@`) when exports are implemented.
 - Provider refresh tokens are encrypted at rest with AES-256-GCM and versioned `PROVIDER_CREDENTIAL_KEY_V1`; this key is server/worker-only and must be supplied by the deployment secret manager. Browser APIs expose connection status only, never token material.
 - Add authentication, authorization tests, audit logging, retention/deletion controls, and operational incident procedures.

@@ -3,15 +3,15 @@ import {
   ensurePhaseZeroOrganization,
   validatePurchaseOrder,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 import { validatePurchaseOrderSchema } from "@/src/phase-six/contracts";
 export const runtime = "nodejs";
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ purchaseOrderId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = validatePurchaseOrderSchema.safeParse(
     await request.json().catch(() => null),
   );

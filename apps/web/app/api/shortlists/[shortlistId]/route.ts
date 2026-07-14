@@ -3,14 +3,14 @@ import {
   ensurePhaseZeroOrganization,
   getShortlistForOrganization,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 export const runtime = "nodejs";
 export async function GET(
   _: NextRequest,
   { params }: { params: Promise<{ shortlistId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(_);
+  if (denied) return denied;
   const org = await ensurePhaseZeroOrganization();
   const shortlist = await getShortlistForOrganization(
     org.id,

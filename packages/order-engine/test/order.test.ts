@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   buildOrderLine,
+  assertPersistedOrderLine,
   roundOrderQuantity,
   sumOrderLines,
 } from "../src/index.js";
@@ -67,5 +68,27 @@ describe("order engine", () => {
       scenario,
     });
     expect(sumOrderLines([line]).projectedRevenueTotal).toBe("120.0000");
+  });
+  it("rejects persisted scenarios or totals that no longer reconcile", () => {
+    const line = buildOrderLine({
+      requestedUnits: 6,
+      casePack: 6,
+      minimumOrderCases: 1,
+      orderMultipleCases: 1,
+      scenario,
+    });
+    expect(() =>
+      assertPersistedOrderLine(
+        {
+          ...line,
+          supplierUnitCost: scenario.supplierUnitCost,
+          scenarioPrice: scenario.price,
+          scenarioEffectiveCogs: scenario.effectiveCogs,
+          scenarioAmazonFee: scenario.amazonFees,
+          scenarioNetProfit: "8.0000",
+        },
+        "USD",
+      ),
+    ).toThrow("SCENARIO_FORMULA_MISMATCH");
   });
 });

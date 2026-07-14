@@ -58,4 +58,4 @@ Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal
 
 ## Phase 6 workflow entities
 
-`Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Export jobs retain the source revision, checksum, byte size, generator version, and private object key; raw provider payloads are not exported by default.
+`Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Supplier ordering rules retain a source and observed timestamp; PO creation blocks without them. Export jobs retain the source revision, checksum, byte size, generator version, private object key, and expiry; raw provider payloads are not exported by default.

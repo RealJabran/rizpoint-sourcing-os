@@ -38,6 +38,8 @@ docker compose down --volumes
 
 Create shortlists through `/shortlists`, add eligible analysis results through the shortlist API, and build a single-supplier, single-route purchase order. Validate the draft before queueing CSV, XLSX, or audit exports. Download links are temporary and exports remain private object-store artifacts.
 
+Outside local Compose, set the server-only `RIZPOINT_PRIVATE_ACCESS_TOKEN` and send it as `Authorization: Bearer <token>` (or the `rizpoint_private_access` HttpOnly cookie) for Phase 6 workflow routes. Local Compose intentionally permits the synthetic demo organization only.
+
 ## Documentation
 
 - [Product](docs/PRODUCT.md)

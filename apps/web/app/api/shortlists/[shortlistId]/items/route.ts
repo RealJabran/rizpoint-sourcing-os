@@ -4,7 +4,7 @@ import {
   ensurePhaseZeroOrganization,
   transitionShortlistItems,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 import {
   addShortlistItemsSchema,
   transitionShortlistItemsSchema,
@@ -14,8 +14,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ shortlistId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = addShortlistItemsSchema.safeParse(
     await request.json().catch(() => null),
   );
@@ -42,8 +42,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ shortlistId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = transitionShortlistItemsSchema.safeParse(
     await request.json().catch(() => null),
   );

@@ -156,6 +156,7 @@ services:
       PROVIDER_CREDENTIAL_KEY_V1: ${PROVIDER_CREDENTIAL_KEY_V1}
       SP_API_ENDPOINT: ${SP_API_ENDPOINT}
       PHASE_ZERO_DEMO_MODE: "true"
+      RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO: "true"
     ports:
       - "3000:3000"
     depends_on:

@@ -39,6 +39,24 @@ export type OrderLine = Readonly<{
   projectedProfitTotal: DecimalString;
   warnings: readonly string[];
 }>;
+export type PersistedOrderLine = Readonly<{
+  requestedUnits: number;
+  casePack: number;
+  minimumOrderCases: number;
+  orderMultipleCases: number;
+  orderedCases: number;
+  orderedSellableUnits: number;
+  supplierUnitCost: DecimalString;
+  scenarioPrice: DecimalString;
+  scenarioEffectiveCogs: DecimalString;
+  scenarioAmazonFee: DecimalString;
+  scenarioNetProfit: DecimalString;
+  supplierTotal: DecimalString;
+  landedCostTotal: DecimalString;
+  projectedRevenueTotal: DecimalString;
+  amazonFeeTotal: DecimalString;
+  projectedProfitTotal: DecimalString;
+}>;
 
 function decimal(value: string): Decimal {
   if (!/^-?\d+(\.\d+)?$/.test(value)) throw new Error("INVALID_DECIMAL");
@@ -130,4 +148,53 @@ export function sumOrderLines(
     amazonFeeTotal: sum("amazonFeeTotal"),
     projectedProfitTotal: sum("projectedProfitTotal"),
   };
+}
+
+/** Rebuild a persisted line so validation never trusts stored projections blindly. */
+export function assertPersistedOrderLine(
+  line: PersistedOrderLine,
+  currency: string,
+): void {
+  const expectedNet = decimal(line.scenarioPrice)
+    .minus(decimal(line.scenarioEffectiveCogs))
+    .minus(decimal(line.scenarioAmazonFee));
+  if (!expectedNet.eq(decimal(line.scenarioNetProfit)))
+    throw new Error("SCENARIO_FORMULA_MISMATCH");
+  const rebuilt = buildOrderLine({
+    requestedUnits: line.requestedUnits,
+    casePack: line.casePack,
+    minimumOrderCases: line.minimumOrderCases,
+    orderMultipleCases: line.orderMultipleCases,
+    scenario: {
+      price: line.scenarioPrice,
+      effectiveCogs: line.scenarioEffectiveCogs,
+      amazonFees: line.scenarioAmazonFee,
+      netProfit: line.scenarioNetProfit,
+      supplierUnitCost: line.supplierUnitCost,
+      currency,
+    },
+  });
+  const fields: Array<
+    keyof Pick<
+      PersistedOrderLine,
+      | "orderedCases"
+      | "orderedSellableUnits"
+      | "supplierTotal"
+      | "landedCostTotal"
+      | "projectedRevenueTotal"
+      | "amazonFeeTotal"
+      | "projectedProfitTotal"
+    >
+  > = [
+    "orderedCases",
+    "orderedSellableUnits",
+    "supplierTotal",
+    "landedCostTotal",
+    "projectedRevenueTotal",
+    "amazonFeeTotal",
+    "projectedProfitTotal",
+  ];
+  for (const field of fields)
+    if (String(rebuilt[field]) !== String(line[field]))
+      throw new Error("PURCHASE_ORDER_LINE_RECONCILIATION_FAILED");
 }

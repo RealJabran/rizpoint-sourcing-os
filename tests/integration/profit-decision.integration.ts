@@ -302,6 +302,7 @@ const purchaseOrder = (await poResponse.json()) as {
   id: string;
   revision: number;
   supplierSubtotal: string;
+  projectedProfitTotal: string;
 };
 assert.ok(Number(purchaseOrder.supplierSubtotal) > 0);
 assert.equal(
@@ -339,6 +340,15 @@ await poll(async () => {
   };
   return value.status === "COMPLETED" ? value : null;
 }, "purchase-order export");
+const downloadedExport = await fetch(
+  `${baseUrl}/api/exports/${exportJob.id}?download=1`,
+);
+assert.equal(downloadedExport.status, 200);
+const csv = await downloadedExport.text();
+assert.match(csv, /"PO ID"/);
+assert.match(csv, /"PO supplier subtotal"/);
+assert.match(csv, new RegExp(`"${purchaseOrder.supplierSubtotal}"`));
+assert.match(csv, new RegExp(`"${purchaseOrder.projectedProfitTotal}"`));
 
 assert.equal(
   (

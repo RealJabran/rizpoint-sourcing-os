@@ -3,14 +3,14 @@ import {
   ensurePhaseZeroOrganization,
   getPurchaseOrderForOrganization,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 export const runtime = "nodejs";
 export async function GET(
   _: NextRequest,
   { params }: { params: Promise<{ purchaseOrderId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(_);
+  if (denied) return denied;
   const org = await ensurePhaseZeroOrganization();
   const order = await getPurchaseOrderForOrganization(
     org.id,

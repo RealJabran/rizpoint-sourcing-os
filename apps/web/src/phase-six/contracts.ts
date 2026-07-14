@@ -45,8 +45,6 @@ export const createPurchaseOrderSchema = z.object({
     z.string().min(1),
     z.object({
       requestedUnits: z.number().int().min(1).max(10_000_000),
-      minimumOrderCases: z.number().int().min(1).max(1_000_000).default(1),
-      orderMultipleCases: z.number().int().min(1).max(1_000_000).default(1),
     }),
   ),
 });

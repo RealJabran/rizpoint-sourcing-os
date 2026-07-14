@@ -16,12 +16,18 @@ export default function ShortlistDetail({
         recommendation: string | null;
         supplierRow: { normalizedOffer: { description: string | null } | null };
       };
+      notes: Array<{
+        id: string;
+        body: string;
+        authorReference: string | null;
+      }>;
     }>;
   } | null>(null);
   const [error, setError] = useState("");
   const [requestedUnits, setRequestedUnits] = useState<Record<string, string>>(
     {},
   );
+  const [noteBodies, setNoteBodies] = useState<Record<string, string>>({});
   useEffect(() => {
     void params.then(async ({ shortlistId }) => {
       setId(shortlistId);
@@ -46,6 +52,37 @@ export default function ShortlistDetail({
       setData(await refreshed.json());
     }
   };
+  const transitionAll = async (status: string) => {
+    if (!data) return;
+    const response = await fetch(`/api/shortlists/${id}/items`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        itemIds: data.items.map((item) => item.id),
+        status,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    });
+    if (!response.ok) setError("Could not update item statuses.");
+    else setData(await (await fetch(`/api/shortlists/${id}`)).json());
+  };
+  const addNote = async (itemId: string) => {
+    const body = noteBodies[itemId]?.trim();
+    if (!body) return;
+    const response = await fetch(
+      `/api/shortlists/${id}/items/${itemId}/notes`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, idempotencyKey: crypto.randomUUID() }),
+      },
+    );
+    if (!response.ok) setError("Could not add note.");
+    else {
+      setNoteBodies((current) => ({ ...current, [itemId]: "" }));
+      setData(await (await fetch(`/api/shortlists/${id}`)).json());
+    }
+  };
   const createPurchaseOrder = async () => {
     if (!data) return;
     const response = await fetch("/api/purchase-orders", {
@@ -61,8 +98,6 @@ export default function ShortlistDetail({
             item.id,
             {
               requestedUnits: Number(requestedUnits[item.id] ?? "20"),
-              minimumOrderCases: 1,
-              orderMultipleCases: 1,
             },
           ]),
         ),
@@ -102,6 +137,25 @@ export default function ShortlistDetail({
       <h1>{data.name}</h1>
       <p>{data.items.length} items</p>
       {data.items.length ? (
+        <label>
+          Bulk status{" "}
+          <select
+            onChange={(event) => void transitionAll(event.target.value)}
+            defaultValue=""
+          >
+            <option value="" disabled>
+              Select status
+            </option>
+            <option>RESEARCH</option>
+            <option>REVIEW</option>
+            <option>READY_FOR_PO</option>
+            <option>ON_HOLD</option>
+            <option>REJECTED</option>
+            <option>ORDERED</option>
+          </select>
+        </label>
+      ) : null}
+      {data.items.length ? (
         <ul>
           {data.items.map((item) => (
             <li key={item.id}>
@@ -124,6 +178,27 @@ export default function ShortlistDetail({
                   <option>ORDERED</option>
                 </select>
               </label>
+              <ul aria-label="Notes">
+                {item.notes.map((note) => (
+                  <li key={note.id}>{note.body}</li>
+                ))}
+              </ul>
+              <label>
+                Note{" "}
+                <input
+                  value={noteBodies[item.id] ?? ""}
+                  maxLength={2000}
+                  onChange={(event) =>
+                    setNoteBodies((current) => ({
+                      ...current,
+                      [item.id]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <button type="button" onClick={() => void addNote(item.id)}>
+                Add note
+              </button>
               <label>
                 Requested units{" "}
                 <input

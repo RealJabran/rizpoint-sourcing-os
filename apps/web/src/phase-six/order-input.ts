@@ -3,8 +3,10 @@ import {
   sumOrderLines,
   type ScenarioSnapshot,
 } from "@rizpoint/order-engine";
+import { Decimal } from "decimal.js";
 
 type Result = {
+  isCurrent: boolean;
   status: string;
   recommendation: string | null;
   engineVersion: string;
@@ -31,10 +33,16 @@ function record(value: unknown): Record<string, unknown> {
 function string(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
+function exactDecimal(value: string): Decimal {
+  if (!/^-?\d+(\.\d+)?$/.test(value))
+    throw new Error("INVALID_SCENARIO_DECIMAL");
+  return new Decimal(value);
+}
 export function scenarioFromResult(
   result: Result,
   scenarioType: "CURRENT" | "CONSERVATIVE" | "STRESS" | "MAP",
 ): ScenarioSnapshot {
+  if (!result.isCurrent) throw new Error("RESULT_SUPERSEDED");
   if (result.status !== "COMPLETED" || result.recommendation !== "BUY")
     throw new Error("RESULT_NOT_PURCHASE_READY");
   if (
@@ -54,6 +62,8 @@ export function scenarioFromResult(
   const priceEvidence = record(scenarioEvidence.price);
   const feeEvidence = record(scenarioEvidence.feeQuote);
   const price = string(priceEvidence.price);
+  const priceCurrency = string(priceEvidence.currency);
+  const feeCurrency = string(feeEvidence.currency);
   const effectiveCogs = string(exact.effectiveCogs);
   const amazonFees = string(exact.amazonFees);
   const netProfit = string(exact.netProfit);
@@ -73,6 +83,23 @@ export function scenarioFromResult(
     new Date(string(value.freshUntil)!).getTime() < Date.now();
   if (evidenceExpired(priceEvidence) || evidenceExpired(feeEvidence))
     throw new Error("SCENARIO_EVIDENCE_STALE");
+  if (
+    !priceCurrency ||
+    !feeCurrency ||
+    priceCurrency !== result.shippingRoute.currency ||
+    feeCurrency !== result.shippingRoute.currency ||
+    (result.supplierRow.normalizedOffer?.currency !== null &&
+      result.supplierRow.normalizedOffer?.currency !==
+        result.shippingRoute.currency)
+  )
+    throw new Error("SCENARIO_CURRENCY_MISMATCH");
+  if (
+    !exactDecimal(price)
+      .minus(exactDecimal(effectiveCogs))
+      .minus(exactDecimal(amazonFees))
+      .eq(exactDecimal(netProfit))
+  )
+    throw new Error("SCENARIO_FORMULA_MISMATCH");
   return {
     price,
     effectiveCogs,

@@ -4,18 +4,18 @@ import {
   ensurePhaseZeroOrganization,
   listShortlists,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 import { createShortlistSchema } from "@/src/phase-six/contracts";
 export const runtime = "nodejs";
-export async function GET() {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+export async function GET(request: NextRequest) {
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const org = await ensurePhaseZeroOrganization();
   return NextResponse.json(await listShortlists(org.id));
 }
 export async function POST(request: NextRequest) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = createShortlistSchema.safeParse(
     await request.json().catch(() => null),
   );

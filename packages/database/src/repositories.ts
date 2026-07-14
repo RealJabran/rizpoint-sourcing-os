@@ -4,10 +4,48 @@ import type {
   ProductRecommendation,
   ScanJobStatus,
 } from "./generated/prisma/client.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  assertPersistedOrderLine,
+  sumOrderLines,
+  type PersistedOrderLine,
+} from "@rizpoint/order-engine";
 import { db } from "./client.js";
 
 export const PHASE_ZERO_ORGANIZATION_SLUG = "rizpoint-demo";
+
+function requestFingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function auditPayload(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function assertIdempotentEvent(
+  event: {
+    entityType: string;
+    entityId: string;
+    eventType: string;
+    payload: unknown;
+  },
+  expected: {
+    entityType: string;
+    entityId: string;
+    eventType: string;
+    fingerprint: string;
+  },
+): void {
+  if (
+    event.entityType !== expected.entityType ||
+    event.entityId !== expected.entityId ||
+    event.eventType !== expected.eventType ||
+    auditPayload(event.payload).fingerprint !== expected.fingerprint
+  )
+    throw new Error("IDEMPOTENCY_KEY_REUSED");
+}
 
 export async function ensurePhaseZeroOrganization() {
   const organization = await db.organization.upsert({
@@ -18,7 +56,7 @@ export async function ensurePhaseZeroOrganization() {
     },
     update: {},
   });
-  await db.supplier.upsert({
+  const supplier = await db.supplier.upsert({
     where: {
       organizationId_code: { organizationId: organization.id, code: "VSI" },
     },
@@ -27,10 +65,26 @@ export async function ensurePhaseZeroOrganization() {
       code: "VSI",
       name: "VSI",
       isVsiPreset: true,
+      orderingRulesSource: "DEMO_CONFIGURATION",
+      orderingRulesObservedAt: new Date(),
     },
     update: {},
   });
+  await db.supplier.updateMany({
+    where: { id: supplier.id, orderingRulesObservedAt: null },
+    data: {
+      orderingRulesSource: "DEMO_CONFIGURATION",
+      orderingRulesObservedAt: new Date(),
+    },
+  });
   return organization;
+}
+
+export async function getSupplierForOrganization(
+  organizationId: string,
+  supplierId: string,
+) {
+  return db.supplier.findFirst({ where: { id: supplierId, organizationId } });
 }
 
 export async function createMockScanJob(
@@ -2490,6 +2544,35 @@ export async function addShortlistItems(input: {
   idempotencyKey: string;
 }) {
   return db.$transaction(async (transaction) => {
+    const fingerprint = requestFingerprint({
+      shortlistId: input.shortlistId,
+      resultIds: [...input.resultIds].sort(),
+    });
+    const previous = await transaction.workflowAuditEvent.findUnique({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+    if (previous) {
+      assertIdempotentEvent(previous, {
+        entityType: "SHORTLIST",
+        entityId: input.shortlistId,
+        eventType: "ITEMS_ADDED",
+        fingerprint,
+      });
+      const itemIds = auditPayload(previous.payload).itemIds;
+      if (
+        !Array.isArray(itemIds) ||
+        !itemIds.every((id) => typeof id === "string")
+      )
+        throw new Error("IDEMPOTENCY_EVENT_INVALID");
+      return transaction.shortlistItem.findMany({
+        where: { id: { in: itemIds }, organizationId: input.organizationId },
+      });
+    }
     const shortlist = await transaction.shortlist.findFirst({
       where: { id: input.shortlistId, organizationId: input.organizationId },
     });
@@ -2527,22 +2610,19 @@ export async function addShortlistItems(input: {
       where: { id: shortlist.id },
       data: { revision: { increment: 1 } },
     });
-    await transaction.workflowAuditEvent.upsert({
-      where: {
-        organizationId_idempotencyKey: {
-          organizationId: input.organizationId,
-          idempotencyKey: input.idempotencyKey,
-        },
-      },
-      create: {
+    await transaction.workflowAuditEvent.create({
+      data: {
         organizationId: input.organizationId,
         entityType: "SHORTLIST",
         entityId: shortlist.id,
         eventType: "ITEMS_ADDED",
         idempotencyKey: input.idempotencyKey,
-        payload: { resultIds: input.resultIds },
+        payload: {
+          fingerprint,
+          resultIds: input.resultIds,
+          itemIds: items.map((item) => item.id),
+        },
       },
-      update: {},
     });
     return items;
   });
@@ -2558,6 +2638,30 @@ export async function transitionShortlistItems(input: {
   idempotencyKey: string;
 }) {
   return db.$transaction(async (transaction) => {
+    const fingerprint = requestFingerprint({
+      shortlistId: input.shortlistId,
+      itemIds: [...input.itemIds].sort(),
+      status: input.status,
+      ownerReference: input.ownerReference ?? null,
+      expectedRevision: input.expectedRevision ?? null,
+    });
+    const previous = await transaction.workflowAuditEvent.findUnique({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+    if (previous) {
+      assertIdempotentEvent(previous, {
+        entityType: "SHORTLIST",
+        entityId: input.shortlistId,
+        eventType: "ITEMS_TRANSITIONED",
+        fingerprint,
+      });
+      return { count: Number(auditPayload(previous.payload).count ?? 0) };
+    }
     const items = await transaction.shortlistItem.findMany({
       where: {
         id: { in: input.itemIds },
@@ -2601,6 +2705,12 @@ export async function transitionShortlistItems(input: {
       })
     )
       throw new Error("SHORTLIST_ITEM_NOT_PURCHASE_READY");
+    const before = items.map((item) => ({
+      id: item.id,
+      status: item.status,
+      ownerReference: item.ownerReference,
+      revision: item.revision,
+    }));
     await transaction.shortlistItem.updateMany({
       where: {
         id: { in: input.itemIds },
@@ -2618,22 +2728,23 @@ export async function transitionShortlistItems(input: {
       where: { id: input.shortlistId, organizationId: input.organizationId },
       data: { revision: { increment: 1 } },
     });
-    await transaction.workflowAuditEvent.upsert({
-      where: {
-        organizationId_idempotencyKey: {
-          organizationId: input.organizationId,
-          idempotencyKey: input.idempotencyKey,
-        },
-      },
-      create: {
+    await transaction.workflowAuditEvent.create({
+      data: {
         organizationId: input.organizationId,
         entityType: "SHORTLIST",
         entityId: input.shortlistId,
         eventType: "ITEMS_TRANSITIONED",
         idempotencyKey: input.idempotencyKey,
-        payload: { itemIds: input.itemIds, status: input.status },
+        payload: {
+          fingerprint,
+          count: items.length,
+          before,
+          after: {
+            status: input.status,
+            ownerReference: input.ownerReference ?? null,
+          },
+        },
       },
-      update: {},
     });
     return { count: items.length };
   });
@@ -2656,17 +2767,38 @@ export async function addShortlistNote(input: {
       },
     });
     if (!item) return null;
+    const fingerprint = requestFingerprint({
+      shortlistId: input.shortlistId,
+      itemId: input.itemId,
+      body: input.body,
+      authorReference: input.authorReference ?? null,
+    });
     const event = await transaction.workflowAuditEvent.findFirst({
       where: {
         organizationId: input.organizationId,
         idempotencyKey: input.idempotencyKey,
       },
-      select: { entityId: true },
+      select: {
+        entityId: true,
+        entityType: true,
+        eventType: true,
+        payload: true,
+      },
     });
-    if (event)
-      return transaction.shortlistNote.findFirst({
-        where: { id: event.entityId, organizationId: input.organizationId },
+    if (event) {
+      assertIdempotentEvent(event, {
+        entityType: "SHORTLIST_ITEM",
+        entityId: item.id,
+        eventType: "NOTE_ADDED",
+        fingerprint,
       });
+      const noteId = auditPayload(event.payload).noteId;
+      if (typeof noteId !== "string")
+        throw new Error("IDEMPOTENCY_EVENT_INVALID");
+      return transaction.shortlistNote.findFirst({
+        where: { id: noteId, organizationId: input.organizationId },
+      });
+    }
     const note = await transaction.shortlistNote.create({
       data: {
         organizationId: input.organizationId,
@@ -2681,9 +2813,10 @@ export async function addShortlistNote(input: {
       data: {
         organizationId: input.organizationId,
         entityType: "SHORTLIST_ITEM",
-        entityId: note.id,
+        entityId: item.id,
         eventType: "NOTE_ADDED",
         idempotencyKey: input.idempotencyKey,
+        payload: { fingerprint, noteId: note.id },
       },
     });
     return note;
@@ -2696,7 +2829,12 @@ export async function getShortlistItemsForPurchaseOrder(
   itemIds: string[],
 ) {
   return db.shortlistItem.findMany({
-    where: { organizationId, shortlistId, id: { in: itemIds } },
+    where: {
+      organizationId,
+      shortlistId,
+      id: { in: itemIds },
+      profitResult: { isCurrent: true },
+    },
     include: {
       profitResult: {
         include: {
@@ -2734,6 +2872,17 @@ export async function createPurchaseOrder(input: {
   totals: Record<string, string>;
 }) {
   return db.$transaction(async (transaction) => {
+    const fingerprint = requestFingerprint({
+      supplierId: input.supplierId,
+      shortlistId: input.shortlistId,
+      shippingRouteId: input.shippingRouteId,
+      scenarioType: input.scenarioType,
+      currency: input.currency,
+      budgetAmount: input.budgetAmount ?? null,
+      minimumOrderAmount: input.minimumOrderAmount ?? null,
+      lines: input.lines,
+      totals: input.totals,
+    });
     const existing = await transaction.purchaseOrder.findUnique({
       where: {
         organizationId_idempotencyKey: {
@@ -2742,7 +2891,24 @@ export async function createPurchaseOrder(input: {
         },
       },
     });
-    if (existing) return existing;
+    if (existing) {
+      const event = await transaction.workflowAuditEvent.findUnique({
+        where: {
+          organizationId_idempotencyKey: {
+            organizationId: input.organizationId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+      });
+      if (!event) throw new Error("IDEMPOTENCY_EVENT_INVALID");
+      assertIdempotentEvent(event, {
+        entityType: "PURCHASE_ORDER",
+        entityId: existing.id,
+        eventType: "CREATED",
+        fingerprint,
+      });
+      return existing;
+    }
     const order = await transaction.purchaseOrder.create({
       data: {
         organizationId: input.organizationId,
@@ -2770,7 +2936,11 @@ export async function createPurchaseOrder(input: {
         entityId: order.id,
         eventType: "CREATED",
         idempotencyKey: input.idempotencyKey,
-        payload: { lineCount: input.lines.length },
+        payload: {
+          fingerprint,
+          lineCount: input.lines.length,
+          totals: input.totals,
+        },
       },
     });
     return order;
@@ -2815,24 +2985,156 @@ export async function validatePurchaseOrder(
   idempotencyKey: string,
 ) {
   return db.$transaction(async (transaction) => {
+    const fingerprint = requestFingerprint({
+      purchaseOrderId,
+      expectedRevision,
+    });
+    const previous = await transaction.workflowAuditEvent.findUnique({
+      where: {
+        organizationId_idempotencyKey: { organizationId, idempotencyKey },
+      },
+    });
+    if (previous) {
+      assertIdempotentEvent(previous, {
+        entityType: "PURCHASE_ORDER",
+        entityId: purchaseOrderId,
+        eventType: "VALIDATED",
+        fingerprint,
+      });
+      return transaction.purchaseOrder.findFirst({
+        where: { id: purchaseOrderId, organizationId },
+      });
+    }
     const order = await transaction.purchaseOrder.findFirst({
       where: { id: purchaseOrderId, organizationId },
-      include: { lines: true },
+      include: {
+        supplier: true,
+        shippingRoute: true,
+        lines: {
+          include: {
+            profitResult: {
+              include: {
+                supplierRow: {
+                  include: {
+                    scanJob: true,
+                    matchDecision: {
+                      include: {
+                        selectedCandidate: { include: { packGuard: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
     if (!order) return null;
     if (order.revision !== expectedRevision)
       throw new Error("PURCHASE_ORDER_REVISION_CONFLICT");
     if (!order.lines.length) throw new Error("PURCHASE_ORDER_LINES_REQUIRED");
+    if (
+      !order.supplier.orderingRulesSource ||
+      !order.supplier.orderingRulesObservedAt ||
+      order.lines.some(
+        (line) =>
+          line.minimumOrderCases !== order.supplier.minimumOrderCases ||
+          line.orderMultipleCases !== order.supplier.orderMultipleCases,
+      )
+    )
+      throw new Error("SUPPLIER_ORDERING_RULES_CHANGED");
+    if (
+      order.minimumOrderAmount !== null &&
+      order.supplierSubtotal.lessThan(order.minimumOrderAmount)
+    )
+      throw new Error("PURCHASE_ORDER_MINIMUM_NOT_MET");
+    if (
+      order.budgetAmount !== null &&
+      order.supplierSubtotal.greaterThan(order.budgetAmount)
+    )
+      throw new Error("PURCHASE_ORDER_BUDGET_EXCEEDED");
+    if (
+      order.lines.some((line) => {
+        const match = line.profitResult.supplierRow.matchDecision;
+        return (
+          !line.profitResult.isCurrent ||
+          line.profitResult.shippingRouteId !== order.shippingRouteId ||
+          line.profitResult.supplierRow.scanJob.supplierId !==
+            order.supplierId ||
+          line.profitResult.status !== "COMPLETED" ||
+          line.profitResult.recommendation !== "BUY" ||
+          !match ||
+          !["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(match.status) ||
+          match.selectedCandidate?.packGuard?.status !== "VERIFIED"
+        );
+      })
+    )
+      throw new Error("PURCHASE_ORDER_SOURCE_NOT_CURRENT");
+    for (const line of order.lines)
+      assertPersistedOrderLine(
+        {
+          requestedUnits: line.requestedUnits,
+          casePack: line.casePack,
+          minimumOrderCases: line.minimumOrderCases,
+          orderMultipleCases: line.orderMultipleCases,
+          orderedCases: line.orderedCases,
+          orderedSellableUnits: line.orderedSellableUnits,
+          supplierUnitCost: line.supplierUnitCost.toString(),
+          scenarioPrice: line.scenarioPrice.toString(),
+          scenarioEffectiveCogs: line.scenarioEffectiveCogs.toString(),
+          scenarioAmazonFee: line.scenarioAmazonFee.toString(),
+          scenarioNetProfit: line.scenarioNetProfit.toString(),
+          supplierTotal: line.supplierTotal.toString(),
+          landedCostTotal: line.landedCostTotal.toString(),
+          projectedRevenueTotal: line.projectedRevenueTotal.toString(),
+          amazonFeeTotal: line.amazonFeeTotal.toString(),
+          projectedProfitTotal: line.projectedProfitTotal.toString(),
+        } satisfies PersistedOrderLine,
+        order.currency,
+      );
+    const totals = sumOrderLines(
+      order.lines.map((line) => ({
+        supplierTotal: line.supplierTotal.toString(),
+        landedCostTotal: line.landedCostTotal.toString(),
+        projectedRevenueTotal: line.projectedRevenueTotal.toString(),
+        amazonFeeTotal: line.amazonFeeTotal.toString(),
+        projectedProfitTotal: line.projectedProfitTotal.toString(),
+      })),
+    );
+    if (
+      totals.supplierSubtotal !== order.supplierSubtotal.toFixed(4) ||
+      totals.landedCostTotal !== order.landedCostTotal.toFixed(4) ||
+      totals.projectedRevenueTotal !== order.projectedRevenueTotal.toFixed(4) ||
+      totals.amazonFeeTotal !== order.amazonFeeTotal.toFixed(4) ||
+      totals.projectedProfitTotal !== order.projectedProfitTotal.toFixed(4)
+    )
+      throw new Error("PURCHASE_ORDER_TOTAL_RECONCILIATION_FAILED");
     const staleEvidence = order.lines.some((line) => {
       const snapshot = line.sourceSnapshot as {
         scenarioType?: string;
+        currency?: string;
+        orderingRules?: {
+          source?: string;
+          observedAt?: string;
+          minimumOrderCases?: number;
+          orderMultipleCases?: number;
+        };
         evidence?: {
           scenarios?: Record<
             string,
             {
               evidence?: {
-                price?: { freshnessState?: string; freshUntil?: string };
-                feeQuote?: { freshnessState?: string; freshUntil?: string };
+                price?: {
+                  currency?: string;
+                  freshnessState?: string;
+                  freshUntil?: string;
+                };
+                feeQuote?: {
+                  currency?: string;
+                  freshnessState?: string;
+                  freshUntil?: string;
+                };
               };
             }
           >;
@@ -2845,8 +3147,19 @@ export async function validatePurchaseOrder(
         snapshot.evidence?.scenarios?.[snapshot.scenarioType ?? ""]?.evidence
           ?.feeQuote;
       return (
+        snapshot.scenarioType !== order.scenarioType ||
+        snapshot.currency !== order.currency ||
+        snapshot.orderingRules?.source !== order.supplier.orderingRulesSource ||
+        snapshot.orderingRules?.observedAt !==
+          order.supplier.orderingRulesObservedAt?.toISOString() ||
+        snapshot.orderingRules?.minimumOrderCases !==
+          order.supplier.minimumOrderCases ||
+        snapshot.orderingRules?.orderMultipleCases !==
+          order.supplier.orderMultipleCases ||
         !price ||
         !fee ||
+        price.currency !== order.currency ||
+        fee.currency !== order.currency ||
         price.freshnessState !== "FRESH" ||
         fee.freshnessState !== "FRESH" ||
         !price.freshUntil ||
@@ -2864,18 +3177,16 @@ export async function validatePurchaseOrder(
         revision: { increment: 1 },
       },
     });
-    await transaction.workflowAuditEvent.upsert({
-      where: {
-        organizationId_idempotencyKey: { organizationId, idempotencyKey },
-      },
-      create: {
+    await transaction.workflowAuditEvent.create({
+      data: {
         organizationId,
         entityType: "PURCHASE_ORDER",
         entityId: order.id,
         eventType: "VALIDATED",
         idempotencyKey,
+        revision: order.revision + 1,
+        payload: { fingerprint, totals, currency: order.currency },
       },
-      update: {},
     });
     return { ...order, status: "VALIDATED", revision: order.revision + 1 };
   });
@@ -2891,6 +3202,14 @@ export async function queueExport(input: {
   idempotencyKey: string;
 }) {
   return db.$transaction(async (transaction) => {
+    const sourceId = input.purchaseOrderId ?? input.shortlistId;
+    if (!sourceId) throw new Error("EXPORT_SOURCE_REQUIRED");
+    const fingerprint = requestFingerprint({
+      kind: input.kind,
+      format: input.format,
+      sourceId,
+      sourceRevision: input.sourceRevision,
+    });
     const existing = await transaction.exportJob.findUnique({
       where: {
         organizationId_idempotencyKey: {
@@ -2899,7 +3218,24 @@ export async function queueExport(input: {
         },
       },
     });
-    if (existing) return existing;
+    if (existing) {
+      const event = await transaction.workflowAuditEvent.findUnique({
+        where: {
+          organizationId_idempotencyKey: {
+            organizationId: input.organizationId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+      });
+      if (!event) throw new Error("IDEMPOTENCY_EVENT_INVALID");
+      assertIdempotentEvent(event, {
+        entityType: "EXPORT",
+        entityId: existing.id,
+        eventType: "REQUESTED",
+        fingerprint,
+      });
+      return existing;
+    }
     const job = await transaction.exportJob.create({ data: { ...input } });
     await transaction.outboxEvent.create({
       data: {
@@ -2916,7 +3252,13 @@ export async function queueExport(input: {
         entityId: job.id,
         eventType: "REQUESTED",
         idempotencyKey: input.idempotencyKey,
-        payload: { kind: input.kind, format: input.format },
+        payload: {
+          fingerprint,
+          kind: input.kind,
+          format: input.format,
+          sourceId,
+          sourceRevision: input.sourceRevision,
+        },
       },
     });
     return job;
@@ -2928,4 +3270,15 @@ export async function getExportForOrganization(
   exportJobId: string,
 ) {
   return db.exportJob.findFirst({ where: { id: exportJobId, organizationId } });
+}
+
+export async function listWorkflowAuditEvents(input: {
+  organizationId: string;
+  entityType: string;
+  entityId: string;
+}) {
+  return db.workflowAuditEvent.findMany({
+    where: input,
+    orderBy: { createdAt: "asc" },
+  });
 }

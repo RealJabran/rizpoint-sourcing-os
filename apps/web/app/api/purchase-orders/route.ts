@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createPurchaseOrder,
   ensurePhaseZeroOrganization,
+  getSupplierForOrganization,
   getShortlistItemsForPurchaseOrder,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
 import { createPurchaseOrderSchema } from "@/src/phase-six/contracts";
 import { makeOrder, sumOrderLines } from "@/src/phase-six/order-input";
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = createPurchaseOrderSchema.safeParse(
     await request.json().catch(() => null),
   );
@@ -44,13 +45,26 @@ export async function POST(request: NextRequest) {
       )
     )
       throw new Error("MIXED_SUPPLIER_OR_ROUTE");
+    const supplier = await getSupplierForOrganization(
+      org.id,
+      first.supplierRow.scanJob.supplierId,
+    );
+    if (
+      !supplier ||
+      !supplier.orderingRulesSource ||
+      !supplier.orderingRulesObservedAt
+    )
+      throw new Error("SUPPLIER_ORDERING_RULES_REQUIRED");
+    const orderingRulesObservedAt = supplier.orderingRulesObservedAt;
     const prepared = items.map((item) => {
       const quantity = data.quantities[item.id];
       if (!quantity) throw new Error("QUANTITY_REQUIRED");
       const line = makeOrder({
         result: item.profitResult,
         scenarioType: data.scenarioType,
-        ...quantity,
+        requestedUnits: quantity.requestedUnits,
+        minimumOrderCases: supplier.minimumOrderCases,
+        orderMultipleCases: supplier.orderMultipleCases,
       });
       return {
         shortlistItemId: item.id,
@@ -75,7 +89,16 @@ export async function POST(request: NextRequest) {
         sourceSnapshot: {
           engineVersion: item.profitResult.engineVersion,
           evidence: item.profitResult.evidence,
+          inputSnapshot: item.profitResult.inputSnapshot,
           scenarioType: data.scenarioType,
+          currency: first.shippingRoute.currency,
+          orderingRules: {
+            source: supplier.orderingRulesSource,
+            observedAt: orderingRulesObservedAt.toISOString(),
+            minimumOrderCases: supplier.minimumOrderCases,
+            orderMultipleCases: supplier.orderMultipleCases,
+            minimumOrderAmount: supplier.minimumOrderAmount?.toString() ?? null,
+          },
         },
         warnings: [...line.warnings],
       };
@@ -92,8 +115,8 @@ export async function POST(request: NextRequest) {
       ...(data.budgetAmount !== undefined
         ? { budgetAmount: data.budgetAmount }
         : {}),
-      ...(data.minimumOrderAmount !== undefined
-        ? { minimumOrderAmount: data.minimumOrderAmount }
+      ...(supplier.minimumOrderAmount !== null
+        ? { minimumOrderAmount: supplier.minimumOrderAmount.toString() }
         : {}),
       lines: prepared,
       totals,

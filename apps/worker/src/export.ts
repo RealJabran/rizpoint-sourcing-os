@@ -12,21 +12,81 @@ import { createXlsxExport } from "./scanner-client.js";
 function text(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
-function poTable(
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+export function isExportAttemptRunnable(
+  status:
+    "PENDING" | "RUNNING" | "COMPLETED" | "FAILED_RETRYABLE" | "FAILED_FINAL",
+  updatedAt: Date,
+  now = new Date(),
+): boolean {
+  return (
+    status === "PENDING" ||
+    status === "FAILED_RETRYABLE" ||
+    (status === "RUNNING" && updatedAt.getTime() < now.getTime() - 15 * 60_000)
+  );
+}
+export function poSummaryTable(
+  order: NonNullable<Awaited<ReturnType<typeof loadOrder>>>,
+): ExportTable {
+  return {
+    sheetName: "PO Summary",
+    columns: [
+      "PO ID",
+      "Supplier",
+      "Route",
+      "Scenario",
+      "Currency",
+      "Supplier subtotal",
+      "Landed cost total",
+      "Revenue total",
+      "Amazon fee total",
+      "Projected profit total",
+    ],
+    rows: [
+      [
+        order.id,
+        order.supplier.name,
+        order.shippingRoute.name,
+        order.scenarioType,
+        order.currency,
+        text(order.supplierSubtotal),
+        text(order.landedCostTotal),
+        text(order.projectedRevenueTotal),
+        text(order.amazonFeeTotal),
+        text(order.projectedProfitTotal),
+      ],
+    ],
+  };
+}
+export function poTable(
   order: NonNullable<Awaited<ReturnType<typeof loadOrder>>>,
   audit = false,
 ): ExportTable {
   const columns = audit
     ? [
+        "PO ID",
+        "Currency",
         "Supplier SKU",
         "ASIN",
         "Title",
         "Scenario",
         "Route",
-        "Provider evidence",
-        "Observed at",
-        "Fresh until",
+        "Price provider",
+        "Price observed at",
+        "Price fresh until",
+        "Fee provider",
+        "Fee observed at",
+        "Fee fresh until",
         "PackGuard",
+        "Ordering rules source",
+        "Ordering rules observed at",
+        "Cost inputs",
+        "Formula engine version",
+        "Warnings",
         "Requested units",
         "Case pack",
         "MOQ cases",
@@ -34,8 +94,14 @@ function poTable(
         "Ordered cases",
         "Ordered units",
         "Projected profit",
+        "PO projected profit total",
       ]
     : [
+        "PO ID",
+        "Supplier",
+        "Route",
+        "Scenario",
+        "Currency",
         "Supplier SKU",
         "ASIN",
         "Title",
@@ -51,32 +117,41 @@ function poTable(
         "Projected price",
         "Amazon fees",
         "Projected profit",
+        "PO supplier subtotal",
+        "PO projected profit total",
       ];
   const rows = order.lines.map((line) => {
     const offer = line.supplierRow.normalizedOffer;
     const product =
       line.supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
     if (audit) {
-      const snapshot = line.sourceSnapshot as {
-        evidence?: {
-          current?: {
-            provider?: string;
-            observedAt?: string;
-            freshUntil?: string;
-          };
-          packGuard?: { status?: string };
-        };
-      };
+      const snapshot = record(line.sourceSnapshot);
+      const evidence = record(snapshot.evidence);
+      const scenario = record(record(evidence.scenarios)[order.scenarioType]);
+      const scenarioEvidence = record(scenario.evidence);
+      const price = record(scenarioEvidence.price);
+      const fee = record(scenarioEvidence.feeQuote);
+      const rules = record(snapshot.orderingRules);
       return [
+        order.id,
+        order.currency,
         text(offer?.itemNumber),
         text(product?.asin ?? offer?.asin),
         text(product?.title ?? offer?.description),
         order.scenarioType,
         order.shippingRoute.name,
-        text(snapshot.evidence?.current?.provider),
-        text(snapshot.evidence?.current?.observedAt),
-        text(snapshot.evidence?.current?.freshUntil),
-        text(snapshot.evidence?.packGuard?.status),
+        text(price.provider),
+        text(price.observedAt),
+        text(price.freshUntil),
+        text(fee.provider),
+        text(fee.observedAt),
+        text(fee.freshUntil),
+        text(record(evidence.packGuard).status),
+        text(rules.source),
+        text(rules.observedAt),
+        JSON.stringify(record(snapshot.inputSnapshot).costs ?? {}),
+        text(snapshot.engineVersion),
+        JSON.stringify(line.warnings),
         line.requestedUnits,
         line.casePack,
         line.minimumOrderCases,
@@ -84,9 +159,15 @@ function poTable(
         line.orderedCases,
         line.orderedSellableUnits,
         text(line.projectedProfitTotal),
+        text(order.projectedProfitTotal),
       ];
     }
     return [
+      order.id,
+      order.supplier.name,
+      order.shippingRoute.name,
+      order.scenarioType,
+      order.currency,
       text(offer?.itemNumber),
       text(product?.asin ?? offer?.asin),
       text(product?.title ?? offer?.description),
@@ -102,6 +183,8 @@ function poTable(
       text(line.scenarioPrice),
       text(line.amazonFeeTotal),
       text(line.projectedProfitTotal),
+      text(order.supplierSubtotal),
+      text(order.projectedProfitTotal),
     ];
   });
   return {
@@ -202,8 +285,18 @@ export async function processExport(exportJobId: string): Promise<void> {
   const job = await db.exportJob.findUnique({ where: { id: exportJobId } });
   if (!job || job.status === "COMPLETED" || job.status === "FAILED_FINAL")
     return;
+  const now = new Date();
   const claimed = await db.exportJob.updateMany({
-    where: { id: job.id, status: { in: ["PENDING", "FAILED_RETRYABLE"] } },
+    where: {
+      id: job.id,
+      OR: [
+        { status: { in: ["PENDING", "FAILED_RETRYABLE"] } },
+        {
+          status: "RUNNING",
+          updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) },
+        },
+      ],
+    },
     data: {
       status: "RUNNING",
       attemptCount: { increment: 1 },
@@ -233,7 +326,7 @@ export async function processExport(exportJobId: string): Promise<void> {
       : shortlistTable(source);
     const tables =
       isOrder && job.kind === "PURCHASE_ORDER"
-        ? [table, poTable(source, true)]
+        ? [poSummaryTable(source), table, poTable(source, true)]
         : [table];
     const bytes =
       job.format === "CSV"
@@ -264,10 +357,11 @@ export async function processExport(exportJobId: string): Promise<void> {
           checksumSha256,
           byteSize: bytes.byteLength,
           generatorVersion: EXPORT_ENGINE_VERSION,
-          completedAt: new Date(),
+          completedAt: now,
+          expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60_000),
         },
       });
-      if (isOrder)
+      if (isOrder && job.kind === "PURCHASE_ORDER")
         await transaction.purchaseOrder.update({
           where: { id: source.id },
           data: { status: "EXPORTED" },
