@@ -10,11 +10,15 @@ const syntheticCatalog = [
 test.describe("catalog upload", () => {
   test("shows the guided private catalog workflow", async ({ page }) => {
     await page.goto("/uploads");
-    await expect(page.getByRole("heading", { name: "New catalog scan" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "New catalog scan" }),
+    ).toBeVisible();
     await expect(page.getByText("Supplier").first()).toBeVisible();
     await expect(page.getByText("Upload").first()).toBeVisible();
     await expect(page.getByText(/private object storage/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Choose catalog file" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Choose catalog file" }),
+    ).toBeVisible();
   });
 
   test("uploads, maps, normalizes, and preserves a zero-padded UPC", async ({
@@ -41,9 +45,7 @@ test.describe("catalog upload", () => {
     await page.getByRole("button", { name: "Upload and inspect" }).click();
     const created = (await (await presign).json()) as { uploadId: string };
 
-    await expect(
-      page.getByText("Upload status: MAPPING_REQUIRED"),
-    ).toBeVisible();
+    await expect(page.getByText("MAPPING_REQUIRED")).toBeVisible();
     await expect(page.getByText("012345678905")).toBeVisible();
 
     const mappingSelects = page.locator("thead select");
@@ -52,11 +54,11 @@ test.describe("catalog upload", () => {
     await mappingSelects.nth(2).selectOption("DESCRIPTION");
     await mappingSelects.nth(3).selectOption("UNIT_COST");
     await mappingSelects.nth(4).selectOption("QUANTITY");
-    await page.getByRole("button", { name: "Save mapping" }).click();
-    await expect(page.getByText("Upload status: READY")).toBeVisible();
+    await page.getByRole("button", { name: "Confirm mapping" }).click();
+    await expect(page.getByText("READY")).toBeVisible();
 
-    await page.getByRole("button", { name: "Normalize rows" }).click();
-    await expect(page.getByText("Upload status: COMPLETED")).toBeVisible();
+    await page.getByRole("button", { name: "Start scan" }).click();
+    await expect(page.getByText("COMPLETED")).toBeVisible();
 
     const state = await page.request
       .get(`/api/uploads/${created.uploadId}`)

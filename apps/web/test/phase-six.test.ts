@@ -4,6 +4,7 @@ import {
   transitionShortlistItemsSchema,
 } from "../src/phase-six/contracts.js";
 import { scenarioFromResult } from "../src/phase-six/order-input.js";
+import { exportDownloadState } from "../src/phase-six/export-download.js";
 import { requirePrivateAccess } from "../src/private-access.js";
 import { NextRequest } from "next/server";
 describe("phase six API contracts", () => {
@@ -73,6 +74,7 @@ describe("phase six API contracts", () => {
         },
         matchDecision: {
           status: "AUTO_ACCEPTED",
+          reasonCodes: [],
           selectedCandidate: { packGuard: { status: "VERIFIED" } },
         },
       },
@@ -98,5 +100,29 @@ describe("phase six API contracts", () => {
       ),
     ).toBeNull();
     vi.unstubAllEnvs();
+  });
+
+  it("fails closed for missing or expired private export artifacts", () => {
+    const base = {
+      status: "COMPLETED",
+      objectKey: "exports/org/report.csv",
+      filename: "report.csv",
+    };
+    const now = new Date("2026-07-15T00:00:00.000Z");
+    expect(exportDownloadState({ ...base, expiresAt: null }, now)).toBe(
+      "EXPIRED",
+    );
+    expect(
+      exportDownloadState(
+        { ...base, expiresAt: "2026-07-14T23:59:59.999Z" },
+        now,
+      ),
+    ).toBe("EXPIRED");
+    expect(
+      exportDownloadState(
+        { ...base, expiresAt: "2026-07-15T00:00:00.001Z" },
+        now,
+      ),
+    ).toBe("READY");
   });
 });

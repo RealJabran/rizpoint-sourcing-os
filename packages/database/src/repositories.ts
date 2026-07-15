@@ -1023,35 +1023,117 @@ export async function reviewMatchDecision(input: {
   supplierRowId: string;
   selectedCandidateId: string | null;
   status: "USER_ACCEPTED" | "USER_REJECTED";
+  reason: string;
+  idempotencyKey: string;
 }) {
-  const decision = await db.matchDecision.findFirst({
-    where: {
+  return db.$transaction(async (transaction) => {
+    const fingerprint = requestFingerprint({
       supplierRowId: input.supplierRowId,
-      organizationId: input.organizationId,
-    },
-  });
-  if (!decision) return null;
-  if (input.status === "USER_ACCEPTED" && !input.selectedCandidateId)
-    return null;
-  if (input.selectedCandidateId) {
-    const candidate = await db.listingCandidate.findFirst({
+      selectedCandidateId: input.selectedCandidateId,
+      status: input.status,
+      reason: input.reason,
+    });
+    const previous = await transaction.workflowAuditEvent.findUnique({
       where: {
-        id: input.selectedCandidateId,
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+    if (previous) {
+      assertIdempotentEvent(previous, {
+        entityType: "MatchDecision",
+        entityId: input.supplierRowId,
+        eventType: "match.reviewed",
+        fingerprint,
+      });
+      return transaction.matchDecision.findFirst({
+        where: {
+          supplierRowId: input.supplierRowId,
+          organizationId: input.organizationId,
+        },
+      });
+    }
+    const decision = await transaction.matchDecision.findFirst({
+      where: {
         supplierRowId: input.supplierRowId,
         organizationId: input.organizationId,
       },
     });
-    if (!candidate) return null;
-  }
-  return db.matchDecision.update({
-    where: { id: decision.id },
-    data: {
-      selectedCandidateId: input.selectedCandidateId,
-      status: input.status,
-      source: "HUMAN",
-      reviewedAt: new Date(),
-    },
+    if (!decision) return null;
+    if (input.status === "USER_ACCEPTED" && !input.selectedCandidateId)
+      return null;
+    let hardContradiction = false;
+    if (input.selectedCandidateId) {
+      const candidate = await transaction.listingCandidate.findFirst({
+        where: {
+          id: input.selectedCandidateId,
+          supplierRowId: input.supplierRowId,
+          organizationId: input.organizationId,
+        },
+        include: { evidence: true },
+      });
+      if (!candidate) return null;
+      hardContradiction = candidate.evidence.some(
+        (evidence) =>
+          evidence.outcome === "CONTRADICTION" &&
+          ["BRAND", "MODEL", "SIZE", "PACK", "VARIATION"].includes(
+            evidence.feature,
+          ),
+      );
+    }
+    const reasonCodes = Array.isArray(decision.reasonCodes)
+      ? decision.reasonCodes.filter(
+          (code): code is string => typeof code === "string",
+        )
+      : [];
+    const updated = await transaction.matchDecision.update({
+      where: { id: decision.id },
+      data: {
+        selectedCandidateId: input.selectedCandidateId,
+        status: input.status,
+        source: "HUMAN",
+        reasonCodes: [
+          ...new Set([
+            ...reasonCodes,
+            "HUMAN_REVIEWED",
+            ...(hardContradiction
+              ? ["HARD_CONTRADICTION_MANUAL_OVERRIDE"]
+              : []),
+          ]),
+        ],
+        reviewedAt: new Date(),
+      },
+    });
+    await transaction.workflowAuditEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        entityType: "MatchDecision",
+        entityId: input.supplierRowId,
+        eventType: "match.reviewed",
+        idempotencyKey: input.idempotencyKey,
+        reason: input.reason,
+        payload: {
+          fingerprint,
+          status: input.status,
+          selectedCandidateId: input.selectedCandidateId,
+          hardContradiction,
+        },
+      },
+    });
+    return updated;
   });
+}
+
+export function isProfitVerifiedMatch(input: {
+  status: string | null | undefined;
+  reasonCodes: unknown;
+}): boolean {
+  if (!["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(input.status ?? ""))
+    return false;
+  const reasons = Array.isArray(input.reasonCodes) ? input.reasonCodes : [];
+  return !reasons.includes("HARD_CONTRADICTION_MANUAL_OVERRIDE");
 }
 
 const DEFAULT_MARKETPLACE_ID = "ATVPDKIKX0DER";
@@ -1089,24 +1171,35 @@ export async function queueEnrichment(
     });
     if (!scan || scan._count.supplierRows === 0) return null;
     if (!["COMPLETED", "PARTIAL_SUCCESS"].includes(scan.status)) return null;
-    const connection = await transaction.providerConnection.upsert({
-      where: {
-        organizationId_provider_marketplaceId: {
-          organizationId,
-          provider: "MOCK_AMAZON",
-          marketplaceId: DEFAULT_MARKETPLACE_ID,
-        },
-      },
-      create: {
-        organizationId,
-        provider: "MOCK_AMAZON",
-        mode: "MOCK",
-        status: "ACTIVE",
-        marketplaceId: DEFAULT_MARKETPLACE_ID,
-        region: "NA",
-      },
-      update: {},
-    });
+    const connection =
+      process.env.PROVIDER_MODE === "sp-api"
+        ? await transaction.providerConnection.findFirst({
+            where: {
+              organizationId,
+              provider: "AMAZON_SP_API",
+              status: "ACTIVE",
+            },
+            orderBy: { authorizedAt: "desc" },
+          })
+        : await transaction.providerConnection.upsert({
+            where: {
+              organizationId_provider_marketplaceId: {
+                organizationId,
+                provider: "MOCK_AMAZON",
+                marketplaceId: DEFAULT_MARKETPLACE_ID,
+              },
+            },
+            create: {
+              organizationId,
+              provider: "MOCK_AMAZON",
+              mode: "MOCK",
+              status: "ACTIVE",
+              marketplaceId: DEFAULT_MARKETPLACE_ID,
+              region: "NA",
+            },
+            update: {},
+          });
+    if (!connection) return null;
     const run = await transaction.enrichmentRun.upsert({
       where: {
         scanJobId_providerConnectionId: {
@@ -1212,8 +1305,9 @@ export async function recordProviderCallAttempt(input: {
 }) {
   return db.providerCallAttempt.upsert({
     where: {
-      organizationId_provider_operation_requestKey_attempt: {
+      organizationId_enrichmentRunId_provider_operation_requestKey_attempt: {
         organizationId: input.organizationId,
+        enrichmentRunId: input.enrichmentRunId,
         provider: input.provider,
         operation: input.operation,
         requestKey: input.requestKey,
@@ -2056,7 +2150,7 @@ export async function getAnalysisResult(
   organizationId: string,
   resultId: string,
 ) {
-  return db.profitResult.findFirst({
+  const result = await db.profitResult.findFirst({
     where: { id: resultId, organizationId },
     include: {
       shippingRoute: true,
@@ -2075,6 +2169,14 @@ export async function getAnalysisResult(
               },
             },
           },
+          listingCandidates: {
+            include: {
+              catalogProduct: true,
+              evidence: true,
+              packGuard: true,
+            },
+            orderBy: { confidence: "desc" },
+          },
           enrichmentItems: { include: { observations: true } },
           profitCostOverrides: {
             include: {
@@ -2092,6 +2194,23 @@ export async function getAnalysisResult(
       },
     },
   });
+  if (!result) return null;
+  const auditEvents = await db.workflowAuditEvent.findMany({
+    where: {
+      organizationId,
+      entityId: {
+        in: [
+          result.id,
+          result.supplierRowId,
+          ...(result.supplierRow.matchDecision?.id
+            ? [result.supplierRow.matchDecision.id]
+            : []),
+        ],
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return { ...result, auditEvents };
 }
 
 export async function getAnalysisOverrideForResult(
@@ -2883,7 +3002,7 @@ export async function transitionShortlistItems(input: {
           item.profitResult.status !== "COMPLETED" ||
           item.profitResult.recommendation !== "BUY" ||
           !match ||
-          !["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(match.status) ||
+          !isProfitVerifiedMatch(match) ||
           match.selectedCandidate?.packGuard?.status !== "VERIFIED"
         );
       })
@@ -3162,6 +3281,27 @@ export async function getPurchaseOrderForOrganization(
   });
 }
 
+export async function listPurchaseOrdersForOrganization(
+  organizationId: string,
+) {
+  return db.purchaseOrder.findMany({
+    where: { organizationId },
+    select: {
+      id: true,
+      status: true,
+      currency: true,
+      supplierSubtotal: true,
+      projectedProfitTotal: true,
+      createdAt: true,
+      updatedAt: true,
+      supplier: { select: { name: true, code: true } },
+      shippingRoute: { select: { name: true } },
+      _count: { select: { lines: true, exportJobs: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
 export async function validatePurchaseOrder(
   organizationId: string,
   purchaseOrderId: string,
@@ -3249,7 +3389,7 @@ export async function validatePurchaseOrder(
           line.profitResult.status !== "COMPLETED" ||
           line.profitResult.recommendation !== "BUY" ||
           !match ||
-          !["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(match.status) ||
+          !isProfitVerifiedMatch(match) ||
           match.selectedCandidate?.packGuard?.status !== "VERIFIED"
         );
       })

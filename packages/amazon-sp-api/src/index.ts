@@ -88,6 +88,17 @@ export type SpApiConfig = {
   endpoint: string;
 };
 
+export function retryAfterMilliseconds(
+  value: string | null,
+  now = Date.now(),
+): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? Math.max(0, at - now) : undefined;
+}
+
 const tokenSchema = z.object({
   access_token: z.string().min(1),
   expires_in: z.number().int().positive(),
@@ -152,7 +163,9 @@ export class AmazonSpApiProvider
     });
     const requestId = response.headers.get("x-amzn-requestid") ?? undefined;
     if (!response.ok) {
-      const retryAfter = Number(response.headers.get("retry-after"));
+      const retryAfter = retryAfterMilliseconds(
+        response.headers.get("retry-after"),
+      );
       const code =
         response.status === 429
           ? "THROTTLED"
@@ -168,9 +181,7 @@ export class AmazonSpApiProvider
       throw new ProviderError(code, {
         httpStatus: response.status,
         ...(requestId ? { providerRequestId: requestId } : {}),
-        ...(Number.isFinite(retryAfter)
-          ? { retryAfterMs: retryAfter * 1_000 }
-          : {}),
+        ...(retryAfter !== undefined ? { retryAfterMs: retryAfter } : {}),
       });
     }
     return {

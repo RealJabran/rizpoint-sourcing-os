@@ -6,7 +6,13 @@ Phase 5 presents one current `ProfitResult` per supplier-row and shipping-route.
 
 Inline edits create typed `ProfitCostOverride` records rather than changing source rows, PackGuard findings, provider observations, or historical result snapshots. Money is stored as `NUMERIC(18,4)` and sent over APIs as decimal strings. A visible reason, revision, and idempotency key are mandatory. Only fields the user changed are sent; omitted cost/stress fields retain their prior values, while an explicit null clears a field. Edits create a targeted calculation run containing exactly the row/route pair. A target result is promoted only when its override revision and run ID still match the active override, preventing an older worker from replacing a newer decision.
 
-The drawer shows current and alternative-route results, normalized supplier data, match and PackGuard evidence, warnings, provider observations with timestamps/freshness, inputs, full formula/decision evidence, override history, and mapped next actions. Replay is read-only, requires the stored profit-engine version, reconstructs current/conservative/stress scenarios and the recommendation, and compares every persisted financial output and reason code.
+The drawer shows current and alternative-route results, supplier source values,
+normalized data, selected and rejected match candidates with feature evidence,
+PackGuard, warnings, provider observations with timestamps/freshness expiry,
+inputs, full formula/decision evidence, override history, workflow audit events,
+and mapped next actions. Replay is read-only, requires the stored profit-engine
+version, reconstructs current/conservative/stress scenarios and the
+recommendation, and compares every persisted financial output and reason code.
 
 ## Accessibility and scale
 

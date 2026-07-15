@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PHASE_ZERO_ORGANIZATION_SLUG,
+  isProfitVerifiedMatch,
   shouldPromoteProfitResult,
 } from "../src/repositories.js";
 import {
@@ -62,13 +63,25 @@ describe("database policy", () => {
     ).toBe(false);
   });
 
-  it("scopes provider-attempt idempotency by organization", async () => {
+  it("does not let a manually overridden hard contradiction become profit-verified", () => {
+    expect(
+      isProfitVerifiedMatch({
+        status: "USER_ACCEPTED",
+        reasonCodes: ["HARD_CONTRADICTION_MANUAL_OVERRIDE"],
+      }),
+    ).toBe(false);
+    expect(
+      isProfitVerifiedMatch({ status: "USER_ACCEPTED", reasonCodes: [] }),
+    ).toBe(true);
+  });
+
+  it("scopes provider-attempt idempotency by organization and enrichment run", async () => {
     const schema = await readFile(
       new URL("../prisma/schema.prisma", import.meta.url),
       "utf8",
     );
     expect(schema).toContain(
-      "@@unique([organizationId, provider, operation, requestKey, attempt])",
+      "@@unique([organizationId, enrichmentRunId, provider, operation, requestKey, attempt])",
     );
   });
 });

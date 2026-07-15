@@ -5,15 +5,10 @@ import {
   recordProviderCallAttempt,
   scheduleEnrichmentRetry,
 } from "@rizpoint/database";
-import { MockAmazonProvider } from "@rizpoint/mock-providers";
 import { ProviderError } from "@rizpoint/provider-contracts";
+import { createEnrichmentProvider } from "./enrichment-provider.js";
 import { providerCalls } from "./observability.js";
 
-const marketplace = {
-  marketplaceId: "ATVPDKIKX0DER",
-  region: "NA" as const,
-  sellerId: "mock-seller",
-};
 const FRESH_FOR_MS = 15 * 60_000;
 const TRANSIENT_RETRY_DELAY_MS = 30_000;
 
@@ -24,7 +19,7 @@ type CachedResult = {
   primaryAmount?: string;
   quotedPrice?: string;
   currency?: string;
-  provider: "MOCK_AMAZON" | "MOCK_HISTORY";
+  provider: "AMAZON_SP_API" | "MOCK_AMAZON" | "MOCK_HISTORY";
   observedAt: Date;
   freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
   providerReference?: string;
@@ -53,7 +48,49 @@ function providerError(error: unknown) {
 export async function processEnrichment(scanJobId: string) {
   const run = await getEnrichmentRunForProcessing(scanJobId);
   if (!run) return;
-  const provider = new MockAmazonProvider();
+  let bundle: ReturnType<typeof createEnrichmentProvider>;
+  try {
+    bundle = createEnrichmentProvider(run.providerConnection);
+  } catch (error) {
+    const detail = providerError(error);
+    const provider = run.providerConnection?.provider ?? "AMAZON_SP_API";
+    for (const item of run.items) {
+      if (item.status === "COMPLETED") continue;
+      const missingMetrics: string[] = [];
+      for (const metric of [
+        "CATALOG",
+        "PRICING",
+        "FEES",
+        "RESTRICTIONS",
+        "HISTORY",
+      ] as const) {
+        missingMetrics.push(`${metric}_${detail.code}`);
+        await recordProviderCallAttempt({
+          organizationId: run.organizationId,
+          enrichmentRunId: run.id,
+          provider,
+          operation: metric,
+          requestKey: `${run.providerConnection?.marketplaceId ?? "UNKNOWN"}:${item.asin}`,
+          attempt: run.attemptCount,
+          status: detail.status,
+          errorCode: detail.code,
+        });
+        providerCalls.inc({
+          operation: metric,
+          outcome: detail.status.toLowerCase(),
+        });
+      }
+      await persistEnrichmentItem({
+        enrichmentItemId: item.id,
+        observations: [],
+        missingMetrics,
+        errorCode: detail.code,
+      });
+    }
+    await completeEnrichmentRun(run.id);
+    return;
+  }
+  const { provider, providerKind, marketplace } = bundle;
   const cache = new Map<string, Promise<CachedResult>>();
   let retryAt: Date | undefined;
   const call = (asin: string, metric: Metric): Promise<CachedResult> => {
@@ -124,9 +161,9 @@ export async function processEnrichment(scanJobId: string) {
         value,
         observedAt,
         freshnessState: observed.provenance?.freshnessState ?? "UNKNOWN",
-        provider: (metric === "HISTORY"
+        provider: (metric === "HISTORY" && providerKind === "MOCK_AMAZON"
           ? "MOCK_HISTORY"
-          : "MOCK_AMAZON") as CachedResult["provider"],
+          : providerKind) as CachedResult["provider"],
         ...(observed.provenance?.providerReference
           ? { providerReference: observed.provenance.providerReference }
           : {}),
@@ -200,7 +237,10 @@ export async function processEnrichment(scanJobId: string) {
         await recordProviderCallAttempt({
           organizationId: run.organizationId,
           enrichmentRunId: run.id,
-          provider: metric === "HISTORY" ? "MOCK_HISTORY" : "MOCK_AMAZON",
+          provider:
+            metric === "HISTORY" && providerKind === "MOCK_AMAZON"
+              ? "MOCK_HISTORY"
+              : providerKind,
           operation: metric,
           requestKey: `${marketplace.marketplaceId}:${item.asin}`,
           attempt: run.attemptCount,

@@ -33,18 +33,31 @@ export default function MatchesPage({
 }) {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [reviewReasons, setReviewReasons] = useState<Record<string, string>>(
+    {},
+  );
 
   async function review(
     supplierRowId: string,
     status: "USER_ACCEPTED" | "USER_REJECTED",
     selectedCandidateId: string | null,
+    reason: string,
   ): Promise<void> {
+    if (reason.trim().length < 3) {
+      setError("Add a brief reason before recording a match review.");
+      return;
+    }
     const response = await fetch(
       `/api/supplier-rows/${supplierRowId}/match-review`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status, selectedCandidateId }),
+        body: JSON.stringify({
+          status,
+          selectedCandidateId,
+          reason: reason.trim(),
+          idempotencyKey: crypto.randomUUID(),
+        }),
       },
     );
     if (!response.ok) {
@@ -95,6 +108,19 @@ export default function MatchesPage({
                 {decision.selectedCandidate.packGuard.reasonCode})
               </p>
             ) : null}
+            <label>
+              Review reason{" "}
+              <input
+                value={reviewReasons[decision.supplierRow.id] ?? ""}
+                maxLength={500}
+                onChange={(event) =>
+                  setReviewReasons((current) => ({
+                    ...current,
+                    [decision.supplierRow.id]: event.target.value,
+                  }))
+                }
+              />
+            </label>
             <ul>
               {decision.supplierRow.listingCandidates.map((candidate) => (
                 <li key={candidate.id}>
@@ -117,6 +143,7 @@ export default function MatchesPage({
                         decision.supplierRow.id,
                         "USER_ACCEPTED",
                         candidate.id,
+                        reviewReasons[decision.supplierRow.id] ?? "",
                       )
                     }
                   >
@@ -128,7 +155,12 @@ export default function MatchesPage({
             <button
               type="button"
               onClick={() =>
-                void review(decision.supplierRow.id, "USER_REJECTED", null)
+                void review(
+                  decision.supplierRow.id,
+                  "USER_REJECTED",
+                  null,
+                  reviewReasons[decision.supplierRow.id] ?? "",
+                )
               }
             >
               Reject all candidates

@@ -43,11 +43,19 @@ The matching worker calls the typed catalog interface, validates provider payloa
 
 Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Mock/recorded adapters are the default; the optional Amazon SP-API adapter is isolated in `packages/amazon-sp-api`, server-side only, and configuration-gated. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
 
+The worker selects the fixture adapter unless `PROVIDER_MODE=sp-api` and an
+active organization-scoped Amazon connection has a valid encrypted refresh
+token. Decryption happens only in the worker using the connection's
+organization-and-connection authenticated context. Missing, revoked, or
+misconfigured connections fail as explicit provider data; they never fall back
+silently to mock data. Provider-attempt idempotency is scoped to one enrichment
+run so later scans cannot overwrite prior audit evidence.
+
 The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Redis, and the scanner are reachable.
 
 ## Private production operation
 
-Private production uses an authenticated owner session whose membership and session epoch are revalidated at the proxy boundary. Demo mode is local-only. Web is the sole public TLS service; worker, scanner, ClamAV, PostgreSQL, Redis, metrics, and S3 administration remain private. PostgreSQL and private object storage are backed up separately; Redis is treated as recoverable transport. Expired exports are identified by a checkpoint-safe retention run, initially in persisted report mode. See `OPERATIONS.md` and `RECOVERY_RUNBOOK.md`.
+Private production uses an authenticated owner session whose membership and session epoch are revalidated at the proxy boundary. Demo mode is local-only. Web is the sole public TLS service; worker, scanner, ClamAV, PostgreSQL, Redis, metrics, and S3 administration remain private. PostgreSQL and private object storage are backed up separately; Redis is treated as recoverable transport. Expired exports are identified by a checkpoint-safe retention run, initially in persisted report mode. The download route fails closed once `expires_at` has passed (or is missing), even while report-mode retention has not yet deleted the private object. See `OPERATIONS.md` and `RECOVERY_RUNBOOK.md`.
 
 ## Analysis workspace
 

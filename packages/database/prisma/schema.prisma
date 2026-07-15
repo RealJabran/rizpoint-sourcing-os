@@ -1097,7 +1097,7 @@ model ProviderCallAttempt {
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   enrichmentRun EnrichmentRun? @relation(fields: [enrichmentRunId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, provider, operation, requestKey, attempt])
+  @@unique([organizationId, enrichmentRunId, provider, operation, requestKey, attempt])
   @@index([organizationId, provider, createdAt])
   @@map("provider_call_attempts")
 }

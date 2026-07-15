@@ -1,11 +1,16 @@
 import { z } from "zod";
 
+const reviewMetadata = z.object({
+  reason: z.string().trim().min(3).max(500),
+  idempotencyKey: z.string().uuid(),
+});
+
 export const matchReviewInputSchema = z.discriminatedUnion("status", [
-  z.object({
+  reviewMetadata.extend({
     status: z.literal("USER_ACCEPTED"),
     selectedCandidateId: z.string().min(1),
   }),
-  z.object({
+  reviewMetadata.extend({
     status: z.literal("USER_REJECTED"),
     selectedCandidateId: z.string().min(1).nullable(),
   }),

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ANALYSIS_PAGE_SIZE, pageOffsetForIndex } from "./window";
+import { observationFreshness, requiredNextActions } from "./evidence";
 
 const PAGE_SIZE = ANALYSIS_PAGE_SIZE;
 const GROUPS = ["identity", "decision", "economics", "risk"] as const;
@@ -59,6 +60,7 @@ type Row = {
 type Route = { id: string; name: string; currency: string };
 type Detail = Record<string, unknown> & {
   id: string;
+  engineVersion: string;
   reasonCodes: string[];
   inputSnapshot: unknown;
   evidence: unknown;
@@ -300,6 +302,13 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     action: "RECALCULATE" | "CLEAR_COST_OVERRIDE",
   ): Promise<void> {
     if (selected.size === 0) return;
+    if (
+      action === "CLEAR_COST_OVERRIDE" &&
+      !window.confirm(
+        `Clear persisted cost overrides for ${selected.size} selected result(s)? This queues deterministic recalculation.`,
+      )
+    )
+      return;
     const response = await fetch("/api/results/bulk-action", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -891,27 +900,6 @@ function AccessibleTable({
   );
 }
 
-function requiredNextActions(reasonCodes: readonly string[]): string[] {
-  const actions: Record<string, string> = {
-    MATCH_REQUIRED: "Review and accept or reject a catalog match.",
-    PACK_OR_MATCH_UNVERIFIED:
-      "Verify the product match and sellable-unit pack.",
-    MISSING_OR_STALE_EVIDENCE:
-      "Refresh the missing or stale provider evidence.",
-    CURRENCY_MISMATCH: "Use a route and policy with a compatible currency.",
-    APPROVAL_EVIDENCE_REQUIRED: "Obtain seller or brand approval evidence.",
-    RESTRICTED_OR_PROHIBITED:
-      "Do not purchase unless the restriction is resolved.",
-  };
-  return [
-    ...new Set(
-      reasonCodes
-        .map((code) => actions[code])
-        .filter((action): action is string => Boolean(action)),
-    ),
-  ];
-}
-
 function EvidenceList({ values }: { values: Record<string, unknown> }) {
   return (
     <dl className="evidence-list">
@@ -922,6 +910,39 @@ function EvidenceList({ values }: { values: Record<string, unknown> }) {
             {value === null || value === undefined || value === ""
               ? "Not available"
               : String(value)}
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+function EvidenceTree({ value }: { value: unknown }) {
+  if (value === null || value === undefined) return <p>Not available.</p>;
+  if (typeof value !== "object") return <p>{String(value)}</p>;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <p>None recorded.</p>;
+    return (
+      <ul className="evidence-list">
+        {value.map((item, index) => (
+          <li key={index}>
+            <EvidenceTree value={item} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <dl className="evidence-list">
+      {Object.entries(value as Record<string, unknown>).map(([key, child]) => (
+        <Fragment key={key}>
+          <dt>{key.replace(/([A-Z])/g, " $1")}</dt>
+          <dd>
+            {child !== null && typeof child === "object" ? (
+              <EvidenceTree value={child} />
+            ) : (
+              String(child ?? "Not available")
+            )}
           </dd>
         </Fragment>
       ))}
@@ -942,11 +963,25 @@ function EvidenceDrawer({
     normalizedOffer?: Record<string, unknown>;
     warnings?: unknown[];
     matchDecision?: {
-      selectedCandidate?: { packGuard?: unknown; evidence?: unknown[] };
+      id?: string;
+      reasonCodes?: unknown;
+      selectedCandidate?: {
+        id?: string;
+        packGuard?: unknown;
+        evidence?: unknown[];
+      };
     };
+    listingCandidates?: Array<{
+      id: string;
+      confidence: number;
+      catalogProduct?: Record<string, unknown>;
+      evidence?: Array<Record<string, unknown>>;
+      packGuard?: Record<string, unknown> | null;
+    }>;
     enrichmentItems?: Array<{ observations?: Array<Record<string, unknown>> }>;
     profitResults?: unknown[];
-    profitCostOverrides?: unknown[];
+    profitCostOverrides?: Array<Record<string, unknown>>;
+    rawData?: unknown;
   };
   useEffect(() => {
     closeRef.current?.focus();
@@ -977,6 +1012,10 @@ function EvidenceDrawer({
     { status?: string; reasonCode?: string } | undefined;
   const observations =
     supplier.enrichmentItems?.flatMap((item) => item.observations ?? []) ?? [];
+  const actions = requiredNextActions(detail.reasonCodes);
+  const auditEvents = Array.isArray(detail.auditEvents)
+    ? detail.auditEvents
+    : [];
   return (
     <div className="evidence-backdrop" role="presentation">
       <section
@@ -1010,6 +1049,41 @@ function EvidenceDrawer({
               : 0,
           }}
         />
+        <h4>Supplier source values and normalization warnings</h4>
+        <EvidenceTree value={supplier.rawData} />
+        {Array.isArray(supplier.warnings) && supplier.warnings.length ? (
+          <EvidenceTree value={supplier.warnings} />
+        ) : (
+          <p>No normalization warnings are recorded.</p>
+        )}
+        <h4>Candidate comparison and match features</h4>
+        {supplier.listingCandidates?.length ? (
+          <ul className="evidence-list">
+            {supplier.listingCandidates.map((candidate) => (
+              <li key={candidate.id}>
+                <strong>
+                  {candidate.id ===
+                  supplier.matchDecision?.selectedCandidate?.id
+                    ? "Selected candidate"
+                    : "Rejected alternative"}
+                </strong>
+                <EvidenceList
+                  values={{
+                    ASIN: candidate.catalogProduct?.asin,
+                    Title: candidate.catalogProduct?.title,
+                    Brand: candidate.catalogProduct?.brand,
+                    Confidence: candidate.confidence,
+                    PackGuard: candidate.packGuard?.status,
+                    "PackGuard reason": candidate.packGuard?.reasonCode,
+                  }}
+                />
+                <EvidenceTree value={candidate.evidence} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No catalog candidates are stored for this row.</p>
+        )}
         <h3>Sources, timestamps, and freshness</h3>
         {observations.length ? (
           <ul className="evidence-list">
@@ -1021,7 +1095,12 @@ function EvidenceDrawer({
                     observation.observed_at ??
                     "unknown",
                 )}{" "}
-                · freshness {String(observation.freshness ?? "unknown")}
+                · freshness {observationFreshness(observation)} · fresh until{" "}
+                {String(
+                  observation.freshUntil ??
+                    observation.fresh_until ??
+                    "unknown",
+                )}
               </li>
             ))}
           </ul>
@@ -1037,22 +1116,27 @@ function EvidenceDrawer({
             "ROI %": detail.roiPercent,
             "Margin %": detail.marginPercent,
             "Break-even price": detail.breakEvenPrice,
-            "Rounding basis":
-              "Stored profit-engine evidence and engine version",
+            "Formula engine": detail.engineVersion,
+            "Rounding basis": "HALF_UP to display cents; break-even rounds up.",
           }}
         />
+        <h4>Deterministic inputs and formula evidence</h4>
+        <EvidenceTree value={detail.inputSnapshot} />
+        <EvidenceTree value={detail.evidence} />
         <h4>Required next actions</h4>
         <ul className="evidence-list">
-          {requiredNextActions(detail.reasonCodes).map((action) => (
-            <li key={action}>{action}</li>
-          )) || <li>No required action is recorded.</li>}
+          {actions.length ? (
+            actions.map((action) => <li key={action}>{action}</li>)
+          ) : (
+            <li>No required action is recorded.</li>
+          )}
         </ul>
         <h3>Overrides and route comparison</h3>
-        <p>
-          {supplier.profitCostOverrides?.length ?? 0} persisted cost
-          override(s); route comparison remains available from stored scenario
-          evidence.
-        </p>
+        <EvidenceTree value={supplier.profitCostOverrides} />
+        <h4>Current route comparison</h4>
+        <EvidenceTree value={supplier.profitResults} />
+        <h4>Audit history</h4>
+        <EvidenceTree value={auditEvents} />
       </section>
     </div>
   );

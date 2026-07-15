@@ -8,6 +8,7 @@ import {
 } from "@rizpoint/profit-engine";
 import {
   getProfitCalculationForProcessing,
+  isProfitVerifiedMatch,
   markProfitCalculationRunning,
   persistProfitCalculation,
 } from "@rizpoint/database";
@@ -242,9 +243,10 @@ export async function processProfitCalculation(runId: string) {
         if (target) overriddenCosts[target] = value.value.toString();
       }
       const calculatedAt = new Date();
-      const matchVerified = ["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(
-        row.matchDecision?.status ?? "UNMATCHED",
-      );
+      const matchVerified = isProfitVerifiedMatch({
+        status: row.matchDecision?.status,
+        reasonCodes: row.matchDecision?.reasonCodes,
+      });
       const demandEvidenceSufficient =
         historyObservationCount(history) >=
         run.financialPolicy.minimumDemandScore;

@@ -4,10 +4,21 @@ import {
   ensurePhaseZeroOrganization,
   getSupplierForOrganization,
   getShortlistItemsForPurchaseOrder,
+  listPurchaseOrdersForOrganization,
 } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
 import { createPurchaseOrderSchema } from "@/src/phase-six/contracts";
 import { makeOrder, sumOrderLines } from "@/src/phase-six/order-input";
+
+export async function GET(request: NextRequest) {
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
+  const organization = await ensurePhaseZeroOrganization();
+  return NextResponse.json(
+    await listPurchaseOrdersForOrganization(organization.id),
+  );
+}
+
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   const denied = requirePrivateAccess(request);

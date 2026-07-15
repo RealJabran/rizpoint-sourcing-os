@@ -221,7 +221,10 @@ export function suggestMapping(
   const value = column.trim().toLowerCase();
   const suggestions: Array<[RegExp, string, number]> = [
     [/(^|\s|_)asin($|\s|_)/, "ASIN", 0.98],
-    [/(upc|ean|gtin|barcode)/, "UPC", 0.92],
+    [/(^|\s|_)upc($|\s|_)/, "UPC", 0.92],
+    [/(^|\s|_)ean($|\s|_)/, "EAN", 0.92],
+    [/(^|\s|_)gtin($|\s|_)/, "GTIN", 0.92],
+    [/(barcode)/, "UPC", 0.75],
     [/(sku|item.?number|part.?number)/, "ITEM_NUMBER", 0.9],
     [/(title|description|product.?name)/, "DESCRIPTION", 0.9],
     [/(unit.?cost|wholesale.?price|cost|price)/, "UNIT_COST", 0.82],

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { assertProductionConfiguration } from "../src/runtime-config.js";
 
@@ -34,5 +35,13 @@ describe("production configuration", () => {
       "database_tls_required",
     );
     vi.unstubAllEnvs();
+  });
+
+  it("documents every fail-closed production storage endpoint", async () => {
+    const template = await readFile(
+      new URL("../../../.env.production.example", import.meta.url),
+      "utf8",
+    );
+    expect(template).toMatch(/^S3_PUBLIC_ENDPOINT=/m);
   });
 });

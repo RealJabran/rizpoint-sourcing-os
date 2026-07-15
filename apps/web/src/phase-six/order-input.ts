@@ -20,6 +20,7 @@ type Result = {
     } | null;
     matchDecision: {
       status: string;
+      reasonCodes: unknown;
       selectedCandidate: { packGuard: { status: string } | null } | null;
     } | null;
   };
@@ -38,6 +39,16 @@ function exactDecimal(value: string): Decimal {
     throw new Error("INVALID_SCENARIO_DECIMAL");
   return new Decimal(value);
 }
+function safeMatchDecision(
+  value: Result["supplierRow"]["matchDecision"],
+): boolean {
+  if (!value || !["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(value.status))
+    return false;
+  return !(
+    Array.isArray(value.reasonCodes) &&
+    value.reasonCodes.includes("HARD_CONTRADICTION_MANUAL_OVERRIDE")
+  );
+}
 export function scenarioFromResult(
   result: Result,
   scenarioType: "CURRENT" | "CONSERVATIVE" | "STRESS" | "MAP",
@@ -45,13 +56,10 @@ export function scenarioFromResult(
   if (!result.isCurrent) throw new Error("RESULT_SUPERSEDED");
   if (result.status !== "COMPLETED" || result.recommendation !== "BUY")
     throw new Error("RESULT_NOT_PURCHASE_READY");
+  const match = result.supplierRow.matchDecision;
   if (
-    !result.supplierRow.matchDecision ||
-    !["AUTO_ACCEPTED", "USER_ACCEPTED"].includes(
-      result.supplierRow.matchDecision.status,
-    ) ||
-    result.supplierRow.matchDecision.selectedCandidate?.packGuard?.status !==
-      "VERIFIED"
+    !safeMatchDecision(match) ||
+    match?.selectedCandidate?.packGuard?.status !== "VERIFIED"
   )
     throw new Error("PACK_OR_MATCH_NOT_VERIFIED");
   const evidence = record(result.evidence);

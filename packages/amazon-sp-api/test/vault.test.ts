@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { AmazonSpApiProvider, CredentialVault } from "../src/index.js";
+import {
+  AmazonSpApiProvider,
+  CredentialVault,
+  retryAfterMilliseconds,
+} from "../src/index.js";
 
 describe("credential vault", () => {
   const vault = new CredentialVault(new Map([[1, Buffer.alloc(32, 7)]]), 1);
@@ -8,6 +12,19 @@ describe("credential vault", () => {
     const encrypted = vault.encrypt("refresh-token", "org:connection");
     expect(vault.decrypt(encrypted, "org:connection")).toBe("refresh-token");
     expect(() => vault.decrypt(encrypted, "other-org:connection")).toThrow();
+  });
+});
+
+describe("SP-API retry timing", () => {
+  it("parses both delta-seconds and HTTP-date retry headers", () => {
+    expect(retryAfterMilliseconds("12", 0)).toBe(12_000);
+    expect(
+      retryAfterMilliseconds(
+        "Wed, 15 Jul 2026 00:00:05 GMT",
+        Date.UTC(2026, 6, 15),
+      ),
+    ).toBe(5_000);
+    expect(retryAfterMilliseconds("not-a-date", 0)).toBeUndefined();
   });
 });
 

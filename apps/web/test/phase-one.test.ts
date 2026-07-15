@@ -137,23 +137,35 @@ describe("Phase 1 upload validation", () => {
     ).toBe(true);
   });
 
-  it("requires a selected candidate to accept a match review", () => {
+  it("requires a selected candidate, reason, and idempotency key to accept a match review", () => {
     expect(
       matchReviewInputSchema.safeParse({
         status: "USER_ACCEPTED",
         selectedCandidateId: null,
+        reason: "Reviewed product details",
+        idempotencyKey: "3a9e1fd1-59f1-4d51-8cfe-9b2f36dfd614",
       }).success,
     ).toBe(false);
     expect(
       matchReviewInputSchema.safeParse({
         status: "USER_ACCEPTED",
         selectedCandidateId: "candidate_123",
+        reason: "Reviewed product details",
+        idempotencyKey: "3a9e1fd1-59f1-4d51-8cfe-9b2f36dfd614",
       }).success,
     ).toBe(true);
+    expect(
+      matchReviewInputSchema.safeParse({
+        status: "USER_ACCEPTED",
+        selectedCandidateId: "candidate_123",
+      }).success,
+    ).toBe(false);
   });
 
   it("suggests mappings but blocks contradictory case and pack samples", () => {
     expect(suggestMapping("Supplier UPC")).toMatchObject({ target: "UPC" });
+    expect(suggestMapping("EAN")).toMatchObject({ target: "EAN" });
+    expect(suggestMapping("GTIN")).toMatchObject({ target: "GTIN" });
     expect(suggestMapping("Wholesale Price")).toMatchObject({
       target: "UNIT_COST",
     });

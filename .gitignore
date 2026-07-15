@@ -27,6 +27,8 @@ uploads/
 !apps/web/app/api/uploads/
 !apps/web/app/api/uploads/**
 exports/
+!apps/web/app/api/exports/
+!apps/web/app/api/exports/**
 fixtures/private/
 minio-data/
 postgres-data/
