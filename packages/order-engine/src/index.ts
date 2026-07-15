@@ -195,6 +195,6 @@ export function assertPersistedOrderLine(
     "projectedProfitTotal",
   ];
   for (const field of fields)
-    if (String(rebuilt[field]) !== String(line[field]))
+    if (!decimal(String(rebuilt[field])).eq(decimal(String(line[field]))))
       throw new Error("PURCHASE_ORDER_LINE_RECONCILIATION_FAILED");
 }

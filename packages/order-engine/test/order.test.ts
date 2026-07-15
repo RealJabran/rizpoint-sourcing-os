@@ -91,4 +91,31 @@ describe("order engine", () => {
       ),
     ).toThrow("SCENARIO_FORMULA_MISMATCH");
   });
+  it("reconciles NUMERIC values returned without insignificant zeros", () => {
+    const line = buildOrderLine({
+      requestedUnits: 6,
+      casePack: 6,
+      minimumOrderCases: 1,
+      orderMultipleCases: 1,
+      scenario,
+    });
+    expect(() =>
+      assertPersistedOrderLine(
+        {
+          ...line,
+          supplierUnitCost: "2",
+          scenarioPrice: "20",
+          scenarioEffectiveCogs: "8",
+          scenarioAmazonFee: "3",
+          scenarioNetProfit: "9",
+          supplierTotal: "12",
+          landedCostTotal: "48",
+          projectedRevenueTotal: "120",
+          amazonFeeTotal: "18",
+          projectedProfitTotal: "54",
+        },
+        "USD",
+      ),
+    ).not.toThrow();
+  });
 });

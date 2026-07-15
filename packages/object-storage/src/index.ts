@@ -11,9 +11,16 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+export function storageEndpointConfiguration(environment = process.env) {
+  const endpoint = environment.S3_ENDPOINT ?? "http://127.0.0.1:9000";
+  return {
+    endpoint,
+    publicEndpoint: environment.S3_PUBLIC_ENDPOINT ?? endpoint,
+  };
+}
+
 const bucket = process.env.S3_BUCKET ?? "rizpoint-private";
-const endpoint = process.env.S3_ENDPOINT ?? "http://127.0.0.1:9000";
-const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT ?? endpoint;
+const { endpoint, publicEndpoint } = storageEndpointConfiguration();
 const accessKeyId =
   process.env.S3_ACCESS_KEY ?? "replace-with-local-access-key";
 const secretAccessKey =

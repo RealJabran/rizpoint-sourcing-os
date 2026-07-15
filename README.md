@@ -18,6 +18,8 @@ docker compose up --build --wait
 
 Open `http://localhost:3000/uploads`. The seeded `VSI` supplier lets you exercise a local upload/mapping flow without committing supplier data. MinIO accepts browser uploads only through short-lived signed URLs from the local web origin.
 
+See [local catalog import testing](docs/LOCAL_TESTING.md) for the API and browser verification flow.
+
 After normalization, submit `POST /api/scans/{scanId}/match` in demo mode and review results at `/scans/{scanId}/matches`. The only catalog adapter is a deterministic mock fixture; no real provider credentials are configured.
 
 `PHASE_ZERO_DEMO_MODE=true` is set only by local Compose to enable this mock route. Do not expose it as a production authorization mechanism.

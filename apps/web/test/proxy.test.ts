@@ -17,6 +17,7 @@ function productionEnvironment() {
   );
   vi.stubEnv("REDIS_URL", "rediss://redis:6379");
   vi.stubEnv("S3_ENDPOINT", "https://storage.test");
+  vi.stubEnv("S3_PUBLIC_ENDPOINT", "https://storage-public.test");
   vi.stubEnv("S3_BUCKET", "bucket");
   vi.stubEnv("S3_ACCESS_KEY", "key");
   vi.stubEnv("S3_SECRET_KEY", "secret");

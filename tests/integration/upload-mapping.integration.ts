@@ -34,6 +34,22 @@ const suppliers = (await suppliersResponse.json()) as Array<{
 const vsi = suppliers.find((supplier) => supplier.code === "VSI");
 assert.ok(vsi, "seeded VSI supplier should exist");
 
+const invalidMediaResponse = await fetch(`${baseUrl}/api/uploads/presign`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    supplierId: vsi.id,
+    filename: "catalog.csv",
+    contentType: "application/pdf",
+    sizeBytes: 12,
+  }),
+});
+assert.equal(invalidMediaResponse.status, 400);
+assert.equal(
+  ((await invalidMediaResponse.json()) as { error: string }).error,
+  "UNSUPPORTED_MEDIA_TYPE",
+);
+
 const createdResponse = await fetch(`${baseUrl}/api/uploads/presign`, {
   method: "POST",
   headers: {
@@ -73,12 +89,38 @@ assert.equal(
   created.uploadId,
 );
 
+const preflightResponse = await fetch(created.uploadUrl, {
+  method: "OPTIONS",
+  headers: {
+    Origin: baseUrl,
+    "Access-Control-Request-Method": "PUT",
+    "Access-Control-Request-Headers": "content-type",
+  },
+});
+assert.equal(preflightResponse.status, 204);
+const allowedOrigins = preflightResponse.headers
+  .get("access-control-allow-origin")
+  ?.split(",")
+  .map((origin) => origin.trim());
+assert.deepEqual(allowedOrigins, [baseUrl]);
+assert.match(
+  preflightResponse.headers.get("access-control-allow-methods") ?? "",
+  /PUT/,
+);
+assert.match(
+  preflightResponse.headers.get("access-control-allow-headers") ?? "",
+  /content-type/i,
+);
+
 const putResponse = await fetch(created.uploadUrl, {
   method: "PUT",
   headers: { "content-type": "text/csv" },
   body: catalog,
 });
 assert.ok(putResponse.ok, `signed object PUT failed: ${putResponse.status}`);
+const unsignedObjectUrl = new URL(created.uploadUrl);
+unsignedObjectUrl.search = "";
+assert.equal((await fetch(unsignedObjectUrl)).status, 403);
 
 const inspectionResponse = await fetch(
   `${baseUrl}/api/uploads/${created.uploadId}/inspect`,
@@ -91,7 +133,7 @@ type UploadState = {
   scan: {
     id: string;
     status: string;
-    supplierRows: Array<{ id: string }>;
+    supplierRows: Array<{ id: string; rawData: Record<string, string> }>;
   } | null;
   sheets: Array<{ id: string; headerCandidates: Array<{ row: number }> }>;
 };
@@ -176,6 +218,7 @@ assert.equal(normalizationResponse.status, 202);
 const complete = await waitFor("COMPLETED");
 assert.equal(complete.scan?.status, "COMPLETED");
 assert.equal(complete.scan?.supplierRows.length, 4_969);
+assert.equal(complete.scan?.supplierRows[0]?.rawData["0"], "012345678905");
 
 const matchingResponse = await fetch(
   `${baseUrl}/api/scans/${created.scanId}/match`,
@@ -184,7 +227,9 @@ const matchingResponse = await fetch(
 assert.equal(matchingResponse.status, 202);
 
 async function waitForMatching(): Promise<void> {
-  for (let attempt = 0; attempt < 160; attempt += 1) {
+  // The 4,969-row fixture deliberately exercises the persisted matching path.
+  // Leave a bounded budget for a clean local worker to complete it.
+  for (let attempt = 0; attempt < 360; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const response = await fetch(`${baseUrl}/api/scans/${created.scanId}`);
     assert.equal(response.status, 200);

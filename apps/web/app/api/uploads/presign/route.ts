@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createUpload, ensurePhaseZeroOrganization } from "@rizpoint/database";
 import { createUploadUrl } from "@rizpoint/object-storage";
 import { phaseZeroDemoEnabled } from "@/src/phase-zero";
-import { presignInputSchema, validateFilename } from "@/src/phase-one";
+import {
+  presignInputSchema,
+  validateDeclaredMediaType,
+  validateFilename,
+} from "@/src/phase-one";
 
 export const runtime = "nodejs";
 
@@ -15,6 +19,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "INVALID_UPLOAD" }, { status: 400 });
   try {
     validateFilename(parsed.data.filename);
+    validateDeclaredMediaType(parsed.data.filename, parsed.data.contentType);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "INVALID_UPLOAD" },

@@ -362,7 +362,7 @@ assert.equal(
           schemaVersion: 1,
           recommendation: "BUY",
           status: "COMPLETED",
-          minRoiPercent: "-5",
+          minRoiPercent: "0",
           sort: "roiPercent",
           direction: "desc",
           visibleGroups: ["identity", "decision", "economics"],

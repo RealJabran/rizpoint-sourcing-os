@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  normalizationWarningMessage,
+  safeDisplayFilename,
+  uploadErrorMessage,
+} from "@/src/phase-one";
 
 const targets = [
   "",
@@ -50,6 +55,7 @@ type Sheet = {
 };
 type Upload = {
   id: string;
+  originalFilename: string;
   status: string;
   rejectionCode: string | null;
   scan: {
@@ -75,6 +81,9 @@ export default function UploadPage() {
   const [headerRow, setHeaderRow] = useState(1);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [uploadIdempotencyKey, setUploadIdempotencyKey] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     void fetch("/api/suppliers").then(async (response) => {
@@ -133,10 +142,15 @@ export default function UploadPage() {
   async function startUpload(): Promise<void> {
     if (!file || !supplierId) return;
     setError(null);
+    const idempotencyKey = uploadIdempotencyKey ?? crypto.randomUUID();
+    if (!uploadIdempotencyKey) setUploadIdempotencyKey(idempotencyKey);
     try {
       const presign = await fetch("/api/uploads/presign", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
         body: JSON.stringify({
           supplierId,
           filename: file.name,
@@ -144,7 +158,7 @@ export default function UploadPage() {
           sizeBytes: file.size,
         }),
       });
-      if (!presign.ok) throw new Error("Unable to create upload.");
+      if (!presign.ok) throw new Error(await responseError(presign));
       const created = (await presign.json()) as {
         uploadId: string;
         uploadUrl: string;
@@ -154,15 +168,18 @@ export default function UploadPage() {
         headers: { "content-type": file.type || "application/octet-stream" },
         body: file,
       });
-      if (!put.ok) throw new Error("Object upload failed.");
+      if (!put.ok) throw new Error("UPLOAD_OBJECT_MISSING");
       const inspect = await fetch(`/api/uploads/${created.uploadId}/inspect`, {
         method: "POST",
       });
-      if (!inspect.ok) throw new Error("Unable to queue inspection.");
+      if (!inspect.ok) throw new Error(await responseError(inspect));
       await refresh(created.uploadId);
     } catch (caught) {
+      const code = caught instanceof Error ? caught.message : undefined;
       setError(
-        caught instanceof Error ? caught.message : "Unexpected upload error.",
+        code === "Failed to fetch"
+          ? "Catalog object upload could not reach private storage. Try again; contact support if it persists."
+          : uploadErrorMessage(code),
       );
     }
   }
@@ -284,7 +301,12 @@ export default function UploadPage() {
         <input
           type="file"
           accept=".csv,.xls,.xlsx"
-          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          onChange={(event) => {
+            setFile(event.target.files?.[0] ?? null);
+            setUploadIdempotencyKey(
+              event.target.files?.[0] ? crypto.randomUUID() : null,
+            );
+          }}
         />
       </label>
       <button
@@ -298,8 +320,11 @@ export default function UploadPage() {
       {upload ? (
         <section>
           <h2>Upload status: {upload.status}</h2>
+          <p>File: {safeDisplayFilename(upload.originalFilename)}</p>
           {upload.rejectionCode ? (
-            <p role="alert">Upload rejected: {upload.rejectionCode}</p>
+            <p role="alert">
+              Upload rejected: {uploadErrorMessage(upload.rejectionCode)}
+            </p>
           ) : null}
           {upload.sheets.length > 0 ? (
             <>
@@ -420,7 +445,8 @@ export default function UploadPage() {
                         <li
                           key={`${row.sourceRowNumber}-${warning.code}-${warning.field ?? ""}`}
                         >
-                          Row {row.sourceRowNumber}: {warning.code}
+                          Row {row.sourceRowNumber}:{" "}
+                          {normalizationWarningMessage(warning.code)}
                           {warning.field ? ` (${warning.field})` : ""}
                         </li>
                       )),
@@ -434,4 +460,11 @@ export default function UploadPage() {
       ) : null}
     </main>
   );
+}
+
+async function responseError(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+  } | null;
+  return body?.error ?? "INVALID_UPLOAD";
 }

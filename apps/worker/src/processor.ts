@@ -43,6 +43,7 @@ const terminalUploadErrorCodes = new Set([
   "MAPPING_NOT_READY",
   "UPLOAD_CHECKSUM_MISMATCH",
   "MALWARE_DETECTED",
+  "MALWARE_SCAN_CONFIGURATION",
 ]);
 
 function errorCode(error: unknown): string {
@@ -184,7 +185,12 @@ export const mockScanWorker = new Worker<{
           terminal ? "FAILED_FINAL" : status,
           code,
           terminal,
-          code === "MALWARE_DETECTED" ? "INFECTED" : undefined,
+          code === "MALWARE_DETECTED"
+            ? "INFECTED"
+            : code === "MALWARE_SCANNER_UNAVAILABLE" ||
+                code === "MALWARE_SCAN_CONFIGURATION"
+              ? "ERROR"
+              : undefined,
         );
         if (terminal) return;
       } else {

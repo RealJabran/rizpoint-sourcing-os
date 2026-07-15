@@ -19,6 +19,7 @@ describe("production configuration", () => {
     vi.stubEnv("DATABASE_URL", "postgresql://user:password@db/rizpoint");
     vi.stubEnv("REDIS_URL", "redis://redis:6379");
     vi.stubEnv("S3_ENDPOINT", "http://storage:9000");
+    vi.stubEnv("S3_PUBLIC_ENDPOINT", "http://storage:9000");
     vi.stubEnv("S3_BUCKET", "bucket");
     vi.stubEnv("S3_ACCESS_KEY", "key");
     vi.stubEnv("S3_SECRET_KEY", "secret");

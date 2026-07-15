@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   maxUploadBytes,
   profileInputSchema,
+  safeDisplayFilename,
+  uploadErrorMessage,
+  validateDeclaredMediaType,
   validateUploadedObjectMetadata,
   validateFilename,
   validateMappings,
@@ -21,6 +24,20 @@ describe("Phase 1 upload validation", () => {
     expect(() => validateFilename("supplier.exe")).toThrow(
       "UNSUPPORTED_FILE_TYPE",
     );
+    expect(() => validateFilename("supplier\n.csv")).toThrow("UNSAFE_FILENAME");
+  });
+
+  it("allows only compatible declared media types and maps upload errors safely", () => {
+    expect(() =>
+      validateDeclaredMediaType("supplier.csv", "text/csv"),
+    ).not.toThrow();
+    expect(() =>
+      validateDeclaredMediaType("supplier.xlsx", "application/pdf"),
+    ).toThrow("UNSUPPORTED_MEDIA_TYPE");
+    expect(uploadErrorMessage("MALWARE_SCANNER_UNAVAILABLE")).toMatch(
+      /temporarily unavailable/i,
+    );
+    expect(safeDisplayFilename("supplier\n.csv")).toBe("supplier�.csv");
   });
 
   it("requires a description and one matching identifier without duplicates", () => {

@@ -3,6 +3,61 @@ import { z } from "zod";
 export const supportedUploadExtensions = [".csv", ".xls", ".xlsx"] as const;
 export const maxUploadBytes = 50 * 1024 * 1024;
 
+const mediaTypesByExtension: Record<string, readonly string[]> = {
+  ".csv": [
+    "text/csv",
+    "application/csv",
+    "text/plain",
+    "application/octet-stream",
+  ],
+  ".xls": ["application/vnd.ms-excel", "application/octet-stream"],
+  ".xlsx": [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/octet-stream",
+  ],
+};
+
+const uploadErrorMessages: Record<string, string> = {
+  INVALID_UPLOAD: "Choose a valid CSV, XLSX, or XLS catalog under 50 MiB.",
+  UNSUPPORTED_FILE_TYPE: "Choose a CSV, XLSX, or XLS catalog file.",
+  UNSUPPORTED_MEDIA_TYPE:
+    "The file type does not match this catalog format. Re-export it as CSV, XLSX, or XLS.",
+  UNSAFE_FILENAME:
+    "Rename the file without path or control characters and try again.",
+  FILE_SIZE_LIMIT: "The catalog exceeds the 50 MiB upload limit.",
+  CONTENT_TYPE_MISMATCH:
+    "The uploaded file type changed during transfer. Select the file again and retry.",
+  UPLOAD_OBJECT_MISSING:
+    "The catalog did not reach private storage. Select it again and retry.",
+  FILE_SIGNATURE_MISMATCH:
+    "The file contents do not match its extension. Export a valid CSV, XLSX, or XLS file.",
+  CSV_ENCODING: "CSV files must be UTF-8 encoded.",
+  INVALID_XLS: "The XLS workbook could not be read safely.",
+  INVALID_XLSX: "The XLSX workbook could not be read safely.",
+  ZIP_EXPANSION_LIMIT:
+    "The XLSX workbook expands beyond the safe processing limit.",
+  SHEET_LIMIT: "The workbook contains too many sheets.",
+  ROW_LIMIT: "The workbook exceeds the 50,000-row processing limit.",
+  COLUMN_LIMIT: "The workbook exceeds the 200-column processing limit.",
+  MALWARE_DETECTED: "The catalog was rejected because malware was detected.",
+  MALWARE_SCANNER_UNAVAILABLE:
+    "Malware scanning is temporarily unavailable. The catalog was not processed; retry later.",
+  MALWARE_SCAN_CONFIGURATION:
+    "Malware scanning is not configured correctly. The catalog was not processed.",
+};
+
+export function uploadErrorMessage(code: string | null | undefined): string {
+  return code
+    ? (uploadErrorMessages[code] ?? `Catalog upload failed: ${code}.`)
+    : "Catalog upload failed.";
+}
+
+export function normalizationWarningMessage(code: string): string {
+  if (code === "FORMULA_LIKE_CELL")
+    return "Formula-like cell detected. Review this value before using the catalog.";
+  return code;
+}
+
 export function validateUploadedObjectMetadata(
   contentLength: number | undefined,
   contentType: string | undefined,
@@ -111,9 +166,34 @@ export function validateFilename(filename: string): void {
   if (
     filename.includes("/") ||
     filename.includes("\\") ||
-    filename.includes("\0")
+    [...filename].some(isControlCharacter)
   )
     throw new Error("UNSAFE_FILENAME");
+}
+
+export function validateDeclaredMediaType(
+  filename: string,
+  contentType: string,
+): void {
+  const lower = filename.toLowerCase();
+  const extension = supportedUploadExtensions.find((candidate) =>
+    lower.endsWith(candidate),
+  );
+  if (!extension) throw new Error("UNSUPPORTED_FILE_TYPE");
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
+  if (!mediaType || !mediaTypesByExtension[extension]?.includes(mediaType))
+    throw new Error("UNSUPPORTED_MEDIA_TYPE");
+}
+
+export function safeDisplayFilename(filename: string): string {
+  return [...filename]
+    .map((character) => (isControlCharacter(character) ? "�" : character))
+    .join("");
+}
+
+function isControlCharacter(character: string): boolean {
+  const code = character.codePointAt(0);
+  return code !== undefined && (code <= 0x1f || code === 0x7f);
 }
 
 export function validateMappings(

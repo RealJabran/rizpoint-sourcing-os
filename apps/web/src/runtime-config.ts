@@ -41,6 +41,7 @@ export function assertProductionConfiguration() {
     "DATABASE_URL",
     "REDIS_URL",
     "S3_ENDPOINT",
+    "S3_PUBLIC_ENDPOINT",
     "S3_BUCKET",
     "S3_ACCESS_KEY",
     "S3_SECRET_KEY",
@@ -75,6 +76,10 @@ export function assertProductionConfiguration() {
     throw new Error("production_configuration_invalid:redis_tls_required");
   if (!validHttpsUrl(process.env.S3_ENDPOINT))
     throw new Error("production_configuration_invalid:storage_tls_required");
+  if (!validHttpsUrl(process.env.S3_PUBLIC_ENDPOINT))
+    throw new Error(
+      "production_configuration_invalid:public_storage_tls_required",
+    );
   if (
     !["AES256", "aws:kms"].includes(process.env.S3_SERVER_SIDE_ENCRYPTION ?? "")
   )

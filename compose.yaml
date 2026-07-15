@@ -30,7 +30,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:3000
+      MINIO_API_CORS_ALLOW_ORIGIN: ${NEXT_PUBLIC_APP_URL}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
       interval: 5s
@@ -149,6 +149,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT}
     command: ["pnpm", "--filter", "@rizpoint/web", "dev"]
     environment:
       NODE_ENV: development

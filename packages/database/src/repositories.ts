@@ -505,7 +505,7 @@ export async function failUploadStage(
     if (!scan?.upload) return;
     await transaction.scanJob.update({
       where: { id: scanJobId },
-      data: { status },
+      data: { status, attemptCount: { increment: 1 } },
     });
     await transaction.upload.update({
       where: { id: scan.upload.id },
@@ -518,6 +518,7 @@ export async function failUploadStage(
         : {
             status: stage === "UPLOAD_INSPECT" ? "INSPECTING" : "NORMALIZING",
             rejectionCode: null,
+            ...(malwareStatus ? { malwareStatus } : {}),
           },
     });
     await transaction.scanEvent.create({
