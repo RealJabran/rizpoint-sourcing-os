@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
@@ -911,6 +912,23 @@ function requiredNextActions(reasonCodes: readonly string[]): string[] {
   ];
 }
 
+function EvidenceList({ values }: { values: Record<string, unknown> }) {
+  return (
+    <dl className="evidence-list">
+      {Object.entries(values).map(([label, value]) => (
+        <Fragment key={label}>
+          <dt>{label}</dt>
+          <dd>
+            {value === null || value === undefined || value === ""
+              ? "Not available"
+              : String(value)}
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
 function EvidenceDrawer({
   detail,
   onClose,
@@ -918,7 +936,6 @@ function EvidenceDrawer({
   detail: Detail;
   onClose: () => void;
 }) {
-  const [replay, setReplay] = useState<string>("");
   const closeRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const supplier = detail.supplierRow as {
@@ -956,16 +973,10 @@ function EvidenceDrawer({
       first.focus();
     }
   }
-  async function replayDecision(): Promise<void> {
-    const response = await fetch(`/api/results/${detail.id}/replay`, {
-      method: "POST",
-    });
-    setReplay(
-      response.ok
-        ? JSON.stringify(await response.json(), null, 2)
-        : "Replay unavailable for this stored engine version.",
-    );
-  }
+  const packGuard = supplier.matchDecision?.selectedCandidate?.packGuard as
+    { status?: string; reasonCode?: string } | undefined;
+  const observations =
+    supplier.enrichmentItems?.flatMap((item) => item.observations ?? []) ?? [];
   return (
     <div className="evidence-backdrop" role="presentation">
       <section
@@ -985,66 +996,63 @@ function EvidenceDrawer({
           Close
         </button>
         <h2 id="evidence-title">Product evidence and decision replay</h2>
-        <h3>Raw supplier inputs and normalized pack interpretation</h3>
-        <pre>
-          {JSON.stringify(
-            {
-              normalizedOffer: supplier.normalizedOffer,
-              packGuard: supplier.matchDecision?.selectedCandidate?.packGuard,
-              matchEvidence:
-                supplier.matchDecision?.selectedCandidate?.evidence,
-              warnings: supplier.warnings,
-            },
-            null,
-            2,
-          )}
-        </pre>
+        <h3>Supplier row, match, and pack interpretation</h3>
+        <EvidenceList
+          values={{
+            "Supplier item": supplier.normalizedOffer?.itemNumber,
+            "Supplied ASIN": supplier.normalizedOffer?.asin,
+            Title: supplier.normalizedOffer?.description,
+            Brand: supplier.normalizedOffer?.brand,
+            PackGuard: packGuard?.status,
+            "PackGuard reason": packGuard?.reasonCode,
+            "Supplier warnings": Array.isArray(supplier.warnings)
+              ? supplier.warnings.length
+              : 0,
+          }}
+        />
         <h3>Sources, timestamps, and freshness</h3>
-        <pre>
-          {JSON.stringify(
-            supplier.enrichmentItems?.flatMap(
-              (item) => item.observations ?? [],
-            ),
-            null,
-            2,
-          )}
-        </pre>
+        {observations.length ? (
+          <ul className="evidence-list">
+            {observations.slice(0, 20).map((observation, index) => (
+              <li key={index}>
+                {String(observation.provider ?? "Provider")} · observed{" "}
+                {String(
+                  observation.observedAt ??
+                    observation.observed_at ??
+                    "unknown",
+                )}{" "}
+                · freshness {String(observation.freshness ?? "unknown")}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No provider observation is stored for this result.</p>
+        )}
         <h3>Costs, formulas, decision evidence, and required next actions</h3>
-        <pre>
-          {JSON.stringify(
-            {
-              rawInputs: detail.inputSnapshot,
-              formulaOutputs: {
-                currentNetProfit: detail.currentNetProfit,
-                conservativeNetProfit: detail.conservativeNetProfit,
-                stressNetProfit: detail.stressNetProfit,
-                roiPercent: detail.roiPercent,
-                marginPercent: detail.marginPercent,
-                breakEvenPrice: detail.breakEvenPrice,
-              },
-              calculationEvidence: detail.evidence,
-              reasons: detail.reasonCodes,
-              requiredNextActions: requiredNextActions(detail.reasonCodes),
-            },
-            null,
-            2,
-          )}
-        </pre>
+        <EvidenceList
+          values={{
+            "Current net profit": detail.currentNetProfit,
+            "Conservative net profit": detail.conservativeNetProfit,
+            "Stress net profit": detail.stressNetProfit,
+            "ROI %": detail.roiPercent,
+            "Margin %": detail.marginPercent,
+            "Break-even price": detail.breakEvenPrice,
+            "Rounding basis":
+              "Stored profit-engine evidence and engine version",
+          }}
+        />
+        <h4>Required next actions</h4>
+        <ul className="evidence-list">
+          {requiredNextActions(detail.reasonCodes).map((action) => (
+            <li key={action}>{action}</li>
+          )) || <li>No required action is recorded.</li>}
+        </ul>
         <h3>Overrides and route comparison</h3>
-        <pre>
-          {JSON.stringify(
-            {
-              overrides: supplier.profitCostOverrides,
-              routes: supplier.profitResults,
-            },
-            null,
-            2,
-          )}
-        </pre>
-        <button type="button" onClick={() => void replayDecision()}>
-          Replay stored decision
-        </button>
-        {replay ? <pre role="status">{replay}</pre> : null}
+        <p>
+          {supplier.profitCostOverrides?.length ?? 0} persisted cost
+          override(s); route comparison remains available from stored scenario
+          evidence.
+        </p>
       </section>
     </div>
   );
