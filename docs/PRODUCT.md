@@ -40,3 +40,7 @@ Phase 6 adds organization-scoped shortlists, research statuses, notes, workflow 
 Phase 7 adds a private-production boundary: authenticated owner access, fail-closed production configuration, private deployment guidance, redacted structured logs and worker metrics, recovery/backup procedures, report-first export retention, and production-like security/fault/load test contracts. The two-week real-scan pilot remains an operational exit criterion, not an automated claim.
 
 The canonical scan state machine is documented in [Architecture](ARCHITECTURE.md).
+
+## Phase 7.5B Slice 1 scope
+
+Slice 1 introduces the RizPoint application shell and an honest dashboard. The dashboard shows only persisted, organization-scoped catalog scan counts and recent job state; it does not infer commercial metrics. The shell provides responsive navigation, accessible feedback primitives, and clear placeholders for workflows that need a selected scan or later Phase 8 administration.

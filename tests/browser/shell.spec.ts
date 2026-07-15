@@ -1,0 +1,38 @@
+import { expect, test } from "@playwright/test";
+
+test.describe("RizPoint application shell", () => {
+  test("shows the evidence-first dashboard at desktop width", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "Sourcing dashboard" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Primary navigation" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "New scan" }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "No revenue, profit, or winner metrics are inferred here.",
+      ),
+    ).toBeVisible();
+    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "256px");
+  });
+
+  test("opens accessible navigation at mobile width", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    const menu = page.getByRole("button", { name: "Open navigation" });
+    await expect(menu).toBeVisible();
+    await menu.click();
+    await expect(menu).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("link", { name: "Shortlists" })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Learning & help Coming soon" }),
+    ).toBeVisible();
+  });
+});

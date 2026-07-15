@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./styles.css";
 import { assertProductionConfiguration } from "@/src/runtime-config";
+import { AppShell } from "@/src/components/app-shell";
 
 export const metadata: Metadata = {
   title: "RizPoint Sourcing OS",
@@ -13,7 +14,9 @@ export default function RootLayout({
   assertProductionConfiguration();
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }

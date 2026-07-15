@@ -139,6 +139,77 @@ export async function getScanJobForOrganization(
   });
 }
 
+const DASHBOARD_PROCESSING_STATUSES: ScanJobStatus[] = [
+  "QUEUED",
+  "RUNNING",
+  "NORMALIZING",
+  "MATCHING",
+  "ENRICHING",
+  "CALCULATING",
+];
+
+const DASHBOARD_ATTENTION_STATUSES: ScanJobStatus[] = [
+  "MAPPING_REQUIRED",
+  "READY",
+  "PARTIAL_SUCCESS",
+  "FAILED_RETRYABLE",
+  "FAILED_FINAL",
+];
+
+const scanSummarySelect = {
+  id: true,
+  jobType: true,
+  status: true,
+  attemptCount: true,
+  createdAt: true,
+  updatedAt: true,
+  completedAt: true,
+  supplier: { select: { code: true, name: true } },
+  upload: {
+    select: {
+      originalFilename: true,
+      status: true,
+      malwareStatus: true,
+    },
+  },
+  _count: { select: { supplierRows: true } },
+} satisfies Prisma.ScanJobSelect;
+
+export async function listScanSummaries(organizationId: string, take = 25) {
+  return db.scanJob.findMany({
+    where: { organizationId },
+    select: scanSummarySelect,
+    orderBy: { updatedAt: "desc" },
+    take,
+  });
+}
+
+export async function getDashboardScanSummary(organizationId: string) {
+  const [totalScans, processingScans, attentionScans, recentScans] =
+    await db.$transaction([
+      db.scanJob.count({ where: { organizationId } }),
+      db.scanJob.count({
+        where: {
+          organizationId,
+          status: { in: DASHBOARD_PROCESSING_STATUSES },
+        },
+      }),
+      db.scanJob.count({
+        where: {
+          organizationId,
+          status: { in: DASHBOARD_ATTENTION_STATUSES },
+        },
+      }),
+      db.scanJob.findMany({
+        where: { organizationId },
+        select: scanSummarySelect,
+        orderBy: { updatedAt: "desc" },
+        take: 6,
+      }),
+    ]);
+  return { totalScans, processingScans, attentionScans, recentScans };
+}
+
 export async function listSuppliers(organizationId: string) {
   return db.supplier.findMany({
     where: { organizationId },
