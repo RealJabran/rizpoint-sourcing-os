@@ -44,7 +44,25 @@ const uploadErrorMessages: Record<string, string> = {
     "Malware scanning is temporarily unavailable. The catalog was not processed; retry later.",
   MALWARE_SCAN_CONFIGURATION:
     "Malware scanning is not configured correctly. The catalog was not processed.",
+  SCANNER_REQUEST_FAILED:
+    "Catalog inspection could not reach the scanner. Retry inspection when the service is available.",
 };
+
+export type InspectionRecoveryState =
+  "AUTOMATIC_RETRY" | "MANUAL_RETRY" | "TERMINAL" | null;
+
+export function inspectionRecoveryState(
+  uploadStatus: string,
+  scanStatus: string | null | undefined,
+  rejectionCode: string | null,
+): InspectionRecoveryState {
+  if (uploadStatus === "REJECTED") return "TERMINAL";
+  if (uploadStatus !== "INSPECTING") return null;
+  if (scanStatus === "FAILED_RETRYABLE") return "AUTOMATIC_RETRY";
+  if (scanStatus === "FAILED_FINAL" && Boolean(rejectionCode))
+    return "MANUAL_RETRY";
+  return null;
+}
 
 export function uploadErrorMessage(code: string | null | undefined): string {
   return code

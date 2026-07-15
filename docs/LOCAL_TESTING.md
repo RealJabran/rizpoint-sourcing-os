@@ -16,3 +16,7 @@ pnpm test:browser
 ```
 
 `test:browser` uses the installed Chrome channel by default. Set `PLAYWRIGHT_BROWSER_CHANNEL=chromium` only when a managed Playwright Chromium binary has been installed. The tests generate in-memory synthetic catalogs and never print signed URLs.
+
+If inspection exhausts its transient scanner retry budget, the upload page shows
+an actionable **Retry inspection** button. It reuses the existing private object
+and queues a new deterministic run attempt; do not upload the same catalog again.

@@ -14,4 +14,13 @@ describe("upload content security policy", () => {
       "connect-src 'self' http",
     );
   });
+
+  it("permits eval only for local development tooling", () => {
+    expect(
+      contentSecurityPolicy("http://localhost:9000", "development"),
+    ).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(
+      contentSecurityPolicy("https://storage.example", "production"),
+    ).not.toContain("unsafe-eval");
+  });
 });

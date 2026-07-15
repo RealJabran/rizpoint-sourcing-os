@@ -5,6 +5,7 @@ import { PageHeader } from "@/src/components/page-header";
 import { ScanSummaryTable } from "@/src/components/scan-summary-table";
 import type { ScanSummary } from "@/src/components/dashboard-state";
 import { Alert, ButtonLink, Card, Skeleton } from "@/src/components/ui";
+import { requestWasAborted } from "@/src/abort";
 
 type ScanListState =
   | { kind: "loading" }
@@ -15,18 +16,24 @@ export default function ScansPage() {
   const [state, setState] = useState<ScanListState>({ kind: "loading" });
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/scans?limit=50", { signal: controller.signal })
-      .then(async (response) => {
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch("/api/scans?limit=50", {
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error("SCAN_LIST_UNAVAILABLE");
-        return (await response.json()) as ScanSummary[];
-      })
-      .then((scans) => setState({ kind: "ready", scans }))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
+        const scans = (await response.json()) as ScanSummary[];
+        if (active) setState({ kind: "ready", scans });
+      } catch (error) {
+        if (!active || requestWasAborted(error, controller.signal)) return;
         setState({ kind: "error" });
-      });
-    return () => controller.abort();
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, []);
 
   return (

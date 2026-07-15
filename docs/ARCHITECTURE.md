@@ -33,7 +33,7 @@ The initial and upload migrations are additive and include reviewed manual `roll
 
 ## State model
 
-The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → COMPLETED → MATCHING → COMPLETED → ENRICHING → CALCULATING → COMPLETED|PARTIAL_SUCCESS`; a terminal inspection or normalization error sets the upload to `REJECTED` and the scan to `FAILED_FINAL`. Retryable failures retain their in-progress upload state and are retried safely. A duplicate request is represented by one outbox event per stage and an idempotent persistence stage. Exactly one upload sheet may be selected for normalization.
+The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → COMPLETED → MATCHING → COMPLETED → ENRICHING → CALCULATING → COMPLETED|PARTIAL_SUCCESS`. Unsafe or malformed inspection/normalization input sets the upload to `REJECTED` and scan to `FAILED_FINAL`. Transient scanner failures retain the private object and in-progress upload state; BullMQ retries automatically, and an operator can requeue a completed retry budget using a new deterministic run-attempt job ID without uploading a duplicate. A duplicate request is represented by one outbox event per stage and idempotent persistence. Exactly one upload sheet may be selected for normalization.
 
 ## Matching flow
 

@@ -5,6 +5,7 @@ import { PageHeader } from "./page-header";
 import { type DashboardSummary } from "./dashboard-state";
 import { ScanSummaryTable } from "./scan-summary-table";
 import { Alert, Badge, ButtonLink, Card, Skeleton } from "./ui";
+import { requestWasAborted } from "../abort";
 
 type DashboardState =
   | { kind: "loading" }
@@ -50,18 +51,24 @@ export function Dashboard() {
   const [state, setState] = useState<DashboardState>({ kind: "loading" });
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/dashboard/summary", { signal: controller.signal })
-      .then(async (response) => {
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch("/api/dashboard/summary", {
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error("DASHBOARD_UNAVAILABLE");
-        return (await response.json()) as DashboardSummary;
-      })
-      .then((data) => setState({ kind: "ready", data }))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
+        const data = (await response.json()) as DashboardSummary;
+        if (active) setState({ kind: "ready", data });
+      } catch (error) {
+        if (!active || requestWasAborted(error, controller.signal)) return;
         setState({ kind: "error" });
-      });
-    return () => controller.abort();
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, []);
 
   return (

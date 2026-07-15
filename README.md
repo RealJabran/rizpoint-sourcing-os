@@ -20,7 +20,7 @@ Open `http://localhost:3000/uploads`. The seeded `VSI` supplier lets you exercis
 
 See [local catalog import testing](docs/LOCAL_TESTING.md) for the API and browser verification flow.
 
-After normalization, submit `POST /api/scans/{scanId}/match` in demo mode and review results at `/scans/{scanId}/matches`. The only catalog adapter is a deterministic mock fixture; no real provider credentials are configured.
+After normalization, submit `POST /api/scans/{scanId}/match` in demo mode and review results at `/scans/{scanId}/matches`. Local mode uses deterministic mock fixtures; the server-only SP-API adapter is configuration-gated and has no real credentials in this repository.
 
 `PHASE_ZERO_DEMO_MODE=true` is set only by local Compose to enable this mock route. Do not expose it as a production authorization mechanism.
 

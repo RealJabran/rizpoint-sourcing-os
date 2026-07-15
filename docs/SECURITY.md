@@ -23,7 +23,7 @@ The browser is untrusted. Web routes enforce an organization context before quer
 ## Required before production rollout
 
 - Replace the temporary private-access token with identity-aware, organization membership authorization and roles before any multi-user release.
-- Reject unsafe formulas on export (`=`, `+`, `-`, `@`) when exports are implemented.
+- Keep formula-injection export tests in CI. Textual export cells beginning with `=`, `+`, `-`, `@`, tab, carriage return, or newline are already escaped.
 - Provider refresh tokens are encrypted at rest with AES-256-GCM and versioned `PROVIDER_CREDENTIAL_KEY_V1`; this key is server/worker-only and must be supplied by the deployment secret manager. Browser APIs expose connection status only, never token material.
 - Add authentication, authorization tests, audit logging, retention/deletion controls, and operational incident procedures.
 
@@ -34,3 +34,4 @@ The browser is untrusted. Web routes enforce an organization context before quer
 - Worker logs redact credential-shaped text and payload-bearing fields. Private production requires an HTTPS error-tracking collector and sends it only allowlisted IDs, release, event code, and redacted message. Metrics use IDs and counters only; supplier sheets, price rows, tokens, and raw provider payloads are never sent.
 - PostgreSQL requires PITR plus tested encrypted backups. The application verifies private bucket versioning, encryption, and lifecycle configuration at production readiness; Redis is recoverable transport, not business truth.
 - Export retention persists report-mode candidates as audit events before deletion is enabled. Deleted export objects retain an audit event. Production recovery and Sev-1 response are documented in `RECOVERY_RUNBOOK.md`.
+- Development CSP permits `unsafe-eval` only for Next.js/React developer tooling. Production CSP never includes it. The root body suppresses only extension-injected attribute hydration noise; descendant hydration mismatches remain visible.

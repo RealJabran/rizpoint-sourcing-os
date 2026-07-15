@@ -14,6 +14,7 @@ import {
 import {
   mappingSafetyIssues,
   normalizationWarningMessage,
+  inspectionRecoveryState,
   safeDisplayFilename,
   suggestMapping,
   uploadErrorMessage,
@@ -54,6 +55,7 @@ type Upload = {
   rejectionCode: string | null;
   scan: {
     id: string;
+    status: string;
     supplierRows: Array<{
       sourceRowNumber: number;
       warnings: Array<{ code: string; field: string | null }>;
@@ -108,6 +110,11 @@ export default function UploadPage() {
     () => mappingSafetyIssues(mapping, samples),
     [mapping, samples],
   );
+  const recovery = inspectionRecoveryState(
+    upload?.status ?? "",
+    upload?.scan?.status,
+    upload?.rejectionCode ?? null,
+  );
   const step = !upload
     ? file
       ? 1
@@ -133,7 +140,14 @@ export default function UploadPage() {
       setSheetId(next.sheets[0].id);
       setHeaderRow(next.sheets[0].headerCandidates[0]?.row ?? 1);
     }
-    if (["INSPECTING", "NORMALIZING"].includes(next.status))
+    const shouldRefresh =
+      ["INSPECTING", "NORMALIZING"].includes(next.status) &&
+      inspectionRecoveryState(
+        next.status,
+        next.scan?.status,
+        next.rejectionCode,
+      ) !== "MANUAL_RETRY";
+    if (shouldRefresh)
       window.setTimeout(
         () =>
           void refresh(id).catch(() =>
@@ -228,6 +242,18 @@ export default function UploadPage() {
       setError(
         "This scan is not ready to start. Review mapping and data-quality blockers, then retry.",
       );
+      return;
+    }
+    await refresh(upload.id);
+  }
+  async function retryInspection() {
+    if (!upload) return;
+    setError(null);
+    const response = await fetch(`/api/uploads/${upload.id}/inspect`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      setError(uploadErrorMessage(await responseError(response)));
       return;
     }
     await refresh(upload.id);
@@ -365,8 +391,36 @@ export default function UploadPage() {
                 {upload.status}
               </Badge>
               {upload.rejectionCode ? (
-                <Alert tone="danger" title="Catalog rejected">
+                <Alert
+                  tone={recovery === "AUTOMATIC_RETRY" ? "warning" : "danger"}
+                  title={
+                    recovery === "AUTOMATIC_RETRY"
+                      ? "Inspection retrying"
+                      : "Catalog inspection needs attention"
+                  }
+                >
                   {uploadErrorMessage(upload.rejectionCode)}
+                </Alert>
+              ) : null}
+              {recovery === "AUTOMATIC_RETRY" ? (
+                <Alert tone="warning" title="Retrying in the background">
+                  The original private object and checkpoint are retained. Keep
+                  this page open while the worker retries safely.
+                </Alert>
+              ) : null}
+              {recovery === "MANUAL_RETRY" ? (
+                <Alert tone="danger" title="Inspection stopped after retries">
+                  The catalog is still private and has not been normalized. When
+                  the scanner is available, retry this same inspection without
+                  uploading another copy.
+                  <div className="page-actions">
+                    <Button
+                      type="button"
+                      onClick={() => void retryInspection()}
+                    >
+                      Retry inspection
+                    </Button>
+                  </div>
                 </Alert>
               ) : null}
               {upload.status === "INSPECTING" ? (

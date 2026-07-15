@@ -14,7 +14,10 @@ export default function RootLayout({
   assertProductionConfiguration();
   return (
     <html lang="en">
-      <body>
+      {/* Some password/security extensions add attributes to body before React
+          hydrates. Limit suppression to this element so real child mismatches
+          still surface during development. */}
+      <body suppressHydrationWarning>
         <AppShell>{children}</AppShell>
       </body>
     </html>

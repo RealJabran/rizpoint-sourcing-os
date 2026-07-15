@@ -25,6 +25,9 @@ describe("queue idempotency", () => {
       mockScanQueueJobId("scan_123", "NORMALIZE"),
     );
     expect(mockScanQueueJobId("scan_123")).not.toContain(":");
+    expect(mockScanQueueJobId("scan_123", "UPLOAD_INSPECT", 4)).not.toBe(
+      mockScanQueueJobId("scan_123", "UPLOAD_INSPECT"),
+    );
   });
 
   it("marks only the last configured attempt as final", () => {

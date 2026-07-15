@@ -35,4 +35,13 @@ test.describe("RizPoint application shell", () => {
       page.getByRole("link", { name: "Learning & help Coming soon" }),
     ).toBeVisible();
   });
+
+  test("redirects legacy diagnostic pages to product workflows", async ({
+    page,
+  }) => {
+    await page.goto("/mock-scans");
+    await expect(page).toHaveURL(/\/scans$/);
+    await page.goto("/scans/legacy-scan/profit");
+    await expect(page).toHaveURL(/\/scans\/legacy-scan\/analysis$/);
+  });
 });

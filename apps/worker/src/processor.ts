@@ -176,8 +176,9 @@ export const mockScanWorker = new Worker<{
         job.opts.attempts,
       );
       const code = errorCode(error);
-      const terminal =
-        terminalUploadErrorCodes.has(code) || status === "FAILED_FINAL";
+      // A final queue attempt is recoverable by an explicit operator retry
+      // unless scanner validation classified the file itself as unsafe.
+      const terminal = terminalUploadErrorCodes.has(code);
       if (job.data.kind === "UPLOAD_INSPECT" || job.data.kind === "NORMALIZE") {
         await failUploadStage(
           job.data.scanJobId!,

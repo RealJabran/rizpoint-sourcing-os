@@ -304,8 +304,12 @@ export async function queueUploadInspection(
       include: { scan: true },
     });
     if (!upload?.scan) return null;
-    if (upload.status === "INSPECTING") return upload.scan;
-    if (upload.status !== "PENDING_UPLOAD") return null;
+    const retryingFailedInspection =
+      upload.status === "INSPECTING" && upload.scan.status === "FAILED_FINAL";
+    if (upload.status === "INSPECTING" && !retryingFailedInspection)
+      return upload.scan;
+    if (upload.status !== "PENDING_UPLOAD" && !retryingFailedInspection)
+      return null;
     await transaction.upload.update({
       where: { id: upload.id },
       data: {
@@ -316,6 +320,15 @@ export async function queueUploadInspection(
         rejectionCode: null,
       },
     });
+    if (retryingFailedInspection) {
+      await transaction.scanJob.update({
+        where: { id: upload.scan.id },
+        data: { status: "UPLOADED", completedAt: null },
+      });
+    }
+    const runAttempt = retryingFailedInspection
+      ? upload.scan.attemptCount + 1
+      : undefined;
     await transaction.outboxEvent.upsert({
       where: {
         scanJobId_eventType: {
@@ -331,16 +344,28 @@ export async function queueUploadInspection(
           scanJobId: upload.scan.id,
           uploadId: upload.id,
           kind: "UPLOAD_INSPECT",
+          ...(runAttempt ? { runAttempt } : {}),
         },
       },
       update: {
+        payload: {
+          scanJobId: upload.scan.id,
+          uploadId: upload.id,
+          kind: "UPLOAD_INSPECT",
+          ...(runAttempt ? { runAttempt } : {}),
+        },
         status: "PENDING",
         claimToken: null,
         claimedAt: null,
         lastError: null,
       },
     });
-    return upload.scan;
+    return {
+      ...upload.scan,
+      ...(retryingFailedInspection
+        ? { status: "UPLOADED" as const, completedAt: null }
+        : {}),
+    };
   });
 }
 
@@ -588,7 +613,7 @@ export async function failUploadStage(
           }
         : {
             status: stage === "UPLOAD_INSPECT" ? "INSPECTING" : "NORMALIZING",
-            rejectionCode: null,
+            rejectionCode: errorCode,
             ...(malwareStatus ? { malwareStatus } : {}),
           },
     });

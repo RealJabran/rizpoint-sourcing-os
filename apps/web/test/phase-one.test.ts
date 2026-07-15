@@ -4,6 +4,7 @@ import {
   profileInputSchema,
   safeDisplayFilename,
   mappingSafetyIssues,
+  inspectionRecoveryState,
   suggestMapping,
   uploadErrorMessage,
   validateDeclaredMediaType,
@@ -40,6 +41,27 @@ describe("Phase 1 upload validation", () => {
       /temporarily unavailable/i,
     );
     expect(safeDisplayFilename("supplier\n.csv")).toBe("supplier�.csv");
+    expect(uploadErrorMessage("SCANNER_REQUEST_FAILED")).toMatch(/retry/i);
+  });
+
+  it("keeps transient inspection failures visible and distinguishes retry paths", () => {
+    expect(
+      inspectionRecoveryState(
+        "INSPECTING",
+        "FAILED_RETRYABLE",
+        "SCANNER_REQUEST_FAILED",
+      ),
+    ).toBe("AUTOMATIC_RETRY");
+    expect(
+      inspectionRecoveryState(
+        "INSPECTING",
+        "FAILED_FINAL",
+        "SCANNER_REQUEST_FAILED",
+      ),
+    ).toBe("MANUAL_RETRY");
+    expect(
+      inspectionRecoveryState("REJECTED", "FAILED_FINAL", "INVALID_XLSX"),
+    ).toBe("TERMINAL");
   });
 
   it("requires a description and one matching identifier without duplicates", () => {
