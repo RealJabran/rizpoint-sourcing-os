@@ -214,3 +214,68 @@ export function validateMappings(
   )
     throw new Error("IDENTIFIER_MAPPING_REQUIRED");
 }
+
+export function suggestMapping(
+  column: string,
+): { target: string; confidence: number } | null {
+  const value = column.trim().toLowerCase();
+  const suggestions: Array<[RegExp, string, number]> = [
+    [/(^|\s|_)asin($|\s|_)/, "ASIN", 0.98],
+    [/(upc|ean|gtin|barcode)/, "UPC", 0.92],
+    [/(sku|item.?number|part.?number)/, "ITEM_NUMBER", 0.9],
+    [/(title|description|product.?name)/, "DESCRIPTION", 0.9],
+    [/(unit.?cost|wholesale.?price|cost|price)/, "UNIT_COST", 0.82],
+    [/(currency|curr)/, "CURRENCY", 0.96],
+    [/(available|quantity|qty)/, "QUANTITY", 0.86],
+    [/(case.?count|case.?pack|case)/, "CASE_COUNT", 0.8],
+    [/(pack.?count|units.?per.?pack|pack)/, "PACK_COUNT", 0.8],
+    [/(brand|manufacturer)/, "BRAND", 0.9],
+    [/(model|mpn)/, "MPN", 0.86],
+  ];
+  const found = suggestions.find(([pattern]) => pattern.test(value));
+  return found ? { target: found[1], confidence: found[2] } : null;
+}
+
+export function mappingSafetyIssues(
+  mapping: Record<number, string>,
+  rows: string[][],
+): string[] {
+  const targets = Object.values(mapping);
+  const issues: string[] = [];
+  if (!targets.includes("DESCRIPTION"))
+    issues.push("Map a title or description field.");
+  if (
+    !targets.some((target) =>
+      ["ASIN", "UPC", "EAN", "GTIN", "MPN", "ITEM_NUMBER"].includes(target),
+    )
+  )
+    issues.push("Map at least one product identifier before continuing.");
+  const caseIndex = Number(
+    Object.keys(mapping).find(
+      (index) => mapping[Number(index)] === "CASE_COUNT",
+    ),
+  );
+  const packIndex = Number(
+    Object.keys(mapping).find(
+      (index) => mapping[Number(index)] === "PACK_COUNT",
+    ),
+  );
+  if (Number.isInteger(caseIndex) && Number.isInteger(packIndex)) {
+    const contradictory = rows.some((row) => {
+      const caseCount = Number(row[caseIndex]);
+      const packCount = Number(row[packIndex]);
+      return (
+        !Number.isInteger(caseCount) ||
+        !Number.isInteger(packCount) ||
+        caseCount <= 0 ||
+        packCount <= 0 ||
+        caseCount % packCount !== 0
+      );
+    });
+    if (contradictory)
+      issues.push(
+        "Case and pack samples do not resolve to whole sellable units. Correct the mapping or catalog before financial analysis.",
+      );
+  }
+  return issues;
+}

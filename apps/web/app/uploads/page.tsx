@@ -1,9 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/src/components/page-header";
 import {
+  Alert,
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  Progress,
+  SelectControl,
+} from "@/src/components/ui";
+import {
+  mappingSafetyIssues,
   normalizationWarningMessage,
   safeDisplayFilename,
+  suggestMapping,
   uploadErrorMessage,
 } from "@/src/phase-one";
 
@@ -27,31 +39,13 @@ const targets = [
   "WIDTH",
   "HEIGHT",
 ];
-
 type Supplier = { id: string; code: string; name: string };
-type ProfileMapping = {
-  sourceIndex: number;
-  sourceColumn: string;
-  target: string;
-  required: boolean;
-};
-type SheetProfile = {
-  id: string;
-  name: string;
-  version: number;
-  headerRow: number;
-  mapping: ProfileMapping[];
-};
 type Sheet = {
   id: string;
-  sheetIndex: number;
   name: string;
   rowCount: number;
-  columnCount: number;
-  headerCandidates: Array<{ row: number; score: number }>;
-  columns: string[];
+  headerCandidates: Array<{ row: number }>;
   preview: string[][];
-  selectedHeaderRow: number | null;
 };
 type Upload = {
   id: string;
@@ -60,8 +54,6 @@ type Upload = {
   rejectionCode: string | null;
   scan: {
     id: string;
-    status: string;
-    columnMappings: Array<{ sourceIndex: number; target: string }>;
     supplierRows: Array<{
       sourceRowNumber: number;
       warnings: Array<{ code: string; field: string | null }>;
@@ -69,88 +61,104 @@ type Upload = {
   } | null;
   sheets: Sheet[];
 };
+const steps = [
+  "Supplier",
+  "Upload",
+  "Sheet",
+  "Mapping",
+  "Data quality",
+  "Start scan",
+];
 
 export default function UploadPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState("");
-  const [profiles, setProfiles] = useState<SheetProfile[]>([]);
-  const [profileId, setProfileId] = useState("");
+  const [marketplace, setMarketplace] = useState("US");
   const [file, setFile] = useState<File | null>(null);
   const [upload, setUpload] = useState<Upload | null>(null);
   const [sheetId, setSheetId] = useState("");
   const [headerRow, setHeaderRow] = useState(1);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [uploadIdempotencyKey, setUploadIdempotencyKey] = useState<
-    string | null
-  >(null);
-
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    void fetch("/api/suppliers").then(async (response) => {
-      if (response.ok) {
-        const data = (await response.json()) as Supplier[];
-        setSuppliers(data);
-        if (data[0]) setSupplierId(data[0].id);
+    void fetch("/api/suppliers").then(async (r) => {
+      if (r.ok) {
+        const value = (await r.json()) as Supplier[];
+        setSuppliers(value);
+        setSupplierId(value[0]?.id ?? "");
       }
     });
   }, []);
-  useEffect(() => {
-    if (!supplierId) return;
-    void fetch(`/api/suppliers/${supplierId}/profiles`).then(
-      async (response) => {
-        if (response.ok) setProfiles((await response.json()) as SheetProfile[]);
-      },
-    );
-  }, [supplierId]);
   const sheet = useMemo(
     () =>
-      upload?.sheets.find((candidate) => candidate.id === sheetId) ??
-      upload?.sheets[0] ??
-      null,
+      upload?.sheets.find((s) => s.id === sheetId) ?? upload?.sheets[0] ?? null,
     [upload, sheetId],
   );
   const columns = useMemo(
     () => sheet?.preview[headerRow - 1] ?? [],
     [headerRow, sheet],
   );
+  const samples = useMemo(
+    () => sheet?.preview.slice(headerRow, headerRow + 8) ?? [],
+    [headerRow, sheet],
+  );
+  const safety = useMemo(
+    () => mappingSafetyIssues(mapping, samples),
+    [mapping, samples],
+  );
+  const step = !upload
+    ? file
+      ? 1
+      : 0
+    : upload.status === "INSPECTING"
+      ? 2
+      : !sheet
+        ? 2
+        : !Object.keys(mapping).length
+          ? 3
+          : upload.status === "READY"
+            ? 4
+            : upload.status === "COMPLETED"
+              ? 5
+              : 2;
 
-  async function refresh(uploadId: string): Promise<Upload> {
-    const response = await fetch(`/api/uploads/${uploadId}`, {
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error("Unable to load upload status.");
+  async function refresh(id: string) {
+    const response = await fetch(`/api/uploads/${id}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("UPLOAD_STATUS_UNAVAILABLE");
     const next = (await response.json()) as Upload;
     setUpload(next);
     if (next.sheets[0] && !sheetId) {
       setSheetId(next.sheets[0].id);
       setHeaderRow(next.sheets[0].headerCandidates[0]?.row ?? 1);
-      setMapping({});
     }
     if (["INSPECTING", "NORMALIZING"].includes(next.status))
       window.setTimeout(
         () =>
-          void refresh(uploadId).catch((caught) =>
+          void refresh(id).catch(() =>
             setError(
-              caught instanceof Error ? caught.message : "Polling failed.",
+              "We could not refresh scan progress. Retry from this step.",
             ),
           ),
         700,
       );
-    return next;
   }
-
-  async function startUpload(): Promise<void> {
-    if (!file || !supplierId) return;
+  function choose(next: File | null) {
+    setFile(next);
+    setUpload(null);
+    setMapping({});
     setError(null);
-    const idempotencyKey = uploadIdempotencyKey ?? crypto.randomUUID();
-    if (!uploadIdempotencyKey) setUploadIdempotencyKey(idempotencyKey);
+    setIdempotencyKey(next ? crypto.randomUUID() : null);
+  }
+  async function uploadCatalog() {
+    if (!file || !supplierId) return;
+    const key = idempotencyKey ?? crypto.randomUUID();
+    setIdempotencyKey(key);
     try {
       const presign = await fetch("/api/uploads/presign", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "idempotency-key": idempotencyKey,
-        },
+        headers: { "content-type": "application/json", "idempotency-key": key },
         body: JSON.stringify({
           supplierId,
           filename: file.name,
@@ -175,22 +183,28 @@ export default function UploadPage() {
       if (!inspect.ok) throw new Error(await responseError(inspect));
       await refresh(created.uploadId);
     } catch (caught) {
-      const code = caught instanceof Error ? caught.message : undefined;
       setError(
-        code === "Failed to fetch"
-          ? "Catalog object upload could not reach private storage. Try again; contact support if it persists."
-          : uploadErrorMessage(code),
+        uploadErrorMessage(
+          caught instanceof Error ? caught.message : "INVALID_UPLOAD",
+        ),
       );
     }
   }
-
-  async function saveMapping(): Promise<void> {
-    if (!upload?.scan || !sheet) return;
+  function applySuggestions() {
+    const next: Record<number, string> = {};
+    columns.forEach((column, index) => {
+      const suggestion = suggestMapping(column);
+      if (suggestion) next[index] = suggestion.target;
+    });
+    setMapping(next);
+  }
+  async function saveMapping() {
+    if (!upload?.scan || !sheet || safety.length) return;
     const mappings = Object.entries(mapping)
       .filter(([, target]) => target)
       .map(([sourceIndex, target]) => ({
         sourceIndex: Number(sourceIndex),
-        sourceColumn: columns[Number(sourceIndex)] ?? `Column ${sourceIndex}`,
+        sourceColumn: columns[Number(sourceIndex)] || `Column ${sourceIndex}`,
         target,
         required: ["DESCRIPTION", "UNIT_COST"].includes(target),
       }));
@@ -200,269 +214,358 @@ export default function UploadPage() {
       body: JSON.stringify({ uploadSheetId: sheet.id, headerRow, mappings }),
     });
     if (!response.ok) {
-      setError(((await response.json()) as { error: string }).error);
+      setError(uploadErrorMessage(await responseError(response)));
       return;
     }
     await refresh(upload.id);
   }
-
-  async function saveVsiProfile(): Promise<void> {
-    if (!upload?.scan || !sheet) return;
-    const mappingRows = Object.entries(mapping)
-      .filter(([, target]) => target)
-      .map(([sourceIndex, target]) => ({
-        sourceIndex: Number(sourceIndex),
-        sourceColumn: columns[Number(sourceIndex)] ?? "",
-        target,
-        required: false,
-      }));
-    const response = await fetch(
-      `/api/scans/${upload.scan.id}/mapping/save-profile`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "VSI default",
-          headerRow,
-          mapping: mappingRows,
-        }),
-      },
-    );
-    if (!response.ok) setError("Unable to save VSI profile.");
-    else if (supplierId) {
-      const refreshed = await fetch(`/api/suppliers/${supplierId}/profiles`);
-      if (refreshed.ok) setProfiles((await refreshed.json()) as SheetProfile[]);
-    }
-  }
-
-  function applyProfile(): void {
-    const profile = profiles.find((candidate) => candidate.id === profileId);
-    if (!profile || !sheet) return;
-    const profileColumns = sheet.preview[profile.headerRow - 1];
-    if (!profileColumns) {
-      setError("The saved profile header is outside this file preview.");
-      return;
-    }
-    const next: Record<number, string> = {};
-    for (const mappingRow of profile.mapping) {
-      const sourceIndex = profileColumns.findIndex(
-        (column) =>
-          column.trim().toLocaleLowerCase() ===
-          mappingRow.sourceColumn.trim().toLocaleLowerCase(),
-      );
-      if (sourceIndex < 0) {
-        setError(`Saved profile column not found: ${mappingRow.sourceColumn}`);
-        return;
-      }
-      next[sourceIndex] = mappingRow.target;
-    }
-    setError(null);
-    setHeaderRow(profile.headerRow);
-    setMapping(next);
-  }
-
-  async function normalize(): Promise<void> {
+  async function startScan() {
     if (!upload?.scan) return;
     const response = await fetch(`/api/scans/${upload.scan.id}/normalize`, {
       method: "POST",
     });
     if (!response.ok) {
-      setError("Scan is not ready to normalize.");
+      setError(
+        "This scan is not ready to start. Review mapping and data-quality blockers, then retry.",
+      );
       return;
     }
     await refresh(upload.id);
   }
-
   return (
-    <main>
-      <h1>Upload and mapping</h1>
-      <p>
-        Upload a CSV, XLSX, or XLS catalog. Supplier data stays in private
-        object storage.
-      </p>
-      <label>
-        Supplier{" "}
-        <select
-          value={supplierId}
-          onChange={(event) => {
-            setSupplierId(event.target.value);
-            setProfileId("");
-          }}
-        >
-          {suppliers.map((supplier) => (
-            <option key={supplier.id} value={supplier.id}>
-              {supplier.code} — {supplier.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Catalog file{" "}
-        <input
-          type="file"
-          accept=".csv,.xls,.xlsx"
-          onChange={(event) => {
-            setFile(event.target.files?.[0] ?? null);
-            setUploadIdempotencyKey(
-              event.target.files?.[0] ? crypto.randomUUID() : null,
-            );
-          }}
-        />
-      </label>
-      <button
-        type="button"
-        onClick={() => void startUpload()}
-        disabled={!file || !supplierId}
-      >
-        Upload and inspect
-      </button>
-      {error ? <p role="alert">{error}</p> : null}
-      {upload ? (
+    <main className="guided-scan-page">
+      <PageHeader
+        title="New catalog scan"
+        description="Map supplier data before matching or financial analysis begins."
+        actions={
+          <ButtonLink href="/scans" variant="secondary">
+            Scan list
+          </ButtonLink>
+        }
+        breadcrumbs={[{ label: "Dashboard", href: "/" }, { label: "New scan" }]}
+      />
+      <ol className="scan-stepper" aria-label="Catalog scan steps">
+        {steps.map((name, index) => (
+          <li
+            key={name}
+            className={index <= step ? "scan-stepper__active" : ""}
+          >
+            <span>{index + 1}</span>
+            {name}
+          </li>
+        ))}
+      </ol>
+      {error ? (
+        <Alert tone="danger" title="Action needed">
+          {error}{" "}
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            onClick={() => setError(null)}
+          >
+            Dismiss
+          </Button>
+        </Alert>
+      ) : null}
+      <Card className="wizard-card">
         <section>
-          <h2>Upload status: {upload.status}</h2>
-          <p>File: {safeDisplayFilename(upload.originalFilename)}</p>
-          {upload.rejectionCode ? (
-            <p role="alert">
-              Upload rejected: {uploadErrorMessage(upload.rejectionCode)}
-            </p>
-          ) : null}
-          {upload.sheets.length > 0 ? (
-            <>
-              <label>
-                Sheet{" "}
-                <select
-                  value={sheet?.id ?? ""}
-                  onChange={(event) => {
-                    setSheetId(event.target.value);
-                    const next = upload.sheets.find(
-                      (candidate) => candidate.id === event.target.value,
-                    );
-                    setHeaderRow(next?.headerCandidates[0]?.row ?? 1);
-                    setMapping({});
-                  }}
-                >
-                  {upload.sheets.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.name} ({candidate.rowCount} rows)
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Header row{" "}
-                <input
-                  type="number"
-                  min="1"
-                  max={sheet?.preview.length ?? 1}
-                  value={headerRow}
-                  onChange={(event) => {
-                    setHeaderRow(Number(event.target.value));
-                    setMapping({});
-                  }}
-                />
-              </label>
-              <table>
-                <thead>
-                  <tr>
-                    {columns.map((column, index) => (
-                      <th key={index}>
-                        {column || `Column ${index + 1}`}
-                        <select
-                          value={mapping[index] ?? ""}
-                          onChange={(event) =>
-                            setMapping((current) => ({
-                              ...current,
-                              [index]: event.target.value,
-                            }))
-                          }
-                        >
-                          {targets.map((target) => (
-                            <option key={target} value={target}>
-                              {target || "Ignore"}
-                            </option>
-                          ))}
-                        </select>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(sheet?.preview ?? [])
-                    .slice(headerRow, headerRow + 10)
-                    .map((row, rowIndex) => (
-                      <tr key={rowIndex}>
-                        {columns.map((_, columnIndex) => (
-                          <td key={columnIndex}>{row[columnIndex]}</td>
-                        ))}
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-              <button type="button" onClick={() => void saveMapping()}>
-                Save mapping
-              </button>
-              <button type="button" onClick={() => void saveVsiProfile()}>
-                Save VSI profile
-              </button>
-              {profiles.length > 0 ? (
-                <label>
-                  Saved profile{" "}
-                  <select
-                    value={profileId}
-                    onChange={(event) => setProfileId(event.target.value)}
-                  >
-                    <option value="">Select a profile</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name} (v{profile.version ?? 1})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={applyProfile}
-                    disabled={!profileId}
-                  >
-                    Apply profile
-                  </button>
-                </label>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void normalize()}
-                disabled={upload.status !== "READY"}
+          <h2>1. Supplier and marketplace</h2>
+          <div className="wizard-fields">
+            <label>
+              Supplier
+              <SelectControl
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
               >
-                Normalize rows
-              </button>
-              {upload.scan?.supplierRows.some(
-                (row) => row.warnings.length > 0,
-              ) ? (
-                <section>
-                  <h3>Normalization warnings</h3>
-                  <ul>
-                    {upload.scan.supplierRows.flatMap((row) =>
-                      row.warnings.map((warning) => (
-                        <li
-                          key={`${row.sourceRowNumber}-${warning.code}-${warning.field ?? ""}`}
-                        >
-                          Row {row.sourceRowNumber}:{" "}
-                          {normalizationWarningMessage(warning.code)}
-                          {warning.field ? ` (${warning.field})` : ""}
-                        </li>
-                      )),
-                    )}
-                  </ul>
-                </section>
-              ) : null}
-            </>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.code} — {s.name}
+                  </option>
+                ))}
+              </SelectControl>
+            </label>
+            <label>
+              Marketplace
+              <SelectControl
+                value={marketplace}
+                onChange={(e) => setMarketplace(e.target.value)}
+              >
+                <option value="US">Amazon United States</option>
+              </SelectControl>
+              <small>
+                Marketplace selection guides later enrichment; it does not
+                change source catalog values.
+              </small>
+            </label>
+          </div>
+        </section>
+        <section>
+          <h2>2. Upload and validation</h2>
+          <p>
+            CSV, XLSX, or XLS up to 50 MiB. The original stays in private object
+            storage; RizPoint never uses the filename as an object key.
+          </p>
+          <div
+            className="dropzone"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              choose(e.dataTransfer.files[0] ?? null);
+            }}
+          >
+            <strong>Drop a catalog here</strong>
+            <span>or</span>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => input.current?.click()}
+            >
+              Choose catalog file
+            </Button>
+            <input
+              ref={input}
+              className="sr-only"
+              type="file"
+              accept=".csv,.xls,.xlsx"
+              onChange={(e) => choose(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          {file ? (
+            <div className="file-summary">
+              <Badge tone="info">Selected</Badge>
+              <strong>{safeDisplayFilename(file.name)}</strong>
+              <span>
+                {(file.size / 1024 / 1024).toFixed(2)} MiB • {marketplace}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void uploadCatalog()}
+                disabled={!supplierId}
+              >
+                Upload and inspect
+              </Button>
+            </div>
           ) : null}
         </section>
-      ) : null}
+        {upload ? (
+          <>
+            <section>
+              <h2>3. Sheet and header selection</h2>
+              <Badge
+                tone={
+                  upload.status === "REJECTED"
+                    ? "danger"
+                    : upload.status === "READY"
+                      ? "success"
+                      : "info"
+                }
+              >
+                {upload.status}
+              </Badge>
+              {upload.rejectionCode ? (
+                <Alert tone="danger" title="Catalog rejected">
+                  {uploadErrorMessage(upload.rejectionCode)}
+                </Alert>
+              ) : null}
+              {upload.status === "INSPECTING" ? (
+                <>
+                  <p>Inspecting workbook safely…</p>
+                  <Progress value={45} label="Workbook inspection" />
+                </>
+              ) : null}
+              {sheet ? (
+                <div className="wizard-fields">
+                  <label>
+                    Worksheet
+                    <SelectControl
+                      value={sheet.id}
+                      onChange={(e) => {
+                        setSheetId(e.target.value);
+                        const next = upload.sheets.find(
+                          (s) => s.id === e.target.value,
+                        );
+                        setHeaderRow(next?.headerCandidates[0]?.row ?? 1);
+                        setMapping({});
+                      }}
+                    >
+                      {upload.sheets.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.rowCount} rows)
+                        </option>
+                      ))}
+                    </SelectControl>
+                  </label>
+                  <label>
+                    Header row
+                    <input
+                      className="rp-input"
+                      type="number"
+                      min="1"
+                      max={sheet.preview.length}
+                      value={headerRow}
+                      onChange={(e) => {
+                        setHeaderRow(Number(e.target.value));
+                        setMapping({});
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </section>
+            {sheet ? (
+              <section>
+                <div className="section-heading">
+                  <div>
+                    <h2>4. Column mapping</h2>
+                    <p>
+                      Suggestions are based only on column labels. Confirm every
+                      mapping before saving.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={applySuggestions}
+                  >
+                    Apply suggestions
+                  </Button>
+                </div>
+                <div className="preview-wrap">
+                  <table className="mapping-table">
+                    <thead>
+                      <tr>
+                        {columns.map((column, index) => {
+                          const suggestion = suggestMapping(column);
+                          return (
+                            <th key={index}>
+                              <span>{column || `Column ${index + 1}`}</span>
+                              <SelectControl
+                                value={mapping[index] ?? ""}
+                                onChange={(e) =>
+                                  setMapping((current) => ({
+                                    ...current,
+                                    [index]: e.target.value,
+                                  }))
+                                }
+                              >
+                                {targets.map((target) => (
+                                  <option key={target} value={target}>
+                                    {target || "Ignore"}
+                                  </option>
+                                ))}
+                              </SelectControl>
+                              {suggestion ? (
+                                <small>
+                                  Suggested {suggestion.target} •{" "}
+                                  {Math.round(suggestion.confidence * 100)}%
+                                </small>
+                              ) : (
+                                <small>No suggestion</small>
+                              )}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {samples.map((row, rowIndex) => (
+                        <tr key={rowIndex}>
+                          {columns.map((_, index) => (
+                            <td key={index}>{row[index] || "—"}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+            <section>
+              <h2>5. Data-quality and PackGuard review</h2>
+              {safety.length ? (
+                <Alert tone="blocked" title="Financial safety blocker">
+                  <ul>
+                    {safety.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                </Alert>
+              ) : (
+                <Alert tone="info" title="Mapping ready for confirmation">
+                  Identifier strings, including leading-zero UPC/EAN values,
+                  remain text throughout ingestion. Verify price unit, currency,
+                  quantity, case, and pack values in the preview.
+                </Alert>
+              )}
+              <ul className="risk-list">
+                <li>
+                  ASIN / UPC / EAN / title / supplier SKU: confirm identifiers
+                  map to the intended columns.
+                </li>
+                <li>
+                  Price and currency: use unit cost, not a case price, unless
+                  case/pack is mapped.
+                </li>
+                <li>
+                  Case and pack: non-whole sample conversions block financial
+                  analysis until corrected.
+                </li>
+                <li>
+                  Brand, model, and size: keep available for later contradiction
+                  review.
+                </li>
+              </ul>
+            </section>
+            <section>
+              <h2>6. Confirm and start scan</h2>
+              <p>
+                Saving mapping creates a resumable checkpoint. Starting
+                normalization is idempotent; retries do not duplicate rows or
+                provider calls.
+              </p>
+              <div className="page-actions">
+                <Button
+                  type="button"
+                  onClick={() => void saveMapping()}
+                  disabled={!Object.keys(mapping).length || safety.length > 0}
+                >
+                  Confirm mapping
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void startScan()}
+                  disabled={upload.status !== "READY" || safety.length > 0}
+                >
+                  Start scan
+                </Button>
+              </div>
+              {upload.scan?.supplierRows.some((row) => row.warnings.length) ? (
+                <Alert tone="warning" title="Normalization warnings">
+                  {upload.scan.supplierRows
+                    .flatMap((row) =>
+                      row.warnings.map(
+                        (w) =>
+                          `Row ${row.sourceRowNumber}: ${normalizationWarningMessage(w.code)}${w.field ? ` (${w.field})` : ""}`,
+                      ),
+                    )
+                    .slice(0, 12)
+                    .map((w) => (
+                      <div key={w}>{w}</div>
+                    ))}
+                </Alert>
+              ) : null}
+            </section>
+          </>
+        ) : null}
+      </Card>
     </main>
   );
 }
-
-async function responseError(response: Response): Promise<string> {
+async function responseError(response: Response) {
   const body = (await response.json().catch(() => null)) as {
     error?: string;
   } | null;

@@ -8,6 +8,15 @@ const syntheticCatalog = [
 ].join("\n");
 
 test.describe("catalog upload", () => {
+  test("shows the guided private catalog workflow", async ({ page }) => {
+    await page.goto("/uploads");
+    await expect(page.getByRole("heading", { name: "New catalog scan" })).toBeVisible();
+    await expect(page.getByText("Supplier").first()).toBeVisible();
+    await expect(page.getByText("Upload").first()).toBeVisible();
+    await expect(page.getByText(/private object storage/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Choose catalog file" })).toBeVisible();
+  });
+
   test("uploads, maps, normalizes, and preserves a zero-padded UPC", async ({
     page,
   }) => {

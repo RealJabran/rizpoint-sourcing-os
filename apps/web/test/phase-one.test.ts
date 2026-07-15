@@ -3,6 +3,8 @@ import {
   maxUploadBytes,
   profileInputSchema,
   safeDisplayFilename,
+  mappingSafetyIssues,
+  suggestMapping,
   uploadErrorMessage,
   validateDeclaredMediaType,
   validateUploadedObjectMetadata,
@@ -148,5 +150,18 @@ describe("Phase 1 upload validation", () => {
         selectedCandidateId: "candidate_123",
       }).success,
     ).toBe(true);
+  });
+
+  it("suggests mappings but blocks contradictory case and pack samples", () => {
+    expect(suggestMapping("Supplier UPC")).toMatchObject({ target: "UPC" });
+    expect(suggestMapping("Wholesale Price")).toMatchObject({
+      target: "UNIT_COST",
+    });
+    expect(
+      mappingSafetyIssues(
+        { 0: "DESCRIPTION", 1: "UPC", 2: "CASE_COUNT", 3: "PACK_COUNT" },
+        [["Pet treats", "012345678905", "10", "6"]],
+      ),
+    ).toContainEqual(expect.stringMatching(/whole sellable units/i));
   });
 });
