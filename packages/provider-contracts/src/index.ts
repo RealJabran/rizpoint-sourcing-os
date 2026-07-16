@@ -12,6 +12,9 @@ export const provenanceSchema = z.object({
   observedAt: z.iso.datetime(),
   freshnessState: freshnessStateSchema,
   providerReference: z.string().min(1).optional(),
+  marketplaceId: z.string().min(1).optional(),
+  requestId: z.string().min(1).optional(),
+  responseCompleteness: z.enum(["COMPLETE", "PARTIAL"]).optional(),
 });
 
 export const decimalStringSchema = z.string().regex(/^-?\d+(\.\d+)?$/);
@@ -84,6 +87,31 @@ export const catalogProductSchema = z.object({
   sizeText: z.string().min(1).optional(),
   packCount: z.number().int().positive().optional(),
   variation: z.string().min(1).optional(),
+  manufacturer: z.string().min(1).optional(),
+  color: z.string().min(1).optional(),
+  productTypes: z.array(z.string().min(1)).optional(),
+  variationTheme: z.string().min(1).optional(),
+  packageHierarchy: z
+    .array(
+      z.object({
+        type: z.string().min(1),
+        asin: z
+          .string()
+          .regex(/^B[A-Z0-9]{9}$/)
+          .optional(),
+      }),
+    )
+    .optional(),
+  images: z
+    .array(
+      z.object({
+        url: z.url(),
+        variant: z.string().min(1).optional(),
+        height: z.number().int().positive().optional(),
+        width: z.number().int().positive().optional(),
+      }),
+    )
+    .optional(),
   salesRanks: z
     .array(
       z.object({
@@ -103,6 +131,8 @@ export const catalogProductSchema = z.object({
     .optional(),
   identifiers: z.array(catalogIdentifierSchema),
   provenance: provenanceSchema,
+  /** Private provider observation. Persistence may retain it; UI DTOs must not. */
+  rawProviderObservation: z.unknown().optional(),
 });
 export type CatalogProduct = z.infer<typeof catalogProductSchema>;
 
@@ -185,6 +215,11 @@ export type AiMatchRanking = z.infer<typeof aiMatchRankingSchema>;
 export interface CatalogProvider {
   searchByIdentifier(
     identifier: CatalogIdentifier,
+    marketplace?: MarketplaceContext,
+  ): Promise<readonly CatalogProduct[]>;
+  /** Bounded exact-identifier lookup. Catalog Items currently permits at most 20 identifiers. */
+  searchByIdentifiers?(
+    identifiers: readonly CatalogIdentifier[],
     marketplace?: MarketplaceContext,
   ): Promise<readonly CatalogProduct[]>;
   searchByKeywords(

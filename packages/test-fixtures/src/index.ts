@@ -14,6 +14,17 @@ export const mockCatalogProducts = [
     sizeText: "12 oz",
     packCount: 6,
     variation: "Lemon",
+    variationTheme: "Flavor",
+    manufacturer: "Acme Foods",
+    color: "Yellow",
+    productTypes: ["GROCERY"],
+    packageHierarchy: [{ type: "VARIATION", asin: "B000000002" }],
+    images: [
+      {
+        url: "https://images-na.ssl-images-amazon.com/images/I/mock-lemon-soda.jpg",
+        variant: "MAIN",
+      },
+    ],
     identifiers: [{ type: "UPC", value: "012345678905" }],
   },
   {
@@ -25,6 +36,8 @@ export const mockCatalogProducts = [
     sizeText: "12 oz",
     packCount: 12,
     variation: "Lemon",
+    variationTheme: "Flavor",
+    packageHierarchy: [{ type: "VARIATION", asin: "B000000001" }],
     identifiers: [{ type: "UPC", value: "012345678912" }],
   },
   {

@@ -600,6 +600,10 @@ model CatalogProduct {
   sizeText          String?                @map("size_text")
   packCount         Int?                   @map("pack_count")
   variation         String?
+  marketplaceId     String?                @map("marketplace_id")
+  responseCompleteness String?             @map("response_completeness")
+  requestLineage    String?                @map("request_lineage")
+  identityProjection Json?                 @map("identity_projection")
   observedAt        DateTime               @map("observed_at")
   freshnessState    ExternalFreshnessState @map("freshness_state")
   rawPayload        Json?                  @map("raw_payload")

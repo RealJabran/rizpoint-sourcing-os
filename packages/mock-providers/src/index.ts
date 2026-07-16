@@ -18,22 +18,46 @@ import type {
   RestrictionProvider,
   Restrictions,
 } from "@rizpoint/provider-contracts";
+import { catalogProductSchema } from "@rizpoint/provider-contracts";
 
 const observedAt = () => new Date().toISOString();
 
 function toCatalogProduct(
   product: (typeof mockCatalogProducts)[number],
 ): CatalogProduct {
-  return {
+  const extended = product as (typeof mockCatalogProducts)[number] & {
+    productTypes?: readonly string[];
+    packageHierarchy?: readonly { type: string; asin?: string }[];
+    images?: readonly {
+      url: string;
+      variant?: string;
+      height?: number;
+      width?: number;
+    }[];
+  };
+  return catalogProductSchema.parse({
     ...product,
     identifiers: product.identifiers.map((identifier) => ({ ...identifier })),
+    ...(extended.productTypes
+      ? { productTypes: [...extended.productTypes] }
+      : {}),
+    ...(extended.packageHierarchy
+      ? {
+          packageHierarchy: extended.packageHierarchy.map((item) => ({
+            ...item,
+          })),
+        }
+      : {}),
+    ...(extended.images
+      ? { images: extended.images.map((image) => ({ ...image })) }
+      : {}),
     provenance: {
       provider: "mock-catalog",
       observedAt: observedAt(),
       freshnessState: "FRESH",
       providerReference: product.asin,
     },
-  };
+  });
 }
 
 export class MockCatalogProvider implements CatalogProvider {

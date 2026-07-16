@@ -1281,6 +1281,19 @@ function EvidenceDrawer({
   const auditEvents = Array.isArray(detail.auditEvents)
     ? detail.auditEvents
     : [];
+  const catalogImage = (catalog: Record<string, unknown> | undefined) => {
+    const projection = catalog?.identityProjection;
+    const images =
+      projection && typeof projection === "object"
+        ? (projection as { images?: unknown }).images
+        : undefined;
+    const first = Array.isArray(images) ? images[0] : undefined;
+    return first &&
+      typeof first === "object" &&
+      typeof (first as { url?: unknown }).url === "string"
+      ? (first as { url: string }).url
+      : null;
+  };
   return (
     <div className="evidence-backdrop" role="presentation">
       <section
@@ -1337,11 +1350,36 @@ function EvidenceDrawer({
                     ASIN: candidate.catalogProduct?.asin,
                     Title: candidate.catalogProduct?.title,
                     Brand: candidate.catalogProduct?.brand,
+                    Manufacturer: (
+                      candidate.catalogProduct?.identityProjection as
+                        { manufacturer?: unknown } | undefined
+                    )?.manufacturer,
+                    Variation: candidate.catalogProduct?.variation,
+                    "Variation theme": (
+                      candidate.catalogProduct?.identityProjection as
+                        { variationTheme?: unknown } | undefined
+                    )?.variationTheme,
+                    "Package hierarchy": (
+                      candidate.catalogProduct?.identityProjection as
+                        { packageHierarchy?: unknown } | undefined
+                    )?.packageHierarchy,
+                    Source: candidate.catalogProduct?.provider,
+                    "Observed at": candidate.catalogProduct?.observedAt,
+                    Freshness: candidate.catalogProduct?.freshnessState,
                     Confidence: candidate.confidence,
                     PackGuard: candidate.packGuard?.status,
                     "PackGuard reason": candidate.packGuard?.reasonCode,
                   }}
                 />
+                {catalogImage(candidate.catalogProduct) ? (
+                  <img
+                    className="catalog-evidence-image"
+                    src={catalogImage(candidate.catalogProduct)!}
+                    alt={`Provider image for ${String(candidate.catalogProduct?.title ?? "catalog candidate")}`}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : null}
                 <EvidenceTree value={candidate.evidence} />
               </li>
             ))}

@@ -1,6 +1,7 @@
 import {
   completeMatching,
   getCompletedMatchLookup,
+  getCatalogProviderConnection,
   getScanRowsForMatching,
   persistMatchRow,
   saveMatchLookup,
@@ -15,14 +16,12 @@ import {
   type CandidateSource,
   type SupplierMatchInput,
 } from "@rizpoint/matching-engine";
-import { MockCatalogProvider } from "@rizpoint/mock-providers";
 import {
   catalogProductSchema,
   type CatalogProduct,
   type CatalogProvider,
 } from "@rizpoint/provider-contracts";
-
-const provider: CatalogProvider = new MockCatalogProvider();
+import { createEnrichmentProvider } from "./enrichment-provider.js";
 
 type MatchingOffer = {
   asin: string | null;
@@ -64,12 +63,13 @@ async function cachedLookup(
   organizationId: string,
   scanJobId: string,
   source: CandidateSource,
+  providerName: string,
   lookupKey: string,
   request: () => Promise<readonly CatalogProduct[]>,
 ): Promise<readonly CatalogProduct[]> {
   const cached = await getCompletedMatchLookup(
     scanJobId,
-    "mock-catalog",
+    providerName,
     source,
     lookupKey,
   );
@@ -81,7 +81,7 @@ async function cachedLookup(
   await saveMatchLookup({
     organizationId,
     scanJobId,
-    provider: "mock-catalog",
+    provider: providerName,
     lookupType: source,
     lookupKey,
     payload:
@@ -98,6 +98,9 @@ async function cascade(
   organizationId: string,
   scanJobId: string,
   input: SupplierMatchInput,
+  provider: CatalogProvider,
+  providerName: string,
+  marketplace: import("@rizpoint/provider-contracts").MarketplaceContext,
 ) {
   const candidates = new Map<
     string,
@@ -112,9 +115,10 @@ async function cascade(
       organizationId,
       scanJobId,
       "SUPPLIED_ASIN",
+      providerName,
       asin,
       async () => {
-        const product = await provider.getItem(asin);
+        const product = await provider.getItem(asin, marketplace);
         return product ? [product] : [];
       },
     );
@@ -129,8 +133,9 @@ async function cascade(
         organizationId,
         scanJobId,
         "EXACT_IDENTIFIER",
+        providerName,
         `${identifier.type}:${identifier.value}`,
-        () => provider.searchByIdentifier(identifier),
+        () => provider.searchByIdentifier(identifier, marketplace),
       );
       for (const product of products)
         candidates.set(product.asin, { product, source: "EXACT_IDENTIFIER" });
@@ -142,8 +147,9 @@ async function cascade(
       organizationId,
       scanJobId,
       "MPN_BRAND",
+      providerName,
       `${value}:${normalizeText(input.brand)}`,
-      () => provider.searchByIdentifier({ type: "MPN", value }),
+      () => provider.searchByKeywords(`${input.brand} ${value}`, marketplace),
     );
     for (const product of products) {
       if (normalizeText(product.brand) === normalizeText(input.brand))
@@ -155,8 +161,9 @@ async function cascade(
       organizationId,
       scanJobId,
       "TITLE_SEARCH",
+      providerName,
       input.description,
-      () => provider.searchByKeywords(input.description!),
+      () => provider.searchByKeywords(input.description!, marketplace),
     );
     for (const product of products)
       candidates.set(product.asin, { product, source: "TITLE_SEARCH" });
@@ -167,9 +174,20 @@ async function cascade(
 export async function processMatching(scanJobId: string) {
   const scan = await getScanRowsForMatching(scanJobId);
   if (!scan || !isMatchingAttemptRunnable(scan.status)) return;
+  const connection = await getCatalogProviderConnection(scan.organizationId);
+  const bundle = createEnrichmentProvider(connection);
+  const providerName =
+    bundle.providerKind === "MOCK_AMAZON" ? "mock-catalog" : "amazon-sp-api";
   for (const row of scan.supplierRows) {
     const input = asInput(row.normalizedOffer);
-    const candidates = await cascade(scan.organizationId, scanJobId, input);
+    const candidates = await cascade(
+      scan.organizationId,
+      scanJobId,
+      input,
+      bundle.provider,
+      providerName,
+      bundle.marketplace,
+    );
     const scored = candidates.map(({ product, source }) =>
       scoreCandidate(input, product, source),
     );

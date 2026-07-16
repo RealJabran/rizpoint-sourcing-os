@@ -30,3 +30,19 @@ case; generic inventory quantity and consumer pack count do not. Missing case,
 Amazon pack, or supplier cost is `BLOCKED_PACK_UNCERTAIN`; a non-divisible supplier case is
 `BLOCKED_PACK_CONTRADICTION`; only a divisible relationship with a decimal supplier
 cost is `VERIFIED`. Profitability consumers must reject both blocked states.
+
+## Phase 7.6 Catalog Items identity observation
+
+With `PROVIDER_MODE=sp_api`, the worker uses Catalog Items v2022-04-01 through
+`CatalogProvider`: validated supplied ASIN, then UPC/EAN/GTIN (kept as strings,
+including leading zeroes), then brand-qualified part/title candidates. Exact
+identifier requests are bounded to 20 values of one type. The typed projection
+records title, identifiers, maker/model, size/color/count, product type, ranks,
+image links, variation/package relationships, marketplace, observed time,
+freshness, request lineage, and response completeness. The raw provider response
+is retained only in private catalog persistence and is never a web DTO. Images
+are hotlinked with `no-referrer`; they are not copied to RizPoint storage.
+
+Provider throttling, authorization failure, and partial observations remain
+explicit states. A title search never auto-accepts; brand/model/size/count/pack
+or package-hierarchy contradictions require review and PackGuard remains blocked.

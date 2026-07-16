@@ -1017,6 +1017,15 @@ export type PersistedMatchCandidate = {
     sizeText?: string | undefined;
     packCount?: number | undefined;
     variation?: string | undefined;
+    manufacturer?: string | undefined;
+    color?: string | undefined;
+    productTypes?: string[] | undefined;
+    variationTheme?: string | undefined;
+    packageHierarchy?: unknown;
+    images?: unknown;
+    dimensions?: unknown;
+    salesRanks?: unknown;
+    rawProviderObservation?: unknown;
     identifiers: Array<{
       type: "ASIN" | "UPC" | "EAN" | "GTIN" | "MPN";
       value: string;
@@ -1024,6 +1033,9 @@ export type PersistedMatchCandidate = {
     provenance: {
       provider: string;
       providerReference?: string | undefined;
+      marketplaceId?: string | undefined;
+      requestId?: string | undefined;
+      responseCompleteness?: "COMPLETE" | "PARTIAL" | undefined;
       observedAt: string;
       freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
     };
@@ -1093,9 +1105,27 @@ export async function persistMatchRow(input: {
           sizeText: candidate.product.sizeText ?? null,
           packCount: candidate.product.packCount ?? null,
           variation: candidate.product.variation ?? null,
+          marketplaceId: candidate.product.provenance.marketplaceId ?? null,
+          responseCompleteness:
+            candidate.product.provenance.responseCompleteness ?? null,
+          requestLineage: candidate.product.provenance.requestId ?? null,
+          identityProjection: {
+            manufacturer: candidate.product.manufacturer ?? null,
+            color: candidate.product.color ?? null,
+            productTypes: candidate.product.productTypes ?? [],
+            variationTheme: candidate.product.variationTheme ?? null,
+            packageHierarchy: candidate.product.packageHierarchy ?? [],
+            images: candidate.product.images ?? [],
+            dimensions: candidate.product.dimensions ?? null,
+            salesRanks: candidate.product.salesRanks ?? [],
+          } as unknown as Prisma.InputJsonValue,
           observedAt: new Date(candidate.product.provenance.observedAt),
           freshnessState: candidate.product.provenance.freshnessState,
-          rawPayload: candidate.product as unknown as Prisma.InputJsonValue,
+          rawPayload: {
+            normalized: candidate.product,
+            rawProviderObservation:
+              candidate.product.rawProviderObservation ?? null,
+          } as unknown as Prisma.InputJsonValue,
         },
         update: {
           asin: candidate.product.asin,
@@ -1106,9 +1136,27 @@ export async function persistMatchRow(input: {
           sizeText: candidate.product.sizeText ?? null,
           packCount: candidate.product.packCount ?? null,
           variation: candidate.product.variation ?? null,
+          marketplaceId: candidate.product.provenance.marketplaceId ?? null,
+          responseCompleteness:
+            candidate.product.provenance.responseCompleteness ?? null,
+          requestLineage: candidate.product.provenance.requestId ?? null,
+          identityProjection: {
+            manufacturer: candidate.product.manufacturer ?? null,
+            color: candidate.product.color ?? null,
+            productTypes: candidate.product.productTypes ?? [],
+            variationTheme: candidate.product.variationTheme ?? null,
+            packageHierarchy: candidate.product.packageHierarchy ?? [],
+            images: candidate.product.images ?? [],
+            dimensions: candidate.product.dimensions ?? null,
+            salesRanks: candidate.product.salesRanks ?? [],
+          } as unknown as Prisma.InputJsonValue,
           observedAt: new Date(candidate.product.provenance.observedAt),
           freshnessState: candidate.product.provenance.freshnessState,
-          rawPayload: candidate.product as unknown as Prisma.InputJsonValue,
+          rawPayload: {
+            normalized: candidate.product,
+            rawProviderObservation:
+              candidate.product.rawProviderObservation ?? null,
+          } as unknown as Prisma.InputJsonValue,
         },
       });
       await transaction.productIdentifier.deleteMany({
@@ -1373,6 +1421,21 @@ export async function getAmazonProviderConnectionStatus(
       lastErrorCode: true,
     },
   });
+}
+
+/** Worker-only connection lookup. The caller receives encrypted material but
+ * must decrypt it locally; web routes only use the status projection above. */
+export async function getCatalogProviderConnection(organizationId: string) {
+  if (
+    process.env.PROVIDER_MODE === "sp_api" ||
+    process.env.PROVIDER_MODE === "sp-api"
+  ) {
+    return db.providerConnection.findFirst({
+      where: { organizationId, provider: "AMAZON_SP_API", status: "ACTIVE" },
+      orderBy: { authorizedAt: "desc" },
+    });
+  }
+  return ensureMockAmazonConnection(organizationId);
 }
 
 export async function queueEnrichment(
@@ -2545,7 +2608,26 @@ export async function getAnalysisResult(
             include: {
               selectedCandidate: {
                 include: {
-                  catalogProduct: true,
+                  catalogProduct: {
+                    select: {
+                      asin: true,
+                      title: true,
+                      brand: true,
+                      model: true,
+                      mpn: true,
+                      sizeText: true,
+                      packCount: true,
+                      variation: true,
+                      provider: true,
+                      providerReference: true,
+                      observedAt: true,
+                      freshnessState: true,
+                      marketplaceId: true,
+                      responseCompleteness: true,
+                      requestLineage: true,
+                      identityProjection: true,
+                    },
+                  },
                   evidence: true,
                   packGuard: true,
                 },
@@ -2554,7 +2636,26 @@ export async function getAnalysisResult(
           },
           listingCandidates: {
             include: {
-              catalogProduct: true,
+              catalogProduct: {
+                select: {
+                  asin: true,
+                  title: true,
+                  brand: true,
+                  model: true,
+                  mpn: true,
+                  sizeText: true,
+                  packCount: true,
+                  variation: true,
+                  provider: true,
+                  providerReference: true,
+                  observedAt: true,
+                  freshnessState: true,
+                  marketplaceId: true,
+                  responseCompleteness: true,
+                  requestLineage: true,
+                  identityProjection: true,
+                },
+              },
               evidence: true,
               packGuard: true,
             },

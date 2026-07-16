@@ -43,6 +43,11 @@ The matching worker calls the typed catalog interface, validates provider payloa
 
 Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Mock/recorded adapters are the default; the optional Amazon SP-API adapter is isolated in `packages/amazon-sp-api`, server-side only, and configuration-gated. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
 
+Catalog resolution selects the mock connection by default. In `sp_api` mode it
+uses only an active encrypted SP-API connection for the organization. Catalog
+Items raw responses are private persistence data; web DTOs use the normalized
+typed projection and its provenance only.
+
 The worker selects the fixture adapter unless `PROVIDER_MODE=sp_api` and an
 active organization-scoped Amazon connection has a valid encrypted refresh
 token. Decryption happens only in the worker using the connection's
