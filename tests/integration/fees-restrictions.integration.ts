@@ -198,6 +198,30 @@ try {
         ],
         restrictionConditionType: "new_new",
       },
+      {
+        ...base,
+        metricType: "FEES",
+        observationKey: "FEE:CONSERVATIVE:integration",
+        payload: { normalized: true, scenario: "conservative" },
+        primaryAmount: "4.8000",
+        quotedPrice: "18.0000",
+        currency: "USD",
+        operation: "getMyFeesEstimateForASIN",
+        observationStatus: "SUCCESS",
+        requestHash: "conservative-fee-request-hash",
+        requestInputs: { scenarioPrice: "18.0000" },
+        completeness: "COMPLETE",
+        feeScenarioSource: "CONSERVATIVE",
+        feeFulfillment: "AMAZON",
+        feeComponents: [
+          {
+            feeType: "AmazonFeesTotal",
+            currency: "USD",
+            feeAmount: "4.8000",
+            finalFee: "4.8000",
+          },
+        ],
+      },
     ],
     missingMetrics: [],
   });
@@ -242,14 +266,23 @@ try {
     },
     include: { feeComponents: true },
   });
-  assert.equal(observations.length, 2);
-  const fee = observations.find(({ metricType }) => metricType === "FEES");
+  assert.equal(observations.length, 3);
+  const fee = observations.find(
+    ({ metricType, feeScenarioSource }) =>
+      metricType === "FEES" && feeScenarioSource === "CURRENT_FEATURED_OFFER",
+  );
+  const conservativeFee = observations.find(
+    ({ metricType, feeScenarioSource }) =>
+      metricType === "FEES" && feeScenarioSource === "CONSERVATIVE",
+  );
   const restriction = observations.find(
     ({ metricType }) => metricType === "RESTRICTIONS",
   );
   assert.equal(fee?.primaryAmount?.toString(), "5.25");
   assert.equal(fee?.feeComponents.length, 1);
   assert.equal(fee?.feeComponents[0]?.finalFee.toString(), "5.25");
+  assert.equal(conservativeFee?.quotedPrice?.toString(), "18");
+  assert.equal(conservativeFee?.feeComponents.length, 1);
   assert.equal(restriction?.restrictionState, "APPROVAL_REQUIRED");
   assert.deepEqual(restriction?.restrictionReasonCodes, ["APPROVAL_REQUIRED"]);
 
@@ -270,6 +303,7 @@ try {
   assert.equal(filtered?.total, 1);
   assert.equal(filtered?.rows[0]?.feeEstimate.total, "5.25");
   assert.equal(filtered?.rows[0]?.feeEstimate.components.length, 1);
+  assert.equal(filtered?.rows[0]?.feeScenarios.length, 2);
   assert.equal(
     filtered?.rows[0]?.listingRestriction.state,
     "APPROVAL_REQUIRED",

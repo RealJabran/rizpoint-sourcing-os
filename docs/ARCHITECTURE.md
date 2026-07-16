@@ -84,7 +84,11 @@ total, and every returned fee detail. Component money is normalized into
 recommendation. The default usage plan is one request per second with burst two,
 while response rate-limit headers remain authoritative when present. Amazon fee
 estimates are point-in-time estimates and are never represented as guaranteed
-future charges.
+future charges. Fee observations are scenario/request keyed. During calculation,
+the worker reuses a fresh exact-price quote or obtains a missing current,
+conservative, stress-price, or user-entered point quote through the typed fee
+provider. In-process concurrent requests are single-flight; persisted request
+hashes and observations make job retries idempotent.
 
 Seller eligibility uses Listings Restrictions v2021-08-01
 `getListingsRestrictions` for the authorized seller, marketplace, ASIN, and New

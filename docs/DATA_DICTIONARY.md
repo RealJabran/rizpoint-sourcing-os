@@ -54,7 +54,10 @@ Every catalog, price, fee, restriction, or history observation must carry `provi
 
 `ProviderObservation` stores the typed fee scenario source, quoted scenario
 price, fulfillment input, completeness, request hash, operation, marketplace,
-observation status, and private raw-evidence reference. `ProviderFeeComponent`
+observation status, private raw-evidence reference, and an `observation_key`.
+The key is `PRIMARY` for ordinary metrics and scenario/request-specific for fee
+point estimates, allowing exact quotes at different prices to coexist without
+weakening the item/metric/provider idempotency boundary. `ProviderFeeComponent`
 stores each returned fee type, parent fee type when nested, currency, fee amount,
 promotion, tax, and final fee as `NUMERIC(18,4)`. Components are replaced in the
 same transaction as a newer observation, so a retry cannot leave a mixed quote.
@@ -65,7 +68,8 @@ Reason codes and readable provider reasons are retained separately. Missing or
 malformed response collections are never equivalent to an empty, complete
 restriction list.
 
-`ProviderObservation` is unique by enrichment item, metric, and provider. A
+`ProviderObservation` is unique by enrichment item, metric, provider, and
+observation key. A
 competitive-pricing observation additionally stores the operation, ASIN,
 marketplace, request hash and non-secret inputs, status, completeness, private
 raw-evidence reference, featured-offer state and typed price fields, Amazon

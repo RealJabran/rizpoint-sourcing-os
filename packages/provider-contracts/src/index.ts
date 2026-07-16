@@ -223,6 +223,7 @@ export const feeScenarioSourceSchema = z.enum([
   "CONSERVATIVE",
   "USER_ENTERED",
 ]);
+export type FeeScenarioSource = z.infer<typeof feeScenarioSourceSchema>;
 export const feeComponentSchema = z.object({
   feeType: z.string().min(1),
   feeAmount: decimalStringSchema,

@@ -5,6 +5,7 @@ import {
   buildScenarios,
   calculateProfit,
   decide,
+  deriveStressPrice,
   type CostInputs,
   type FeeQuote,
   type PriceEvidence,
@@ -68,6 +69,13 @@ function profitAt(value: string) {
 }
 
 describe("profit engine v3", () => {
+  it("derives the exact stress quote price with Decimal arithmetic", () => {
+    expect(deriveStressPrice("19.99", "12.5")).toBe("17.4913");
+    expect(() => deriveStressPrice("0", "10")).toThrow(
+      "INVALID_STRESS_SCENARIO",
+    );
+  });
+
   it("matches an independently audited dynamic-fee example", () => {
     const result = profitAt("20.00");
     expect(result).toMatchObject({

@@ -26,16 +26,23 @@ fulfillment inputs; they do not define a reusable fee formula.
   components before calculation. A live point estimate is valid only at its
   quoted price; only an explicit fixture/config model can be evaluated at other
   prices.
+- Key fee observations by scenario source and the non-secret request hash so
+  exact current, conservative, stress-price, and user-entered estimates can
+  coexist without overwriting each other. The calculation worker reuses a
+  fresh exact quote or obtains the missing point estimate through `FeeProvider`
+  before evaluating that scenario. Concurrent identical requests are
+  single-flight and retries reuse the persisted quote.
 - Keep raw provider payloads private. Browser DTOs receive normalized evidence,
   hashes, source, timestamps, freshness, fee components, and readable
   restriction reasons.
 
 ## Consequences
 
-Profit remains blocked when a conservative, stress, or user-entered price lacks
-a matching complete fee estimate. This is preferable to extrapolating an Amazon
-fee response. A future batching enhancement may persist additional scenario
-quotes without changing the deterministic engine contract.
+Profit remains blocked when an exact scenario quote cannot be obtained or is
+incomplete, stale, unauthorized, throttled, or currency-inconsistent. This is
+preferable to extrapolating an Amazon fee response. Stress quotes use the
+`CONSERVATIVE` provider request class plus their exact discounted price; the
+profit snapshot continues to label the calculated output as `STRESS`.
 
 ## Official references
 

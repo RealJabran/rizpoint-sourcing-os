@@ -1603,6 +1603,7 @@ export async function persistEnrichmentItem(input: {
   observations: Array<{
     metricType: "CATALOG" | "PRICING" | "FEES" | "RESTRICTIONS" | "HISTORY";
     provider: "MOCK_AMAZON" | "AMAZON_SP_API" | "MOCK_HISTORY";
+    observationKey?: string;
     observedAt: Date;
     freshUntil: Date;
     freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
@@ -1668,16 +1669,27 @@ export async function persistEnrichmentItem(input: {
   }>;
   missingMetrics: string[];
   errorCode?: string;
+  preserveItemStatus?: boolean;
 }) {
   await db.$transaction(async (transaction) => {
     for (const observation of input.observations) {
-      const { feeComponents, ...observationData } = observation;
+      const {
+        feeComponents,
+        observationKey: suppliedObservationKey,
+        ...observationData
+      } = observation;
+      const observationKey =
+        suppliedObservationKey ??
+        (observation.metricType === "FEES"
+          ? (observation.feeScenarioSource ?? "CURRENT_FEATURED_OFFER")
+          : "PRIMARY");
       const current = await transaction.providerObservation.findUnique({
         where: {
-          enrichmentItemId_metricType_provider: {
+          enrichmentItemId_metricType_provider_observationKey: {
             enrichmentItemId: input.enrichmentItemId,
             metricType: observation.metricType,
             provider: observation.provider,
+            observationKey,
           },
         },
         select: { observedAt: true },
@@ -1693,15 +1705,17 @@ export async function persistEnrichmentItem(input: {
         continue;
       const persisted = await transaction.providerObservation.upsert({
         where: {
-          enrichmentItemId_metricType_provider: {
+          enrichmentItemId_metricType_provider_observationKey: {
             enrichmentItemId: input.enrichmentItemId,
             metricType: observation.metricType,
             provider: observation.provider,
+            observationKey,
           },
         },
         create: {
           ...observationData,
           enrichmentItemId: input.enrichmentItemId,
+          observationKey,
           freshnessState: observation.freshnessState,
         },
         update: { ...observationData, errorCode: null },
@@ -1732,14 +1746,15 @@ export async function persistEnrichmentItem(input: {
           });
       }
     }
-    await transaction.enrichmentItem.update({
-      where: { id: input.enrichmentItemId },
-      data: {
-        status: input.missingMetrics.length ? "PARTIAL_SUCCESS" : "COMPLETED",
-        missingMetrics: input.missingMetrics,
-        lastErrorCode: input.errorCode ?? null,
-      },
-    });
+    if (!input.preserveItemStatus)
+      await transaction.enrichmentItem.update({
+        where: { id: input.enrichmentItemId },
+        data: {
+          status: input.missingMetrics.length ? "PARTIAL_SUCCESS" : "COMPLETED",
+          missingMetrics: input.missingMetrics,
+          lastErrorCode: input.errorCode ?? null,
+        },
+      });
   });
 }
 
@@ -2105,7 +2120,10 @@ export async function getProfitCalculationForProcessing(runId: string) {
         },
       },
       enrichmentItems: {
-        include: { observations: { include: { feeComponents: true } } },
+        include: {
+          enrichmentRun: { include: { providerConnection: true } },
+          observations: { include: { feeComponents: true } },
+        },
       },
       profitCostOverrides: { include: { values: true } },
     },
@@ -2410,6 +2428,7 @@ function analysisWhere(
             observations: {
               some: {
                 metricType: "FEES",
+                feeScenarioSource: "CURRENT_FEATURED_OFFER",
                 completeness: filters.feeCompleteness,
               },
             },
@@ -2740,6 +2759,7 @@ export async function listAnalysisResults(input: {
                 observations: {
                   select: {
                     metricType: true,
+                    observationKey: true,
                     provider: true,
                     observedAt: true,
                     freshUntil: true,
@@ -2846,11 +2866,17 @@ export async function listAnalysisResults(input: {
       .sort(
         (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
       )[0];
-    const fee = observations
+    const feeObservations = observations
       .filter((candidate) => candidate.metricType === "FEES")
-      .sort(
-        (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
-      )[0];
+      .sort((left, right) => {
+        const sourceOrder =
+          Number(right.feeScenarioSource === "CURRENT_FEATURED_OFFER") -
+          Number(left.feeScenarioSource === "CURRENT_FEATURED_OFFER");
+        return (
+          sourceOrder || right.observedAt.getTime() - left.observedAt.getTime()
+        );
+      });
+    const fee = feeObservations[0];
     const restriction = observations
       .filter((candidate) => candidate.metricType === "RESTRICTIONS")
       .sort(
@@ -2934,6 +2960,27 @@ export async function listAnalysisResults(input: {
             })),
           }
         : null,
+      feeScenarios: feeObservations.map((scenario) => ({
+        observationKey: scenario.observationKey,
+        scenarioSource: scenario.feeScenarioSource,
+        scenarioPrice: scenario.quotedPrice?.toString() ?? null,
+        total: scenario.primaryAmount?.toString() ?? null,
+        currency: scenario.currency,
+        fulfillmentChannel: scenario.feeFulfillment,
+        completeness: scenario.completeness,
+        status: scenario.observationStatus,
+        provider: scenario.provider,
+        observedAt: scenario.observedAt.toISOString(),
+        expiresAt: scenario.freshUntil.toISOString(),
+        freshnessState: scenario.freshnessState,
+        requestHash: scenario.requestHash,
+        components: scenario.feeComponents.map((component) => ({
+          type: component.feeType,
+          parentType: component.parentFeeType,
+          currency: component.currency,
+          finalFee: component.finalFee.toString(),
+        })),
+      })),
       listingRestriction: restriction
         ? {
             asin: restriction.asin,
@@ -3039,6 +3086,7 @@ export async function getAnalysisResult(
               observations: {
                 select: {
                   metricType: true,
+                  observationKey: true,
                   provider: true,
                   providerReference: true,
                   marketplaceId: true,

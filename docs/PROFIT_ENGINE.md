@@ -27,6 +27,15 @@ Each result retains PackGuard, selected route/effective date, policy version, ra
 
 A fee quote must be complete, fresh, currency-consistent, and reconcile its top-level component final fees to its aggregate total. A live point estimate can calculate only the exact requested scenario price; it is never extrapolated to another price. Consequently, break-even is omitted for a point estimate unless an explicit deterministic fee function is available. Opaque or partial totals remain enrichment evidence but cannot produce a calculated scenario. Missing route, currency, freshness, history, PackGuard, fee evidence, or seller eligibility becomes explicit `PARTIAL_SUCCESS`.
 
+Before calculation, the worker looks up a fresh fee observation matching the
+scenario source, exact Decimal price, currency, fulfillment input, marketplace,
+and ASIN. When live provider mode is configured, a missing current,
+conservative, stress-price, or user-entered quote is requested and persisted
+through the typed fee boundary. Identical concurrent requests are single-flight,
+and retries reuse the persisted request-keyed observation. Provider failures
+remain typed evidence; they never trigger fee extrapolation or a successful
+recommendation.
+
 ## Recommendation policy
 
 `BUY` requires verified match/pack, explicit `ELIGIBLE` seller status, resolved non-prohibited brand policy, complete fresh financial evidence, demand evidence, passing conservative thresholds, and an acceptable stress result. Hard seller restrictions and prohibited brands return `AVOID` before approval checks. Approval-required status routes to review; incomplete, unauthorized, throttled, and unknown eligibility cannot yield `BUY`. Invalid thresholds, costs, fee components/models, scenario prices, or discounts cannot yield `BUY`.

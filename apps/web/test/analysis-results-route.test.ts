@@ -73,6 +73,18 @@ describe("analysis results route", () => {
               },
             ],
           },
+          feeScenarios: [
+            {
+              scenarioSource: "CURRENT_FEATURED_OFFER",
+              scenarioPrice: "18.9900",
+              completeness: "COMPLETE",
+            },
+            {
+              scenarioSource: "CONSERVATIVE",
+              scenarioPrice: "17.0000",
+              completeness: "COMPLETE",
+            },
+          ],
           listingRestriction: {
             state: "APPROVAL_REQUIRED",
             completeness: "COMPLETE",
@@ -109,6 +121,7 @@ describe("analysis results route", () => {
     const body = await response.json();
     expect(body.rows[0].offerIntelligence.featuredOffer.price).toBe("18.9900");
     expect(body.rows[0].feeEstimate.components[0].finalFee).toBe("3.2500");
+    expect(body.rows[0].feeScenarios).toHaveLength(2);
     expect(body.rows[0].listingRestriction.state).toBe("APPROVAL_REQUIRED");
     expect(JSON.stringify(body)).not.toContain("rawProviderObservation");
   });

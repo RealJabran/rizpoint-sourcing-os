@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import Image from "next/image";
 import { ANALYSIS_PAGE_SIZE, pageOffsetForIndex } from "./window";
 import { observationFreshness, requiredNextActions } from "./evidence";
 import { PageHeader } from "@/src/components/page-header";
@@ -105,6 +106,12 @@ type Row = {
     freshnessState: string;
     components: Array<{ type: string; finalFee: string; currency: string }>;
   } | null;
+  feeScenarios: Array<{
+    scenarioSource: string | null;
+    scenarioPrice: string | null;
+    completeness: string | null;
+    freshnessState: string;
+  }>;
   listingRestriction: {
     state: string;
     completeness: string | null;
@@ -1073,7 +1080,9 @@ function GridRow({
           <small>
             Fee estimate: {humanize(row.feeEstimate?.completeness)} · scenario{" "}
             {humanize(row.feeEstimate?.scenarioSource)} ·{" "}
-            {row.feeEstimate?.components.length ?? 0} components
+            {row.feeEstimate?.components.length ?? 0} components ·{" "}
+            {row.feeScenarios?.length ?? 0} exact-price quote
+            {row.feeScenarios?.length === 1 ? "" : "s"}
           </small>
           <small>
             Landed COGS {currency} {decimal(row.effectiveCogs)} · conservative
@@ -1492,10 +1501,13 @@ function EvidenceDrawer({
                   }}
                 />
                 {catalogImage(candidate.catalogProduct) ? (
-                  <img
+                  <Image
                     className="catalog-evidence-image"
                     src={catalogImage(candidate.catalogProduct)!}
                     alt={`Provider image for ${String(candidate.catalogProduct?.title ?? "catalog candidate")}`}
+                    width={96}
+                    height={96}
+                    unoptimized
                     loading="lazy"
                     referrerPolicy="no-referrer"
                   />

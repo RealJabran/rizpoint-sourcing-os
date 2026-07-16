@@ -878,6 +878,7 @@ model EnrichmentItem {
 model ProviderObservation {
   id                            String                    @id @default(cuid())
   enrichmentItemId              String                    @map("enrichment_item_id")
+  observationKey                String                    @default("PRIMARY") @map("observation_key")
   metricType                    EnrichmentMetricType      @map("metric_type")
   provider                      ProviderKind
   providerReference             String?                   @map("provider_reference")
@@ -927,7 +928,7 @@ model ProviderObservation {
   enrichmentItem EnrichmentItem         @relation(fields: [enrichmentItemId], references: [id], onDelete: Cascade)
   feeComponents  ProviderFeeComponent[]
 
-  @@unique([enrichmentItemId, metricType, provider])
+  @@unique([enrichmentItemId, metricType, provider, observationKey])
   @@index([metricType, freshUntil])
   @@index([metricType, featuredOfferState])
   @@index([metricType, amazonRetailPresence])

@@ -386,6 +386,17 @@ export function calculateProfit(input: ProfitInput): ProfitOutput {
   }
 }
 
+export function deriveStressPrice(
+  conservativePrice: DecimalString,
+  stressDiscountPercent: DecimalString,
+): DecimalString {
+  const price = decimal(conservativePrice);
+  const discount = decimal(stressDiscountPercent);
+  if (!price.gt(0) || discount.lt(0) || discount.gte(100))
+    throw new Error("INVALID_STRESS_SCENARIO");
+  return price.mul(new Decimal(1).minus(discount.div(100))).toFixed(4);
+}
+
 export function buildScenarios(
   input: ScenarioInput,
 ): Readonly<Partial<Record<ScenarioType, ProfitOutput>>> {
@@ -401,9 +412,10 @@ export function buildScenarios(
         STRESS: blocked("BLOCKED_INVALID_INPUT", "INVALID_STRESS_DISCOUNT"),
       };
     }
-    const stressPrice = decimal(input.conservative.price)
-      .mul(new Decimal(1).minus(stressDiscount.div(100)))
-      .toFixed(4);
+    const stressPrice = deriveStressPrice(
+      input.conservative.price,
+      input.stressDiscountPercent,
+    );
     const common = {
       packGuardStatus: input.packGuardStatus,
       costs: input.costs,

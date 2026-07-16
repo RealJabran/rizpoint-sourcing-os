@@ -105,13 +105,16 @@ describe("database policy", () => {
     ).toBe(true);
   });
 
-  it("uses one typed provider observation per item, metric, and provider", async () => {
+  it("uses a scenario-aware typed provider observation idempotency key", async () => {
     const schema = await readFile(
       new URL("../prisma/schema.prisma", import.meta.url),
       "utf8",
     );
     expect(schema).toContain(
-      "@@unique([enrichmentItemId, metricType, provider])",
+      "@@unique([enrichmentItemId, metricType, provider, observationKey])",
+    );
+    expect(schema).toContain(
+      'observationKey                String                    @default("PRIMARY")',
     );
     for (const field of [
       "featuredOfferState",

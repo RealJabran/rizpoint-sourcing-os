@@ -1,6 +1,7 @@
 import {
   buildScenarios,
   decide,
+  deriveStressPrice,
   PROFIT_ENGINE_VERSION,
   type DecisionInput,
   type FeeQuote,
@@ -14,6 +15,11 @@ import {
 } from "@rizpoint/database";
 import type { Prisma } from "@rizpoint/database";
 import { Decimal } from "decimal.js";
+import {
+  ensureExactFeeQuote,
+  findExactFeeQuote,
+  type StoredFeeObservation,
+} from "./fee-scenarios.js";
 
 type Observation = {
   metricType: "CATALOG" | "PRICING" | "FEES" | "RESTRICTIONS" | "HISTORY";
@@ -36,6 +42,7 @@ type Observation = {
   feeScenarioSource:
     "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED" | null;
   feeFulfillment: "AMAZON" | "MERCHANT" | "UNKNOWN" | null;
+  featuredFulfillment: "AMAZON" | "MERCHANT" | "UNKNOWN" | null;
   restrictionState:
     | "ELIGIBLE"
     | "RESTRICTED"
@@ -107,74 +114,6 @@ function historyObservationCount(observation: Observation | null): number {
   if (!observation) return 0;
   const values = (observation.payload as { value?: unknown[] }).value;
   return values?.length ?? 0;
-}
-
-function feeQuote(observation: Observation | null): FeeQuote | null {
-  if (
-    !observation ||
-    observation.observationStatus !== "SUCCESS" ||
-    observation.completeness !== "COMPLETE" ||
-    !observation.primaryAmount ||
-    !observation.quotedPrice ||
-    !observation.currency ||
-    !observation.feeScenarioSource ||
-    !observation.feeFulfillment ||
-    observation.feeFulfillment === "UNKNOWN" ||
-    observation.feeComponents.length === 0
-  )
-    return null;
-  const value = (
-    observation.payload as {
-      value?: {
-        totalFee?: string;
-        quotedPrice?: string;
-        currency?: string;
-        model?: {
-          fixedFee?: string;
-          percentageOfPrice?: string;
-          minimumFee?: string;
-        };
-      };
-    }
-  ).value;
-  if (!value?.totalFee || !value.quotedPrice || !value.currency) return null;
-  if (
-    !new Decimal(observation.primaryAmount.toString()).eq(value.totalFee) ||
-    !new Decimal(observation.quotedPrice.toString()).eq(value.quotedPrice)
-  ) {
-    return null;
-  }
-  return {
-    totalFee: value.totalFee,
-    quotedPrice: value.quotedPrice,
-    currency: value.currency,
-    provider: observation.provider,
-    observedAt: observation.observedAt.toISOString(),
-    freshUntil: observation.freshUntil.toISOString(),
-    freshnessState: observation.freshnessState,
-    completeness: observation.completeness,
-    scenarioSource: observation.feeScenarioSource,
-    fulfillmentChannel: observation.feeFulfillment,
-    components: observation.feeComponents.map((component) => ({
-      feeType: component.feeType,
-      finalFee: component.finalFee.toString(),
-      currency: component.currency,
-      ...(component.parentFeeType
-        ? { parentFeeType: component.parentFeeType }
-        : {}),
-    })),
-    ...(value.model?.fixedFee && value.model.percentageOfPrice
-      ? {
-          model: {
-            fixedFee: value.model.fixedFee,
-            percentageOfPrice: value.model.percentageOfPrice,
-            ...(value.model.minimumFee
-              ? { minimumFee: value.model.minimumFee }
-              : {}),
-          },
-        }
-      : {}),
-  };
 }
 
 function restrictionStatus(observation: Observation | null) {
@@ -267,10 +206,10 @@ export async function processProfitCalculation(runId: string) {
     ) as Observation[];
     const candidate = row.matchDecision?.selectedCandidate;
     const packGuard = candidate?.packGuard;
-    const current = priceEvidence(newestObservation(observations, "PRICING"));
+    const pricingObservation = newestObservation(observations, "PRICING");
+    const current = priceEvidence(pricingObservation);
     const history = newestObservation(observations, "HISTORY");
     const conservative = conservativePriceEvidence(history);
-    const fees = feeQuote(newestObservation(observations, "FEES"));
     const eligibility = restrictionStatus(
       newestObservation(observations, "RESTRICTIONS"),
     );
@@ -300,6 +239,9 @@ export async function processProfitCalculation(runId: string) {
         if (target) overriddenCosts[target] = value.value.toString();
       }
       const calculatedAt = new Date();
+      const stressDiscountPercent =
+        override?.stressDiscountPercent?.toString() ??
+        run.financialPolicy.stressDiscountPercent.toString();
       const userEntered = override?.userEnteredSalePrice
         ? {
             price: override.userEnteredSalePrice.toString(),
@@ -316,6 +258,160 @@ export async function processProfitCalculation(runId: string) {
         status: row.matchDecision?.status,
         reasonCodes: row.matchDecision?.reasonCodes,
       });
+      const feeItem = candidate
+        ? row.enrichmentItems.find(
+            (item) => item.asin === candidate.catalogProduct.asin,
+          )
+        : undefined;
+      const fulfillmentChannel =
+        observations
+          .filter(
+            (observation) =>
+              observation.metricType === "FEES" &&
+              observation.feeScenarioSource === "CURRENT_FEATURED_OFFER" &&
+              observation.feeFulfillment !== "UNKNOWN",
+          )
+          .sort(
+            (left, right) =>
+              right.observedAt.getTime() - left.observedAt.getTime(),
+          )[0]?.feeFulfillment ?? pricingObservation?.featuredFulfillment;
+      const canRequestFees =
+        !policyVersionMismatch &&
+        matchVerified &&
+        packGuard?.status === "VERIFIED" &&
+        Boolean(packGuard.costPerSellableUnit) &&
+        Boolean(feeItem) &&
+        (fulfillmentChannel === "AMAZON" ||
+          fulfillmentChannel === "MERCHANT") &&
+        route.currency === run.financialPolicy.currency;
+      let fees = current
+        ? findExactFeeQuote(
+            observations as StoredFeeObservation[],
+            "CURRENT_FEATURED_OFFER",
+            current.price,
+            current.currency,
+            fulfillmentChannel as "AMAZON" | "MERCHANT",
+            calculatedAt,
+          )
+        : null;
+      if (
+        !fees &&
+        canRequestFees &&
+        feeItem &&
+        current?.currency === run.financialPolicy.currency
+      )
+        fees = await ensureExactFeeQuote({
+          organizationId: run.organizationId,
+          calculationAttempt: run.attemptCount,
+          item: feeItem,
+          observations: observations as StoredFeeObservation[],
+          scenarioSource: "CURRENT_FEATURED_OFFER",
+          price: current.price,
+          currency: current.currency,
+          fulfillmentChannel: fulfillmentChannel as "AMAZON" | "MERCHANT",
+          calculatedAt,
+        });
+      let conservativeFees: FeeQuote | null = fees?.model ? fees : null;
+      if (!conservativeFees && conservative) {
+        conservativeFees = findExactFeeQuote(
+          observations as StoredFeeObservation[],
+          "CONSERVATIVE",
+          conservative.price,
+          conservative.currency,
+          fulfillmentChannel as "AMAZON" | "MERCHANT",
+          calculatedAt,
+        );
+        if (
+          !conservativeFees &&
+          canRequestFees &&
+          feeItem &&
+          conservative.currency === run.financialPolicy.currency
+        )
+          conservativeFees = await ensureExactFeeQuote({
+            organizationId: run.organizationId,
+            calculationAttempt: run.attemptCount,
+            item: feeItem,
+            observations: observations as StoredFeeObservation[],
+            scenarioSource: "CONSERVATIVE",
+            price: conservative.price,
+            currency: conservative.currency,
+            fulfillmentChannel: fulfillmentChannel as "AMAZON" | "MERCHANT",
+            calculatedAt,
+          });
+      }
+      let stressFees: FeeQuote | null = fees?.model ? fees : null;
+      let stressPrice: string | null = null;
+      if (conservative) {
+        try {
+          stressPrice = deriveStressPrice(
+            conservative.price,
+            stressDiscountPercent,
+          );
+        } catch {
+          stressPrice = null;
+        }
+      }
+      if (!stressFees && stressPrice && conservative) {
+        stressFees = findExactFeeQuote(
+          observations as StoredFeeObservation[],
+          "CONSERVATIVE",
+          stressPrice,
+          conservative.currency,
+          fulfillmentChannel as "AMAZON" | "MERCHANT",
+          calculatedAt,
+        );
+        if (
+          !stressFees &&
+          canRequestFees &&
+          feeItem &&
+          conservative.currency === run.financialPolicy.currency
+        )
+          stressFees = await ensureExactFeeQuote({
+            organizationId: run.organizationId,
+            calculationAttempt: run.attemptCount,
+            item: feeItem,
+            observations: observations as StoredFeeObservation[],
+            scenarioSource: "CONSERVATIVE",
+            price: stressPrice,
+            currency: conservative.currency,
+            fulfillmentChannel: fulfillmentChannel as "AMAZON" | "MERCHANT",
+            calculatedAt,
+          });
+      }
+      let userEnteredFees: FeeQuote | null = fees?.model ? fees : null;
+      if (!userEnteredFees && userEntered) {
+        userEnteredFees = findExactFeeQuote(
+          observations as StoredFeeObservation[],
+          "USER_ENTERED",
+          userEntered.price,
+          userEntered.currency,
+          fulfillmentChannel as "AMAZON" | "MERCHANT",
+          calculatedAt,
+        );
+        if (
+          !userEnteredFees &&
+          canRequestFees &&
+          feeItem &&
+          userEntered.currency === run.financialPolicy.currency
+        )
+          userEnteredFees = await ensureExactFeeQuote({
+            organizationId: run.organizationId,
+            calculationAttempt: run.attemptCount,
+            item: feeItem,
+            observations: observations as StoredFeeObservation[],
+            scenarioSource: "USER_ENTERED",
+            price: userEntered.price,
+            currency: userEntered.currency,
+            fulfillmentChannel: fulfillmentChannel as "AMAZON" | "MERCHANT",
+            calculatedAt,
+          });
+      }
+      const feeQuotes = {
+        ...(fees ? { CURRENT: fees } : {}),
+        ...(conservativeFees ? { CONSERVATIVE: conservativeFees } : {}),
+        ...(stressFees ? { STRESS: stressFees } : {}),
+        ...(userEnteredFees ? { USER_ENTERED: userEnteredFees } : {}),
+      };
       const demandEvidenceSufficient =
         historyObservationCount(history) >=
         run.financialPolicy.minimumDemandScore;
@@ -338,6 +434,7 @@ export async function processProfitCalculation(runId: string) {
         current,
         conservative,
         fees,
+        feeQuotes,
         eligibility,
         brandPolicy,
         packGuard,
@@ -391,9 +488,7 @@ export async function processProfitCalculation(runId: string) {
               minRoiPercent: run.financialPolicy.minRoiPercent.toString(),
               minMarginPercent: run.financialPolicy.minMarginPercent.toString(),
               maxStressLoss: run.financialPolicy.maxStressLoss.toString(),
-              stressDiscountPercent:
-                override?.stressDiscountPercent?.toString() ??
-                run.financialPolicy.stressDiscountPercent.toString(),
+              stressDiscountPercent,
             },
             override: override
               ? {
@@ -428,11 +523,10 @@ export async function processProfitCalculation(runId: string) {
         current,
         conservative,
         feeQuote: fees,
+        feeQuotes,
         costs: overriddenCosts,
         ...(userEntered ? { userEntered } : {}),
-        stressDiscountPercent:
-          override?.stressDiscountPercent?.toString() ??
-          run.financialPolicy.stressDiscountPercent.toString(),
+        stressDiscountPercent,
         calculatedAt,
       });
       const decision = decide({
