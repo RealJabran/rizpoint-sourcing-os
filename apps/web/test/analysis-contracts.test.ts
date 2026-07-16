@@ -21,6 +21,18 @@ describe("analysis workspace contracts", () => {
     expect(
       analysisQuerySchema.safeParse({ maxRoiPercent: "-0.01" }).success,
     ).toBe(true);
+    expect(
+      analysisQuerySchema.safeParse({
+        featuredOfferState: "PRESENT",
+        amazonRetailPresence: "UNKNOWN",
+        pricingCompleteness: "PARTIAL",
+        minFbaOfferCount: "1",
+        maxFbmOfferCount: "4",
+      }).success,
+    ).toBe(true);
+    expect(
+      analysisQuerySchema.safeParse({ minFbaOfferCount: "-1" }).success,
+    ).toBe(false);
   });
 
   it("keeps saved views versioned and financial edits Decimal-only", () => {

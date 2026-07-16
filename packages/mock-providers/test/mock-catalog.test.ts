@@ -47,3 +47,33 @@ it("returns provenance-bearing enrichment fixtures", async () => {
   expect(fees.value.quotedPrice).toBe("10.00");
   expect(restrictions.value.status).toBe("ALLOWED");
 });
+
+it("keeps deterministic offer presence and unknown states distinct", async () => {
+  const provider = new MockAmazonProvider();
+  const marketplace = {
+    marketplaceId: "ATVPDKIKX0DER",
+    region: "NA" as const,
+  };
+  const observations = await provider.getCompetitivePricingBatch(
+    ["B000000001", "B000000002", "B000000003"],
+    marketplace,
+  );
+  const pricing = observations.flatMap((item) =>
+    item.status === "SUCCESS" ? [item.pricing] : [],
+  );
+  expect(pricing.map((item) => item.value.featuredOfferState)).toEqual([
+    "PRESENT",
+    "ABSENT",
+    "UNKNOWN",
+  ]);
+  expect(pricing.map((item) => item.value.amazonRetailPresence)).toEqual([
+    "PRESENT",
+    "ABSENT",
+    "UNKNOWN",
+  ]);
+  expect(pricing[0]?.value.fbaVisibleOffers).toEqual({
+    value: 2,
+    completeness: "COMPLETE",
+  });
+  expect(pricing[2]?.value.completeness).toBe("PARTIAL");
+});

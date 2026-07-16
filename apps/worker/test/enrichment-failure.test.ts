@@ -49,7 +49,18 @@ describe("enrichment provider setup failures", () => {
     expect(mocks.recordProviderCallAttempt).toHaveBeenCalledTimes(5);
     expect(mocks.persistEnrichmentItem).toHaveBeenCalledWith({
       enrichmentItemId: "item-1",
-      observations: [],
+      observations: [
+        expect.objectContaining({
+          metricType: "PRICING",
+          operation: "getCompetitiveSummary",
+          observationStatus: "UNAUTHORIZED",
+          featuredOfferState: "UNKNOWN",
+          amazonRetailPresence: "UNKNOWN",
+          visibleOfferCountCompleteness: "UNKNOWN",
+          fbaOfferCountCompleteness: "UNKNOWN",
+          fbmOfferCountCompleteness: "UNKNOWN",
+        }),
+      ],
       missingMetrics: [
         "CATALOG_UNAUTHORIZED",
         "PRICING_UNAUTHORIZED",

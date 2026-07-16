@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PHASE_ZERO_ORGANIZATION_SLUG,
   isProfitVerifiedMatch,
+  shouldReplaceProviderObservation,
   shouldPromoteProfitResult,
 } from "../src/repositories.js";
 import {
@@ -83,5 +84,43 @@ describe("database policy", () => {
     expect(schema).toContain(
       "@@unique([organizationId, enrichmentRunId, provider, operation, requestKey, attempt])",
     );
+  });
+
+  it("never lets an older pricing retry replace a newer observation", () => {
+    const current = new Date("2026-07-18T12:00:00.000Z");
+    expect(
+      shouldReplaceProviderObservation(
+        current,
+        new Date("2026-07-18T11:59:59.999Z"),
+      ),
+    ).toBe(false);
+    expect(shouldReplaceProviderObservation(current, current)).toBe(true);
+    expect(
+      shouldReplaceProviderObservation(
+        current,
+        new Date("2026-07-18T12:00:00.001Z"),
+      ),
+    ).toBe(true);
+  });
+
+  it("uses one typed provider observation per item, metric, and provider", async () => {
+    const schema = await readFile(
+      new URL("../prisma/schema.prisma", import.meta.url),
+      "utf8",
+    );
+    expect(schema).toContain(
+      "@@unique([enrichmentItemId, metricType, provider])",
+    );
+    for (const field of [
+      "featuredOfferState",
+      "amazonRetailPresence",
+      "visibleOfferCountCompleteness",
+      "fbaOfferCountCompleteness",
+      "fbmOfferCountCompleteness",
+      "rawEvidenceReference",
+      "rawEvidence",
+      "requestHash",
+    ])
+      expect(schema).toContain(field);
   });
 });

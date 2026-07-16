@@ -5,6 +5,7 @@ import type {
   CatalogProduct,
   CatalogProvider,
   CompetitivePricing,
+  CompetitivePricingBatchResult,
   CurrentOffers,
   FeeEstimate,
   FeeEstimateRequest,
@@ -18,7 +19,10 @@ import type {
   RestrictionProvider,
   Restrictions,
 } from "@rizpoint/provider-contracts";
-import { catalogProductSchema } from "@rizpoint/provider-contracts";
+import {
+  catalogProductSchema,
+  ProviderError,
+} from "@rizpoint/provider-contracts";
 
 const observedAt = () => new Date().toISOString();
 
@@ -157,33 +161,109 @@ export class MockAmazonProvider
 
   async getCompetitivePricing(
     asin: string,
-    _marketplace: MarketplaceContext,
+    marketplace: MarketplaceContext,
   ): Promise<CompetitivePricing> {
-    void _marketplace;
+    const state =
+      asin === "B000000001"
+        ? ("PRESENT" as const)
+        : asin === "B000000002"
+          ? ("ABSENT" as const)
+          : ("UNKNOWN" as const);
+    const featuredPrice = asin === "B000000001" ? "18.99" : undefined;
     return {
       value: {
+        operation: "getCompetitiveSummary",
+        asin,
+        marketplaceId: marketplace.marketplaceId,
         currency: "USD",
-        buyBoxPrice: asin === "B000000001" ? "18.99" : "22.99",
+        ...(featuredPrice ? { buyBoxPrice: featuredPrice } : {}),
         lowestPrice: asin === "B000000001" ? "17.99" : "21.99",
         offerCount: 4,
-        featuredOfferState: "PRESENT",
-        completeness: "COMPLETE",
+        featuredOfferState: state,
+        ...(featuredPrice
+          ? {
+              featuredOffer: {
+                sellerId: "mock-featured-seller",
+                condition: "New",
+                fulfillmentChannel: "MERCHANT" as const,
+                listingPrice: featuredPrice,
+                shippingPrice: "0.00",
+                landedPrice: featuredPrice,
+                currency: "USD",
+                memberships: ["DEFAULT" as const],
+                isFeatured: true,
+              },
+            }
+          : {}),
+        completeness: state === "UNKNOWN" ? "PARTIAL" : "COMPLETE",
+        totalVisibleOffers: { value: 4, completeness: "COMPLETE" },
+        fbaVisibleOffers: { value: 2, completeness: "COMPLETE" },
+        fbmVisibleOffers: { value: 2, completeness: "COMPLETE" },
         visibleOfferCount: 4,
         fbaOfferCount: 2,
         fbmOfferCount: 2,
-        amazonRetailPresence: "UNKNOWN",
+        amazonRetailPresence:
+          asin === "B000000001"
+            ? "PRESENT"
+            : asin === "B000000002"
+              ? "ABSENT"
+              : "UNKNOWN",
         brandSellerStatus: "UNKNOWN",
         lowestFbaPrice: asin === "B000000001" ? "17.99" : "21.99",
         lowestFbmPrice: asin === "B000000001" ? "18.49" : "22.49",
-        offers: [],
+        offers: [
+          {
+            sellerId: "mock-fba-seller",
+            condition: "New",
+            fulfillmentChannel: "AMAZON",
+            listingPrice: asin === "B000000001" ? "17.99" : "21.99",
+            shippingPrice: "0.00",
+            landedPrice: asin === "B000000001" ? "17.99" : "21.99",
+            currency: "USD",
+            memberships: [],
+            isFeatured: false,
+          },
+          {
+            sellerId: "mock-fbm-seller",
+            condition: "New",
+            fulfillmentChannel: "MERCHANT",
+            listingPrice: asin === "B000000001" ? "18.49" : "22.49",
+            shippingPrice: "0.00",
+            landedPrice: asin === "B000000001" ? "18.49" : "22.49",
+            currency: "USD",
+            memberships: [],
+            isFeatured: false,
+          },
+        ],
       },
       provenance: {
         provider: "mock-amazon",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
+        marketplaceId: marketplace.marketplaceId,
+        responseCompleteness: state === "UNKNOWN" ? "PARTIAL" : "COMPLETE",
       },
     };
+  }
+
+  async getCompetitivePricingBatch(
+    asins: readonly string[],
+    marketplace: MarketplaceContext,
+  ): Promise<readonly CompetitivePricingBatchResult[]> {
+    if (
+      asins.length < 1 ||
+      asins.length > 20 ||
+      new Set(asins).size !== asins.length
+    )
+      throw new ProviderError("INVALID_REQUEST");
+    return Promise.all(
+      asins.map(async (asin) => ({
+        asin,
+        status: "SUCCESS" as const,
+        pricing: await this.getCompetitivePricing(asin, marketplace),
+      })),
+    );
   }
 
   async estimateFees(request: FeeEstimateRequest): Promise<FeeEstimate> {

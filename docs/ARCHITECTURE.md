@@ -61,8 +61,20 @@ endpoints. It exchanges an encrypted long-lived refresh token for a short-lived
 LWA access token in worker memory, using a single-flight cache. The first
 server-only connection probe is a non-destructive Sellers
 `getMarketplaceParticipations` request; live catalog and pricing operations are
-not part of that connectivity slice. Public status DTOs expose only a normalized
+separate typed provider capabilities. Public status DTOs expose only a normalized
 state and timestamp, never credentials or provider payloads.
+
+Competitive pricing uses Product Pricing v2022-05-01
+`getCompetitiveSummary` in batches of at most 20 unique marketplace/ASIN keys.
+Requests explicitly ask for featured buying options and New/Consumer lowest
+priced offers. Returned lowest offers are a bounded provider sample, so total,
+FBA, and FBM counts are `PARTIAL` rather than whole-market totals. FBA describes
+fulfillment only; Amazon Retail is `PRESENT` only through a verified,
+marketplace-specific seller identity policy and otherwise remains `UNKNOWN`.
+The worker checkpoints one typed observation per item/metric/provider, reuses
+fresh observations on retry, refreshes stale observations, and rejects older
+retry observations. Authorization, throttle, partial, retryable, terminal, and
+unavailable states are persisted without false zero/absent values.
 
 The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Redis, and the scanner are reachable.
 

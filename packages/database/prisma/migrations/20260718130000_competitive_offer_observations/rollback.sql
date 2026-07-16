@@ -1,0 +1,29 @@
+DROP INDEX IF EXISTS "provider_observations_metric_type_amazon_retail_presence_idx";
+DROP INDEX IF EXISTS "provider_observations_metric_type_featured_offer_state_idx";
+ALTER TABLE "provider_observations"
+  DROP COLUMN IF EXISTS "lowest_fbm_price",
+  DROP COLUMN IF EXISTS "lowest_fba_price",
+  DROP COLUMN IF EXISTS "fbm_offer_count_completeness",
+  DROP COLUMN IF EXISTS "fbm_offer_count",
+  DROP COLUMN IF EXISTS "fba_offer_count_completeness",
+  DROP COLUMN IF EXISTS "fba_offer_count",
+  DROP COLUMN IF EXISTS "visible_offer_count_completeness",
+  DROP COLUMN IF EXISTS "visible_offer_count",
+  DROP COLUMN IF EXISTS "amazon_retail_presence",
+  DROP COLUMN IF EXISTS "featured_seller_id",
+  DROP COLUMN IF EXISTS "featured_fulfillment",
+  DROP COLUMN IF EXISTS "featured_currency",
+  DROP COLUMN IF EXISTS "featured_price",
+  DROP COLUMN IF EXISTS "featured_offer_state",
+  DROP COLUMN IF EXISTS "asin",
+  DROP COLUMN IF EXISTS "raw_evidence_reference",
+  DROP COLUMN IF EXISTS "completeness",
+  DROP COLUMN IF EXISTS "request_inputs",
+  DROP COLUMN IF EXISTS "request_hash",
+  DROP COLUMN IF EXISTS "observation_status",
+  DROP COLUMN IF EXISTS "operation";
+
+DROP TYPE IF EXISTS "OfferFulfillmentChannel";
+DROP TYPE IF EXISTS "OfferCompleteness";
+DROP TYPE IF EXISTS "OfferPresence";
+DROP TYPE IF EXISTS "ProviderObservationStatus";

@@ -8,6 +8,7 @@ import {
   type CatalogProduct,
   type CatalogProvider,
   type CompetitivePricing,
+  type CompetitivePricingBatchResult,
   type CurrentOffers,
   type FeeEstimate,
   type FeeEstimateRequest,
@@ -28,6 +29,7 @@ import {
   testSpApiConnection,
   type AccessTokenSupplier,
   type SpApiConfig,
+  type SpApiResponse,
 } from "./connectivity.js";
 
 export * from "./connectivity.js";
@@ -101,6 +103,9 @@ export class AmazonSpApiProvider
     ProviderHealthProvider
 {
   private readonly transport: SpApiTransport;
+  private pricingRateLimitPerSecond = 0.033;
+  private nextPricingRequestAt = 0;
+  private pricingQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly config: SpApiConfig,
@@ -112,8 +117,14 @@ export class AmazonSpApiProvider
   private async request(
     path: string,
     init: RequestInit = {},
-  ): Promise<{ body: unknown; observedAt: string; requestId?: string }> {
+  ): Promise<SpApiResponse> {
     return this.transport.request(path, init);
+  }
+
+  private async waitForPricingCapacity(): Promise<void> {
+    const delay = this.nextPricingRequestAt - Date.now();
+    if (delay > 0)
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
   }
 
   private catalogPath(query: Record<string, string>): string {
@@ -412,15 +423,17 @@ export class AmazonSpApiProvider
   ): Promise<CurrentOffers> {
     const pricing = await this.getCompetitivePricing(asin, marketplace);
     return currentOffersSchema.parse({
-      value: pricing.value.lowestPrice
-        ? [
-            {
-              sellerId: "amazon-aggregate",
-              price: pricing.value.lowestPrice,
-              currency: pricing.value.currency,
-            },
-          ]
-        : [],
+      value: pricing.value.offers.flatMap((offer) =>
+        offer.sellerId && offer.landedPrice && offer.currency
+          ? [
+              {
+                sellerId: offer.sellerId,
+                price: offer.landedPrice,
+                currency: offer.currency,
+              },
+            ]
+          : [],
+      ),
       provenance: pricing.provenance,
     });
   }
@@ -429,34 +442,126 @@ export class AmazonSpApiProvider
     asin: string,
     marketplace: MarketplaceContext,
   ): Promise<CompetitivePricing> {
-    const result = await this.request(
-      "/batches/products/pricing/2022-05-01/items/competitiveSummary",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          requests: [
-            {
+    const [result] = await this.getCompetitivePricingBatch([asin], marketplace);
+    if (!result) throw new ProviderError("INVALID_RESPONSE");
+    if (result.status === "ERROR")
+      throw new ProviderError(result.error.code, result.error);
+    return result.pricing;
+  }
+
+  async getCompetitivePricingBatch(
+    asins: readonly string[],
+    marketplace: MarketplaceContext,
+  ): Promise<readonly CompetitivePricingBatchResult[]> {
+    const uniqueAsins = [...new Set(asins)];
+    if (
+      uniqueAsins.length !== asins.length ||
+      uniqueAsins.length < 1 ||
+      uniqueAsins.length > 20 ||
+      uniqueAsins.some((asin) => !/^B[A-Z0-9]{9}$/.test(asin))
+    )
+      throw new ProviderError("INVALID_REQUEST");
+    const previous = this.pricingQueue;
+    let releaseQueue!: () => void;
+    this.pricingQueue = new Promise<void>((resolve) => {
+      releaseQueue = resolve;
+    });
+    await previous;
+    let result: SpApiResponse;
+    try {
+      await this.waitForPricingCapacity();
+      result = await this.request(
+        "/batches/products/pricing/2022-05-01/items/competitiveSummary",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            requests: uniqueAsins.map((asin) => ({
               asin,
               marketplaceId: marketplace.marketplaceId,
               method: "GET",
               uri: `/products/pricing/2022-05-01/items/${asin}/competitiveSummary`,
               includedData: ["featuredBuyingOptions", "lowestPricedOffers"],
-            },
-          ],
-        }),
-      },
-    );
+              lowestPricedOffersInputs: [
+                { itemCondition: "New", offerType: "Consumer" },
+              ],
+            })),
+          }),
+        },
+      );
+      if (
+        result.rateLimitPerSecond !== undefined &&
+        result.rateLimitPerSecond > 0
+      )
+        this.pricingRateLimitPerSecond = result.rateLimitPerSecond;
+      this.nextPricingRequestAt =
+        Date.now() + Math.ceil(1_000 / this.pricingRateLimitPerSecond);
+    } finally {
+      releaseQueue();
+    }
     const body = result.body as {
-      responses?: Array<{ body?: { payload?: Record<string, unknown> } }>;
+      responses?: Array<{
+        status?: { statusCode?: number };
+        body?: Record<string, unknown>;
+      }>;
     };
-    const payload = body.responses?.[0]?.body?.payload ?? {};
-    const offers = Array.isArray(payload.lowestPricedOffers)
-      ? (payload.lowestPricedOffers as Array<Record<string, unknown>>)
-      : [];
-    const featured = Array.isArray(payload.featuredBuyingOptions)
-      ? (payload.featuredBuyingOptions as Array<Record<string, unknown>>)
-      : [];
+    const responses = body.responses;
+    if (!Array.isArray(responses) || responses.length !== uniqueAsins.length)
+      throw new ProviderError("INVALID_RESPONSE");
+    return uniqueAsins.map((asin, index) => {
+      const response =
+        responses.find((candidate) => candidate.body?.asin === asin) ??
+        responses[index];
+      if (!response) throw new ProviderError("INVALID_RESPONSE");
+      try {
+        return {
+          asin,
+          status: "SUCCESS" as const,
+          pricing: this.parseCompetitivePricingResponse(
+            asin,
+            marketplace,
+            response,
+            result,
+          ),
+        };
+      } catch (error) {
+        const providerError =
+          error instanceof ProviderError
+            ? error
+            : new ProviderError("INVALID_RESPONSE");
+        return {
+          asin,
+          status: "ERROR" as const,
+          error: { code: providerError.code, ...providerError.options },
+        };
+      }
+    });
+  }
+
+  private parseCompetitivePricingResponse(
+    asin: string,
+    marketplace: MarketplaceContext,
+    response: {
+      status?: { statusCode?: number };
+      body?: Record<string, unknown>;
+    },
+    result: SpApiResponse,
+  ): CompetitivePricing {
+    const statusCode = response?.status?.statusCode;
+    if (statusCode && statusCode !== 200) {
+      const code =
+        statusCode === 401
+          ? "UNAUTHORIZED"
+          : statusCode === 403
+            ? "FORBIDDEN"
+            : statusCode === 429
+              ? "THROTTLED"
+              : statusCode >= 500
+                ? "PROVIDER_OUTAGE"
+                : "INVALID_RESPONSE";
+      throw new ProviderError(code, { httpStatus: statusCode });
+    }
+    const payload = response?.body ?? {};
     const money = (value: unknown): { amount?: string; currency?: string } => {
       const record = value as
         { amount?: unknown; currencyCode?: unknown } | undefined;
@@ -470,10 +575,42 @@ export class AmazonSpApiProvider
           }
         : {};
     };
-    const normalized = offers.map((offer) => {
+    const addMoney = (left?: string, right?: string): string | undefined => {
+      if (!left) return undefined;
+      if (!right) return left;
+      const parts = [left, right].map((value) => {
+        const [whole = "0", fraction = ""] = value.split(".");
+        return { whole, fraction };
+      });
+      const scale = Math.max(...parts.map(({ fraction }) => fraction.length));
+      const integers = parts.map(({ whole, fraction }) =>
+        BigInt(`${whole}${fraction.padEnd(scale, "0")}`),
+      );
+      const total = integers[0]! + integers[1]!;
+      if (scale === 0) return total.toString();
+      const padded = total.toString().padStart(scale + 1, "0");
+      return `${padded.slice(0, -scale)}.${padded.slice(-scale)}`;
+    };
+    const normalizeOffer = (
+      offer: Record<string, unknown>,
+      isFeatured: boolean,
+    ) => {
       const listing = money(offer.listingPrice);
-      const shipping = money(offer.shippingPrice);
-      const landed = money(offer.landedPrice);
+      const shippingOptions = Array.isArray(offer.shippingOptions)
+        ? (offer.shippingOptions as Array<Record<string, unknown>>)
+        : [];
+      const preferredShipping =
+        shippingOptions.find(
+          (option) => option.shippingOptionType === "DEFAULT",
+        ) ?? shippingOptions[0];
+      const shipping = money(preferredShipping?.price);
+      const sameCurrency =
+        !shipping.currency ||
+        !listing.currency ||
+        shipping.currency === listing.currency;
+      const landedAmount = sameCurrency
+        ? addMoney(listing.amount, shipping.amount)
+        : undefined;
       const fulfillment =
         typeof offer.fulfillmentType === "string"
           ? offer.fulfillmentType === "AFN"
@@ -482,6 +619,9 @@ export class AmazonSpApiProvider
               ? "MERCHANT"
               : "UNKNOWN"
           : "UNKNOWN";
+      const segments = Array.isArray(offer.featuredOfferSegments)
+        ? (offer.featuredOfferSegments as Array<Record<string, unknown>>)
+        : [];
       return {
         ...(typeof offer.sellerId === "string"
           ? { sellerId: offer.sellerId }
@@ -492,12 +632,56 @@ export class AmazonSpApiProvider
         fulfillmentChannel: fulfillment,
         ...(listing.amount ? { listingPrice: listing.amount } : {}),
         ...(shipping.amount ? { shippingPrice: shipping.amount } : {}),
-        ...(landed.amount ? { landedPrice: landed.amount } : {}),
-        ...((listing.currency ?? landed.currency)
-          ? { currency: listing.currency ?? landed.currency }
-          : {}),
+        ...(landedAmount ? { landedPrice: landedAmount } : {}),
+        ...(listing.currency ? { currency: listing.currency } : {}),
+        memberships: segments.flatMap<"PRIME" | "NON_PRIME" | "DEFAULT">(
+          (segment) => {
+            const membership = segment.customerMembership;
+            return membership === "PRIME" ||
+              membership === "NON_PRIME" ||
+              membership === "DEFAULT"
+              ? [membership]
+              : [];
+          },
+        ),
+        isFeatured,
+        _currencyMismatch: !sameCurrency,
       } as const;
-    });
+    };
+    const featuredOptions = Array.isArray(payload.featuredBuyingOptions)
+      ? (payload.featuredBuyingOptions as Array<Record<string, unknown>>)
+      : null;
+    const featured =
+      featuredOptions?.flatMap((option) =>
+        Array.isArray(option.segmentedFeaturedOffers)
+          ? (option.segmentedFeaturedOffers as Array<Record<string, unknown>>)
+          : [],
+      ) ?? [];
+    const lowestGroups = Array.isArray(payload.lowestPricedOffers)
+      ? (payload.lowestPricedOffers as Array<Record<string, unknown>>)
+      : null;
+    const lowestOffers =
+      lowestGroups?.flatMap((group) =>
+        Array.isArray(group.offers)
+          ? (group.offers as Array<Record<string, unknown>>)
+          : [],
+      ) ?? [];
+    const normalizedFeatured = featured.map((offer) =>
+      normalizeOffer(offer, true),
+    );
+    const normalizedLowest = lowestOffers.map((offer) =>
+      normalizeOffer(offer, false),
+    );
+    const normalized = [...normalizedFeatured, ...normalizedLowest].filter(
+      (offer, index, values) =>
+        values.findIndex(
+          (candidate) =>
+            candidate.sellerId === offer.sellerId &&
+            candidate.fulfillmentChannel === offer.fulfillmentChannel &&
+            candidate.landedPrice === offer.landedPrice &&
+            candidate.isFeatured === offer.isFeatured,
+        ) === index,
+    );
     const values = (channel: "AMAZON" | "MERCHANT") =>
       normalized
         .filter((offer) => offer.fulfillmentChannel === channel)
@@ -506,21 +690,56 @@ export class AmazonSpApiProvider
             ? [offer.landedPrice ?? offer.listingPrice!]
             : [],
         );
-    const lowest = (values: readonly string[]) =>
-      [...values].sort((a: string, b: string) => Number(a) - Number(b))[0];
+    const decimalOrder = (left: string, right: string) => {
+      const normalize = (value: string) => {
+        const [whole = "0", fraction = ""] = value.split(".");
+        return { whole, fraction };
+      };
+      const a = normalize(left);
+      const b = normalize(right);
+      const scale = Math.max(a.fraction.length, b.fraction.length);
+      const ai = BigInt(`${a.whole}${a.fraction.padEnd(scale, "0")}`);
+      const bi = BigInt(`${b.whole}${b.fraction.padEnd(scale, "0")}`);
+      return ai < bi ? -1 : ai > bi ? 1 : 0;
+    };
+    const lowest = (priceValues: readonly string[]) =>
+      [...priceValues].sort(decimalOrder)[0];
+    if (
+      (typeof payload.asin === "string" && payload.asin !== asin) ||
+      (typeof payload.marketplaceId === "string" &&
+        payload.marketplaceId !== marketplace.marketplaceId)
+    )
+      throw new ProviderError("INVALID_RESPONSE");
     const complete =
-      Array.isArray(payload.lowestPricedOffers) &&
-      Array.isArray(payload.featuredBuyingOptions);
-    const featuredPrices = featured.flatMap((option) =>
-      money(option.landedPrice).amount ? [money(option.landedPrice)] : [],
+      featuredOptions !== null &&
+      lowestGroups !== null &&
+      !normalized.some((offer) => offer._currencyMismatch);
+    const featuredOffer =
+      normalizedFeatured.find((offer) =>
+        offer.memberships.includes("DEFAULT"),
+      ) ?? normalizedFeatured[0];
+    const countCompleteness = lowestGroups === null ? "UNKNOWN" : "PARTIAL";
+    const count = (offers: typeof normalizedLowest) => ({
+      ...(lowestGroups !== null ? { value: offers.length } : {}),
+      completeness: countCompleteness,
+    });
+    const fba = normalizedLowest.filter(
+      (offer) => offer.fulfillmentChannel === "AMAZON",
     );
-    const featuredPrice = featuredPrices[0];
+    const fbm = normalizedLowest.filter(
+      (offer) => offer.fulfillmentChannel === "MERCHANT",
+    );
     return competitivePricingSchema.parse({
       value: {
-        ...(featuredPrice?.currency
-          ? { currency: featuredPrice.currency }
+        operation: "getCompetitiveSummary",
+        asin,
+        marketplaceId: marketplace.marketplaceId,
+        ...(featuredOffer?.currency
+          ? { currency: featuredOffer.currency }
           : {}),
-        ...(featuredPrice?.amount ? { buyBoxPrice: featuredPrice.amount } : {}),
+        ...(featuredOffer?.landedPrice
+          ? { buyBoxPrice: featuredOffer.landedPrice }
+          : {}),
         ...(lowest(
           normalized.flatMap((offer) =>
             (offer.landedPrice ?? offer.listingPrice)
@@ -538,28 +757,28 @@ export class AmazonSpApiProvider
               ),
             }
           : {}),
-        featuredOfferState: featured.length
+        featuredOfferState: normalizedFeatured.length
           ? "PRESENT"
-          : complete
-            ? "NONE"
+          : featuredOptions !== null
+            ? "ABSENT"
             : "UNKNOWN",
+        ...(featuredOffer ? { featuredOffer } : {}),
         completeness: complete ? "COMPLETE" : "PARTIAL",
-        ...(complete
-          ? { visibleOfferCount: offers.length, offerCount: offers.length }
-          : {}),
-        ...(complete
+        totalVisibleOffers: count(normalizedLowest),
+        fbaVisibleOffers: count(fba),
+        fbmVisibleOffers: count(fbm),
+        ...(lowestGroups !== null
           ? {
-              fbaOfferCount: normalized.filter(
-                (offer) => offer.fulfillmentChannel === "AMAZON",
-              ).length,
-              fbmOfferCount: normalized.filter(
-                (offer) => offer.fulfillmentChannel === "MERCHANT",
-              ).length,
+              visibleOfferCount: normalizedLowest.length,
+              offerCount: normalizedLowest.length,
+              fbaOfferCount: fba.length,
+              fbmOfferCount: fbm.length,
             }
           : {}),
         amazonRetailPresence: amazonRetailPresence(
           marketplace.marketplaceId,
           normalized.map((offer) => offer.sellerId),
+          countCompleteness,
         ),
         brandSellerStatus: "UNKNOWN",
         ...(lowest(values("AMAZON"))
@@ -578,6 +797,10 @@ export class AmazonSpApiProvider
         marketplaceId: marketplace.marketplaceId,
         requestId: result.requestId,
         responseCompleteness: complete ? "COMPLETE" : "PARTIAL",
+      },
+      rawProviderObservation: {
+        status: response.status,
+        body: response.body,
       },
     });
   }

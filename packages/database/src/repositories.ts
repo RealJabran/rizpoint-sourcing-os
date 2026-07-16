@@ -1613,6 +1613,35 @@ export async function persistEnrichmentItem(input: {
     secondaryAmount?: string;
     quotedPrice?: string;
     currency?: string;
+    operation?: string;
+    observationStatus?:
+      | "SUCCESS"
+      | "PARTIAL"
+      | "UNAUTHORIZED"
+      | "THROTTLED"
+      | "RETRYABLE_FAILURE"
+      | "TERMINAL_FAILURE"
+      | "UNAVAILABLE";
+    requestHash?: string;
+    requestInputs?: Prisma.InputJsonValue;
+    completeness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    rawEvidenceReference?: string;
+    rawEvidence?: Prisma.InputJsonValue;
+    asin?: string;
+    featuredOfferState?: "PRESENT" | "ABSENT" | "UNKNOWN";
+    featuredPrice?: string;
+    featuredCurrency?: string;
+    featuredFulfillment?: "AMAZON" | "MERCHANT" | "UNKNOWN";
+    featuredSellerId?: string;
+    amazonRetailPresence?: "PRESENT" | "ABSENT" | "UNKNOWN";
+    visibleOfferCount?: number;
+    visibleOfferCountCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    fbaOfferCount?: number;
+    fbaOfferCountCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    fbmOfferCount?: number;
+    fbmOfferCountCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    lowestFbaPrice?: string;
+    lowestFbmPrice?: string;
   }>;
   missingMetrics: string[];
   errorCode?: string;
@@ -1632,7 +1661,10 @@ export async function persistEnrichmentItem(input: {
       // A delayed retry must not regress current market evidence.
       if (
         current &&
-        current.observedAt.getTime() > observation.observedAt.getTime()
+        !shouldReplaceProviderObservation(
+          current.observedAt,
+          observation.observedAt,
+        )
       )
         continue;
       await transaction.providerObservation.upsert({
@@ -1660,6 +1692,16 @@ export async function persistEnrichmentItem(input: {
       },
     });
   });
+}
+
+export function shouldReplaceProviderObservation(
+  currentObservedAt: Date | null,
+  incomingObservedAt: Date,
+): boolean {
+  return (
+    currentObservedAt === null ||
+    incomingObservedAt.getTime() >= currentObservedAt.getTime()
+  );
 }
 
 export async function completeEnrichmentRun(enrichmentRunId: string) {
@@ -2262,6 +2304,13 @@ type AnalysisFilters = {
   minRoiPercent?: string | undefined;
   maxRoiPercent?: string | undefined;
   status?: "COMPLETED" | "PARTIAL_SUCCESS" | undefined;
+  featuredOfferState?: "PRESENT" | "ABSENT" | "UNKNOWN" | undefined;
+  amazonRetailPresence?: "PRESENT" | "ABSENT" | "UNKNOWN" | undefined;
+  pricingCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN" | undefined;
+  minFbaOfferCount?: number | undefined;
+  maxFbaOfferCount?: number | undefined;
+  minFbmOfferCount?: number | undefined;
+  maxFbmOfferCount?: number | undefined;
 };
 
 type AnalysisSort =
@@ -2279,6 +2328,14 @@ function analysisWhere(
   filters: AnalysisFilters,
 ): Prisma.ProfitResultWhereInput {
   const search = filters.search?.trim();
+  const hasPricingFilter =
+    filters.featuredOfferState !== undefined ||
+    filters.amazonRetailPresence !== undefined ||
+    filters.pricingCompleteness !== undefined ||
+    filters.minFbaOfferCount !== undefined ||
+    filters.maxFbaOfferCount !== undefined ||
+    filters.minFbmOfferCount !== undefined ||
+    filters.maxFbmOfferCount !== undefined;
   return {
     organizationId,
     scanJobId,
@@ -2293,6 +2350,58 @@ function analysisWhere(
       : {}),
     ...(filters.maxRoiPercent
       ? { roiPercent: { lte: filters.maxRoiPercent } }
+      : {}),
+    ...(hasPricingFilter
+      ? {
+          supplierRow: {
+            enrichmentItems: {
+              some: {
+                observations: {
+                  some: {
+                    metricType: "PRICING",
+                    ...(filters.featuredOfferState
+                      ? { featuredOfferState: filters.featuredOfferState }
+                      : {}),
+                    ...(filters.amazonRetailPresence
+                      ? {
+                          amazonRetailPresence: filters.amazonRetailPresence,
+                        }
+                      : {}),
+                    ...(filters.pricingCompleteness
+                      ? { completeness: filters.pricingCompleteness }
+                      : {}),
+                    ...(filters.minFbaOfferCount !== undefined ||
+                    filters.maxFbaOfferCount !== undefined
+                      ? {
+                          fbaOfferCount: {
+                            ...(filters.minFbaOfferCount !== undefined
+                              ? { gte: filters.minFbaOfferCount }
+                              : {}),
+                            ...(filters.maxFbaOfferCount !== undefined
+                              ? { lte: filters.maxFbaOfferCount }
+                              : {}),
+                          },
+                        }
+                      : {}),
+                    ...(filters.minFbmOfferCount !== undefined ||
+                    filters.maxFbmOfferCount !== undefined
+                      ? {
+                          fbmOfferCount: {
+                            ...(filters.minFbmOfferCount !== undefined
+                              ? { gte: filters.minFbmOfferCount }
+                              : {}),
+                            ...(filters.maxFbmOfferCount !== undefined
+                              ? { lte: filters.maxFbmOfferCount }
+                              : {}),
+                          },
+                        }
+                      : {}),
+                  },
+                },
+              },
+            },
+          },
+        }
       : {}),
     ...(search
       ? {
@@ -2530,6 +2639,27 @@ export async function listAnalysisResults(input: {
                     primaryAmount: true,
                     currency: true,
                     payload: true,
+                    operation: true,
+                    observationStatus: true,
+                    requestHash: true,
+                    completeness: true,
+                    rawEvidenceReference: true,
+                    asin: true,
+                    marketplaceId: true,
+                    featuredOfferState: true,
+                    featuredPrice: true,
+                    featuredCurrency: true,
+                    featuredFulfillment: true,
+                    featuredSellerId: true,
+                    amazonRetailPresence: true,
+                    visibleOfferCount: true,
+                    visibleOfferCountCompleteness: true,
+                    fbaOfferCount: true,
+                    fbaOfferCountCompleteness: true,
+                    fbmOfferCount: true,
+                    fbmOfferCountCompleteness: true,
+                    lowestFbaPrice: true,
+                    lowestFbmPrice: true,
                   },
                 },
               },
@@ -2586,6 +2716,11 @@ export async function listAnalysisResults(input: {
             : null,
       };
     };
+    const pricing = observations
+      .filter((candidate) => candidate.metricType === "PRICING")
+      .sort(
+        (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
+      )[0];
     const { enrichmentItems, ...supplierRow } = row.supplierRow;
     void enrichmentItems;
     return {
@@ -2596,6 +2731,45 @@ export async function listAnalysisResults(input: {
         fees: external("FEES"),
         restrictions: external("RESTRICTIONS"),
       },
+      offerIntelligence: pricing
+        ? {
+            asin: pricing.asin,
+            marketplaceId: pricing.marketplaceId,
+            provider: pricing.provider,
+            operation: pricing.operation,
+            status: pricing.observationStatus,
+            observedAt: pricing.observedAt.toISOString(),
+            expiresAt: pricing.freshUntil.toISOString(),
+            freshnessState: pricing.freshnessState,
+            requestHash: pricing.requestHash,
+            completeness: pricing.completeness,
+            rawEvidenceReference: pricing.rawEvidenceReference,
+            featuredOffer: {
+              state: pricing.featuredOfferState,
+              price: pricing.featuredPrice?.toString() ?? null,
+              currency: pricing.featuredCurrency,
+              fulfillmentChannel: pricing.featuredFulfillment,
+              sellerId: pricing.featuredSellerId,
+            },
+            amazonRetailPresence: pricing.amazonRetailPresence,
+            counts: {
+              total: {
+                value: pricing.visibleOfferCount,
+                completeness: pricing.visibleOfferCountCompleteness,
+              },
+              fba: {
+                value: pricing.fbaOfferCount,
+                completeness: pricing.fbaOfferCountCompleteness,
+              },
+              fbm: {
+                value: pricing.fbmOfferCount,
+                completeness: pricing.fbmOfferCountCompleteness,
+              },
+            },
+            lowestFbaPrice: pricing.lowestFbaPrice?.toString() ?? null,
+            lowestFbmPrice: pricing.lowestFbmPrice?.toString() ?? null,
+          }
+        : null,
     };
   });
   return {

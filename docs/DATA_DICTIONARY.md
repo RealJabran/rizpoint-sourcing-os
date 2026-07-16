@@ -52,6 +52,16 @@
 
 Every catalog, price, fee, restriction, or history observation must carry `provider`, `observed_at`, `freshness_state`, and the relevant provider reference. Cached or stale values may be displayed only with their freshness state.
 
+`ProviderObservation` is unique by enrichment item, metric, and provider. A
+competitive-pricing observation additionally stores the operation, ASIN,
+marketplace, request hash and non-secret inputs, status, completeness, private
+raw-evidence reference, featured-offer state and typed price fields, Amazon
+Retail presence, total/FBA/FBM visible-offer counts with independent
+`COMPLETE`/`PARTIAL`/`UNKNOWN` semantics, and lowest returned FBA/FBM prices.
+Price fields use `NUMERIC(18,4)`. Null means unavailable or unknown; it must not
+be serialized as zero or false. The private `raw_evidence` JSONB value is
+retained for audit; browser DTOs expose only its checksum reference.
+
 ## Money and ratios
 
 Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal libraries and explicit rounding policies. Binary floats are prohibited. Ratios are represented as Decimal values, not percentages stored as floats.

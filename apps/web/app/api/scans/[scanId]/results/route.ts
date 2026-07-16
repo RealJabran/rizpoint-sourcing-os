@@ -33,6 +33,13 @@ export async function GET(
       search: parsed.data.search,
       minRoiPercent: parsed.data.minRoiPercent,
       maxRoiPercent: parsed.data.maxRoiPercent,
+      featuredOfferState: parsed.data.featuredOfferState,
+      amazonRetailPresence: parsed.data.amazonRetailPresence,
+      pricingCompleteness: parsed.data.pricingCompleteness,
+      minFbaOfferCount: parsed.data.minFbaOfferCount,
+      maxFbaOfferCount: parsed.data.maxFbaOfferCount,
+      minFbmOfferCount: parsed.data.minFbmOfferCount,
+      maxFbmOfferCount: parsed.data.maxFbmOfferCount,
     },
   });
   return results

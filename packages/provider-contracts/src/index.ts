@@ -151,14 +151,43 @@ export const currentOffersSchema = observedMetricSchema(
 );
 export type CurrentOffers = z.infer<typeof currentOffersSchema>;
 
+export const offerPresenceSchema = z.enum(["PRESENT", "ABSENT", "UNKNOWN"]);
+export const offerCompletenessSchema = z.enum([
+  "COMPLETE",
+  "PARTIAL",
+  "UNKNOWN",
+]);
+export const offerCountSchema = z.object({
+  value: z.number().int().nonnegative().optional(),
+  completeness: offerCompletenessSchema,
+});
+export const competitiveOfferSchema = z.object({
+  sellerId: z.string().min(1).optional(),
+  condition: z.string().min(1).optional(),
+  fulfillmentChannel: z.enum(["AMAZON", "MERCHANT", "UNKNOWN"]),
+  listingPrice: decimalStringSchema.optional(),
+  shippingPrice: decimalStringSchema.optional(),
+  landedPrice: decimalStringSchema.optional(),
+  currency: z.string().length(3).optional(),
+  memberships: z.array(z.enum(["PRIME", "NON_PRIME", "DEFAULT"])).default([]),
+  isFeatured: z.boolean(),
+});
+
 export const competitivePricingSchema = observedMetricSchema(
   z.object({
     currency: z.string().length(3).optional(),
     buyBoxPrice: decimalStringSchema.optional(),
     lowestPrice: decimalStringSchema.optional(),
     offerCount: z.number().int().nonnegative().optional(),
-    featuredOfferState: z.enum(["PRESENT", "NONE", "UNKNOWN"]),
-    completeness: z.enum(["COMPLETE", "PARTIAL"]),
+    operation: z.literal("getCompetitiveSummary"),
+    asin: z.string().regex(/^B[A-Z0-9]{9}$/),
+    marketplaceId: z.string().min(1),
+    featuredOfferState: offerPresenceSchema,
+    featuredOffer: competitiveOfferSchema.optional(),
+    completeness: offerCompletenessSchema,
+    totalVisibleOffers: offerCountSchema,
+    fbaVisibleOffers: offerCountSchema,
+    fbmVisibleOffers: offerCountSchema,
     visibleOfferCount: z.number().int().nonnegative().optional(),
     fbaOfferCount: z.number().int().nonnegative().optional(),
     fbmOfferCount: z.number().int().nonnegative().optional(),
@@ -166,25 +195,27 @@ export const competitivePricingSchema = observedMetricSchema(
     brandSellerStatus: z.enum(["VERIFIED", "UNVERIFIED", "UNKNOWN"]),
     lowestFbaPrice: decimalStringSchema.optional(),
     lowestFbmPrice: decimalStringSchema.optional(),
-    offers: z
-      .array(
-        z.object({
-          sellerId: z.string().min(1).optional(),
-          condition: z.string().min(1).optional(),
-          fulfillmentChannel: z.enum(["AMAZON", "MERCHANT", "UNKNOWN"]),
-          listingPrice: decimalStringSchema.optional(),
-          shippingPrice: decimalStringSchema.optional(),
-          landedPrice: decimalStringSchema.optional(),
-          currency: z.string().length(3).optional(),
-          isFeatured: z.boolean().optional(),
-          isPrime: z.boolean().optional(),
-          membership: z.string().min(1).optional(),
-        }),
-      )
-      .default([]),
+    offers: z.array(competitiveOfferSchema).default([]),
   }),
-);
+).extend({ rawProviderObservation: z.unknown().optional() });
 export type CompetitivePricing = z.infer<typeof competitivePricingSchema>;
+
+export type CompetitivePricingBatchResult =
+  | {
+      readonly asin: string;
+      readonly status: "SUCCESS";
+      readonly pricing: CompetitivePricing;
+    }
+  | {
+      readonly asin: string;
+      readonly status: "ERROR";
+      readonly error: {
+        readonly code: ProviderError["code"];
+        readonly retryAfterMs?: number;
+        readonly httpStatus?: number;
+        readonly providerRequestId?: string;
+      };
+    };
 
 export const feeEstimateSchema = observedMetricSchema(
   z.object({
@@ -266,6 +297,11 @@ export interface PricingProvider {
     asin: string,
     marketplace: MarketplaceContext,
   ): Promise<CompetitivePricing>;
+  /** Product Pricing 2022-05-01 supports at most 20 ASIN requests per batch. */
+  getCompetitivePricingBatch?(
+    asins: readonly string[],
+    marketplace: MarketplaceContext,
+  ): Promise<readonly CompetitivePricingBatchResult[]>;
 }
 
 export interface FeeProvider {

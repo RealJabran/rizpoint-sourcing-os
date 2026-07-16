@@ -202,6 +202,34 @@ enum ProviderAttemptStatus {
   THROTTLED
 }
 
+enum ProviderObservationStatus {
+  SUCCESS
+  PARTIAL
+  UNAUTHORIZED
+  THROTTLED
+  RETRYABLE_FAILURE
+  TERMINAL_FAILURE
+  UNAVAILABLE
+}
+
+enum OfferPresence {
+  PRESENT
+  ABSENT
+  UNKNOWN
+}
+
+enum OfferCompleteness {
+  COMPLETE
+  PARTIAL
+  UNKNOWN
+}
+
+enum OfferFulfillmentChannel {
+  AMAZON
+  MERCHANT
+  UNKNOWN
+}
+
 enum BrandPolicyStatus {
   PROHIBITED
   APPROVAL_REQUIRED
@@ -827,30 +855,54 @@ model EnrichmentItem {
 }
 
 model ProviderObservation {
-  id                String                 @id @default(cuid())
-  enrichmentItemId  String                 @map("enrichment_item_id")
-  metricType        EnrichmentMetricType   @map("metric_type")
-  provider          ProviderKind
-  providerReference String?                @map("provider_reference")
-  marketplaceId     String                 @map("marketplace_id")
-  observedAt        DateTime               @map("observed_at")
-  freshUntil        DateTime               @map("fresh_until")
-  freshnessState    ExternalFreshnessState @map("freshness_state")
-  currency          String?
-  primaryAmount     Decimal?               @map("primary_amount") @db.Decimal(18, 4)
-  secondaryAmount   Decimal?               @map("secondary_amount") @db.Decimal(18, 4)
-  quotedPrice       Decimal?               @map("quoted_price") @db.Decimal(18, 4)
-  rank              Int?
-  payload           Json                   @map("payload")
-  responseChecksum  String?                @map("response_checksum")
-  errorCode         String?                @map("error_code")
-  createdAt         DateTime               @default(now()) @map("created_at")
-  updatedAt         DateTime               @updatedAt @map("updated_at")
+  id                            String                 @id @default(cuid())
+  enrichmentItemId              String                 @map("enrichment_item_id")
+  metricType                    EnrichmentMetricType   @map("metric_type")
+  provider                      ProviderKind
+  providerReference             String?                @map("provider_reference")
+  marketplaceId                 String                 @map("marketplace_id")
+  observedAt                    DateTime               @map("observed_at")
+  freshUntil                    DateTime               @map("fresh_until")
+  freshnessState                ExternalFreshnessState @map("freshness_state")
+  currency                      String?
+  primaryAmount                 Decimal?               @map("primary_amount") @db.Decimal(18, 4)
+  secondaryAmount               Decimal?               @map("secondary_amount") @db.Decimal(18, 4)
+  quotedPrice                   Decimal?               @map("quoted_price") @db.Decimal(18, 4)
+  rank                          Int?
+  payload                       Json                   @map("payload")
+  responseChecksum              String?                @map("response_checksum")
+  errorCode                     String?                @map("error_code")
+  operation                     String?
+  observationStatus             ProviderObservationStatus @default(SUCCESS) @map("observation_status")
+  requestHash                   String?                @map("request_hash")
+  requestInputs                 Json?                  @map("request_inputs")
+  completeness                  OfferCompleteness?
+  rawEvidenceReference          String?                @map("raw_evidence_reference")
+  rawEvidence                   Json?                  @map("raw_evidence")
+  asin                          String?
+  featuredOfferState            OfferPresence?          @map("featured_offer_state")
+  featuredPrice                 Decimal?               @map("featured_price") @db.Decimal(18, 4)
+  featuredCurrency              String?                @map("featured_currency")
+  featuredFulfillment           OfferFulfillmentChannel? @map("featured_fulfillment")
+  featuredSellerId              String?                @map("featured_seller_id")
+  amazonRetailPresence          OfferPresence?          @map("amazon_retail_presence")
+  visibleOfferCount             Int?                   @map("visible_offer_count")
+  visibleOfferCountCompleteness OfferCompleteness?      @map("visible_offer_count_completeness")
+  fbaOfferCount                 Int?                   @map("fba_offer_count")
+  fbaOfferCountCompleteness     OfferCompleteness?      @map("fba_offer_count_completeness")
+  fbmOfferCount                 Int?                   @map("fbm_offer_count")
+  fbmOfferCountCompleteness     OfferCompleteness?      @map("fbm_offer_count_completeness")
+  lowestFbaPrice                Decimal?               @map("lowest_fba_price") @db.Decimal(18, 4)
+  lowestFbmPrice                Decimal?               @map("lowest_fbm_price") @db.Decimal(18, 4)
+  createdAt                     DateTime               @default(now()) @map("created_at")
+  updatedAt                     DateTime               @updatedAt @map("updated_at")
 
   enrichmentItem EnrichmentItem @relation(fields: [enrichmentItemId], references: [id], onDelete: Cascade)
 
   @@unique([enrichmentItemId, metricType, provider])
   @@index([metricType, freshUntil])
+  @@index([metricType, featuredOfferState])
+  @@index([metricType, amazonRetailPresence])
   @@map("provider_observations")
 }
 
