@@ -1619,6 +1619,22 @@ export async function persistEnrichmentItem(input: {
 }) {
   await db.$transaction(async (transaction) => {
     for (const observation of input.observations) {
+      const current = await transaction.providerObservation.findUnique({
+        where: {
+          enrichmentItemId_metricType_provider: {
+            enrichmentItemId: input.enrichmentItemId,
+            metricType: observation.metricType,
+            provider: observation.provider,
+          },
+        },
+        select: { observedAt: true },
+      });
+      // A delayed retry must not regress current market evidence.
+      if (
+        current &&
+        current.observedAt.getTime() > observation.observedAt.getTime()
+      )
+        continue;
       await transaction.providerObservation.upsert({
         where: {
           enrichmentItemId_metricType_provider: {

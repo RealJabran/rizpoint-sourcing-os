@@ -31,6 +31,8 @@ import {
 } from "./connectivity.js";
 
 export * from "./connectivity.js";
+export * from "./offer-policy.js";
+import { amazonRetailPresence } from "./offer-policy.js";
 
 export type EncryptedSecret = {
   ciphertext: string;
@@ -452,22 +454,130 @@ export class AmazonSpApiProvider
     const offers = Array.isArray(payload.lowestPricedOffers)
       ? (payload.lowestPricedOffers as Array<Record<string, unknown>>)
       : [];
-    const firstOffer = offers[0];
-    const listingPrice = firstOffer?.listingPrice as
-      { amount?: string; currencyCode?: string } | undefined;
-    if (!listingPrice?.amount || !listingPrice.currencyCode)
-      throw new ProviderError("INVALID_RESPONSE");
+    const featured = Array.isArray(payload.featuredBuyingOptions)
+      ? (payload.featuredBuyingOptions as Array<Record<string, unknown>>)
+      : [];
+    const money = (value: unknown): { amount?: string; currency?: string } => {
+      const record = value as
+        { amount?: unknown; currencyCode?: unknown } | undefined;
+      return record &&
+        (typeof record.amount === "string" || typeof record.amount === "number")
+        ? {
+            amount: String(record.amount),
+            ...(typeof record.currencyCode === "string"
+              ? { currency: record.currencyCode }
+              : {}),
+          }
+        : {};
+    };
+    const normalized = offers.map((offer) => {
+      const listing = money(offer.listingPrice);
+      const shipping = money(offer.shippingPrice);
+      const landed = money(offer.landedPrice);
+      const fulfillment =
+        typeof offer.fulfillmentType === "string"
+          ? offer.fulfillmentType === "AFN"
+            ? "AMAZON"
+            : offer.fulfillmentType === "MFN"
+              ? "MERCHANT"
+              : "UNKNOWN"
+          : "UNKNOWN";
+      return {
+        ...(typeof offer.sellerId === "string"
+          ? { sellerId: offer.sellerId }
+          : {}),
+        ...(typeof offer.condition === "string"
+          ? { condition: offer.condition }
+          : {}),
+        fulfillmentChannel: fulfillment,
+        ...(listing.amount ? { listingPrice: listing.amount } : {}),
+        ...(shipping.amount ? { shippingPrice: shipping.amount } : {}),
+        ...(landed.amount ? { landedPrice: landed.amount } : {}),
+        ...((listing.currency ?? landed.currency)
+          ? { currency: listing.currency ?? landed.currency }
+          : {}),
+      } as const;
+    });
+    const values = (channel: "AMAZON" | "MERCHANT") =>
+      normalized
+        .filter((offer) => offer.fulfillmentChannel === channel)
+        .flatMap((offer) =>
+          (offer.landedPrice ?? offer.listingPrice)
+            ? [offer.landedPrice ?? offer.listingPrice!]
+            : [],
+        );
+    const lowest = (values: readonly string[]) =>
+      [...values].sort((a: string, b: string) => Number(a) - Number(b))[0];
+    const complete =
+      Array.isArray(payload.lowestPricedOffers) &&
+      Array.isArray(payload.featuredBuyingOptions);
+    const featuredPrices = featured.flatMap((option) =>
+      money(option.landedPrice).amount ? [money(option.landedPrice)] : [],
+    );
+    const featuredPrice = featuredPrices[0];
     return competitivePricingSchema.parse({
       value: {
-        currency: listingPrice.currencyCode,
-        lowestPrice: listingPrice.amount,
-        offerCount: offers.length,
+        ...(featuredPrice?.currency
+          ? { currency: featuredPrice.currency }
+          : {}),
+        ...(featuredPrice?.amount ? { buyBoxPrice: featuredPrice.amount } : {}),
+        ...(lowest(
+          normalized.flatMap((offer) =>
+            (offer.landedPrice ?? offer.listingPrice)
+              ? [offer.landedPrice ?? offer.listingPrice!]
+              : [],
+          ),
+        )
+          ? {
+              lowestPrice: lowest(
+                normalized.flatMap((offer) =>
+                  (offer.landedPrice ?? offer.listingPrice)
+                    ? [offer.landedPrice ?? offer.listingPrice!]
+                    : [],
+                ),
+              ),
+            }
+          : {}),
+        featuredOfferState: featured.length
+          ? "PRESENT"
+          : complete
+            ? "NONE"
+            : "UNKNOWN",
+        completeness: complete ? "COMPLETE" : "PARTIAL",
+        ...(complete
+          ? { visibleOfferCount: offers.length, offerCount: offers.length }
+          : {}),
+        ...(complete
+          ? {
+              fbaOfferCount: normalized.filter(
+                (offer) => offer.fulfillmentChannel === "AMAZON",
+              ).length,
+              fbmOfferCount: normalized.filter(
+                (offer) => offer.fulfillmentChannel === "MERCHANT",
+              ).length,
+            }
+          : {}),
+        amazonRetailPresence: amazonRetailPresence(
+          marketplace.marketplaceId,
+          normalized.map((offer) => offer.sellerId),
+        ),
+        brandSellerStatus: "UNKNOWN",
+        ...(lowest(values("AMAZON"))
+          ? { lowestFbaPrice: lowest(values("AMAZON")) }
+          : {}),
+        ...(lowest(values("MERCHANT"))
+          ? { lowestFbmPrice: lowest(values("MERCHANT")) }
+          : {}),
+        offers: normalized,
       },
       provenance: {
         provider: "amazon-sp-api",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
-        providerReference: result.requestId ?? asin,
+        providerReference: asin,
+        marketplaceId: marketplace.marketplaceId,
+        requestId: result.requestId,
+        responseCompleteness: complete ? "COMPLETE" : "PARTIAL",
       },
     });
   }

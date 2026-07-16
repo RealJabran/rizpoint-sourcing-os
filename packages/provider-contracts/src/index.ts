@@ -153,10 +153,35 @@ export type CurrentOffers = z.infer<typeof currentOffersSchema>;
 
 export const competitivePricingSchema = observedMetricSchema(
   z.object({
-    currency: z.string().length(3),
+    currency: z.string().length(3).optional(),
     buyBoxPrice: decimalStringSchema.optional(),
     lowestPrice: decimalStringSchema.optional(),
     offerCount: z.number().int().nonnegative().optional(),
+    featuredOfferState: z.enum(["PRESENT", "NONE", "UNKNOWN"]),
+    completeness: z.enum(["COMPLETE", "PARTIAL"]),
+    visibleOfferCount: z.number().int().nonnegative().optional(),
+    fbaOfferCount: z.number().int().nonnegative().optional(),
+    fbmOfferCount: z.number().int().nonnegative().optional(),
+    amazonRetailPresence: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]),
+    brandSellerStatus: z.enum(["VERIFIED", "UNVERIFIED", "UNKNOWN"]),
+    lowestFbaPrice: decimalStringSchema.optional(),
+    lowestFbmPrice: decimalStringSchema.optional(),
+    offers: z
+      .array(
+        z.object({
+          sellerId: z.string().min(1).optional(),
+          condition: z.string().min(1).optional(),
+          fulfillmentChannel: z.enum(["AMAZON", "MERCHANT", "UNKNOWN"]),
+          listingPrice: decimalStringSchema.optional(),
+          shippingPrice: decimalStringSchema.optional(),
+          landedPrice: decimalStringSchema.optional(),
+          currency: z.string().length(3).optional(),
+          isFeatured: z.boolean().optional(),
+          isPrime: z.boolean().optional(),
+          membership: z.string().min(1).optional(),
+        }),
+      )
+      .default([]),
   }),
 );
 export type CompetitivePricing = z.infer<typeof competitivePricingSchema>;
