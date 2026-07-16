@@ -17,6 +17,11 @@ pnpm test:integration
 pnpm test:browser
 ```
 
+The integration command runs browser-facing signed-upload checks from the host,
+then runs the fee/restriction persistence and tenant-filter check in a one-off
+worker container because PostgreSQL is intentionally not published to the host.
+Run it only after the Compose images have been built from the current worktree.
+
 `test:browser` uses the installed Chrome channel by default. Set `PLAYWRIGHT_BROWSER_CHANNEL=chromium` only when a managed Playwright Chromium binary has been installed. The tests generate in-memory synthetic catalogs and never print signed URLs.
 
 Compose intentionally runs `next start` with `NODE_ENV=production`, so its CSP does not include `unsafe-eval`. Direct `pnpm dev` receives the development-only CSP exception required by React debugging. Browser-extension attributes such as `bis_skin_checked`, `bis_register`, and `cz-shortcut-listen` are not application output; verify hydration behavior in the clean Playwright context rather than suppressing warnings.

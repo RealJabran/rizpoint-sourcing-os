@@ -56,13 +56,35 @@ describe("analysis results route", () => {
             lowestFbaPrice: "17.9900",
             lowestFbmPrice: "18.4900",
           },
+          feeEstimate: {
+            provider: "AMAZON_SP_API",
+            operation: "getMyFeesEstimateForASIN",
+            completeness: "COMPLETE",
+            scenarioSource: "CURRENT_FEATURED_OFFER",
+            scenarioPrice: "18.9900",
+            total: "5.2500",
+            currency: "USD",
+            components: [
+              {
+                type: "ReferralFee",
+                amount: "3.2500",
+                finalFee: "3.2500",
+                currency: "USD",
+              },
+            ],
+          },
+          listingRestriction: {
+            state: "APPROVAL_REQUIRED",
+            completeness: "COMPLETE",
+            reasonCodes: ["APPROVAL_REQUIRED"],
+          },
         },
       ],
     });
     const { GET } = await import("../app/api/scans/[scanId]/results/route.js");
     const response = await GET(
       new NextRequest(
-        "http://localhost/api/scans/scan-1/results?featuredOfferState=PRESENT&amazonRetailPresence=UNKNOWN&pricingCompleteness=PARTIAL&minFbaOfferCount=1&maxFbmOfferCount=3",
+        "http://localhost/api/scans/scan-1/results?featuredOfferState=PRESENT&amazonRetailPresence=UNKNOWN&pricingCompleteness=PARTIAL&minFbaOfferCount=1&maxFbmOfferCount=3&feeCompleteness=COMPLETE&restrictionState=APPROVAL_REQUIRED&restrictionReasonCode=APPROVAL_REQUIRED",
       ),
       { params: Promise.resolve({ scanId: "scan-1" }) },
     );
@@ -78,11 +100,16 @@ describe("analysis results route", () => {
           pricingCompleteness: "PARTIAL",
           minFbaOfferCount: 1,
           maxFbmOfferCount: 3,
+          feeCompleteness: "COMPLETE",
+          restrictionState: "APPROVAL_REQUIRED",
+          restrictionReasonCode: "APPROVAL_REQUIRED",
         }),
       }),
     );
     const body = await response.json();
     expect(body.rows[0].offerIntelligence.featuredOffer.price).toBe("18.9900");
+    expect(body.rows[0].feeEstimate.components[0].finalFee).toBe("3.2500");
+    expect(body.rows[0].listingRestriction.state).toBe("APPROVAL_REQUIRED");
     expect(JSON.stringify(body)).not.toContain("rawProviderObservation");
   });
 

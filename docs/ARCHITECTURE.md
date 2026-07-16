@@ -76,6 +76,24 @@ fresh observations on retry, refreshes stale observations, and rejects older
 retry observations. Authorization, throttle, partial, retryable, terminal, and
 unavailable states are persisted without false zero/absent values.
 
+Account-specific fees use Product Fees v0
+`getMyFeesEstimateForASIN`. The adapter preserves the requested scenario price,
+listing/shipping split, fulfillment channel, Amazon result status, aggregate
+total, and every returned fee detail. Component money is normalized into
+`NUMERIC(18,4)` rows; aggregate-only responses are `PARTIAL` and cannot drive a
+recommendation. The default usage plan is one request per second with burst two,
+while response rate-limit headers remain authoritative when present. Amazon fee
+estimates are point-in-time estimates and are never represented as guaranteed
+future charges.
+
+Seller eligibility uses Listings Restrictions v2021-08-01
+`getListingsRestrictions` for the authorized seller, marketplace, ASIN, and New
+condition. Only a successful, complete response containing an explicitly empty
+`restrictions` array becomes `ELIGIBLE`. Approval, ineligibility, incomplete,
+unauthorized, throttled, and unknown states remain distinct. The documented
+default usage plan is five requests per second with burst ten. Provider failures
+are checkpointed as typed unknown evidence and never collapse to eligibility.
+
 The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Redis, and the scanner are reachable.
 
 ## Private production operation

@@ -24,6 +24,33 @@ type Observation = {
   currency: string | null;
   primaryAmount: { toString(): string } | null;
   quotedPrice: { toString(): string } | null;
+  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN" | null;
+  observationStatus:
+    | "SUCCESS"
+    | "PARTIAL"
+    | "UNAUTHORIZED"
+    | "THROTTLED"
+    | "RETRYABLE_FAILURE"
+    | "TERMINAL_FAILURE"
+    | "UNAVAILABLE";
+  feeScenarioSource:
+    "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED" | null;
+  feeFulfillment: "AMAZON" | "MERCHANT" | "UNKNOWN" | null;
+  restrictionState:
+    | "ELIGIBLE"
+    | "RESTRICTED"
+    | "APPROVAL_REQUIRED"
+    | "INCOMPLETE"
+    | "UNAUTHORIZED"
+    | "THROTTLED"
+    | "UNKNOWN"
+    | null;
+  feeComponents: Array<{
+    feeType: string;
+    parentFeeType: string | null;
+    currency: string;
+    finalFee: { toString(): string };
+  }>;
   payload: unknown;
 };
 
@@ -83,7 +110,19 @@ function historyObservationCount(observation: Observation | null): number {
 }
 
 function feeQuote(observation: Observation | null): FeeQuote | null {
-  if (!observation) return null;
+  if (
+    !observation ||
+    observation.observationStatus !== "SUCCESS" ||
+    observation.completeness !== "COMPLETE" ||
+    !observation.primaryAmount ||
+    !observation.quotedPrice ||
+    !observation.currency ||
+    !observation.feeScenarioSource ||
+    !observation.feeFulfillment ||
+    observation.feeFulfillment === "UNKNOWN" ||
+    observation.feeComponents.length === 0
+  )
+    return null;
   const value = (
     observation.payload as {
       value?: {
@@ -98,17 +137,9 @@ function feeQuote(observation: Observation | null): FeeQuote | null {
       };
     }
   ).value;
+  if (!value?.totalFee || !value.quotedPrice || !value.currency) return null;
   if (
-    !value?.totalFee ||
-    !value.quotedPrice ||
-    !value.currency ||
-    !value.model?.fixedFee ||
-    !value.model.percentageOfPrice
-  ) {
-    return null;
-  }
-  if (
-    !observation.quotedPrice ||
+    !new Decimal(observation.primaryAmount.toString()).eq(value.totalFee) ||
     !new Decimal(observation.quotedPrice.toString()).eq(value.quotedPrice)
   ) {
     return null;
@@ -121,23 +152,45 @@ function feeQuote(observation: Observation | null): FeeQuote | null {
     observedAt: observation.observedAt.toISOString(),
     freshUntil: observation.freshUntil.toISOString(),
     freshnessState: observation.freshnessState,
-    model: {
-      fixedFee: value.model.fixedFee,
-      percentageOfPrice: value.model.percentageOfPrice,
-      ...(value.model.minimumFee ? { minimumFee: value.model.minimumFee } : {}),
-    },
+    completeness: observation.completeness,
+    scenarioSource: observation.feeScenarioSource,
+    fulfillmentChannel: observation.feeFulfillment,
+    components: observation.feeComponents.map((component) => ({
+      feeType: component.feeType,
+      finalFee: component.finalFee.toString(),
+      currency: component.currency,
+      ...(component.parentFeeType
+        ? { parentFeeType: component.parentFeeType }
+        : {}),
+    })),
+    ...(value.model?.fixedFee && value.model.percentageOfPrice
+      ? {
+          model: {
+            fixedFee: value.model.fixedFee,
+            percentageOfPrice: value.model.percentageOfPrice,
+            ...(value.model.minimumFee
+              ? { minimumFee: value.model.minimumFee }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
 function restrictionStatus(observation: Observation | null) {
-  if (!observation) return "UNKNOWN";
-  const status = (observation.payload as { value?: { status?: string } }).value
-    ?.status;
-  return status === "ALLOWED" ||
-    status === "REQUIRES_APPROVAL" ||
-    status === "RESTRICTED"
-    ? status
-    : "UNKNOWN";
+  if (!observation) return "UNKNOWN" as const;
+  if (observation.observationStatus === "UNAUTHORIZED")
+    return "UNAUTHORIZED" as const;
+  if (observation.observationStatus === "THROTTLED")
+    return "THROTTLED" as const;
+  if (
+    observation.observationStatus !== "SUCCESS" ||
+    observation.completeness !== "COMPLETE" ||
+    observation.freshnessState !== "FRESH" ||
+    observation.freshUntil.getTime() < Date.now()
+  )
+    return "INCOMPLETE" as const;
+  return observation.restrictionState ?? "UNKNOWN";
 }
 
 function costInputs(
@@ -195,7 +248,9 @@ export async function processProfitCalculation(runId: string) {
   const run = await getProfitCalculationForProcessing(runId);
   if (!run || !(await markProfitCalculationRunning(run.id))) return;
   const results: Parameters<typeof persistProfitCalculation>[0]["results"] = [];
-  let partial = run.routes.length === 0;
+  const policyVersionMismatch =
+    run.financialPolicy.engineVersion !== PROFIT_ENGINE_VERSION;
+  let partial = run.routes.length === 0 || policyVersionMismatch;
   const targetKeys = new Set(
     run.targets.map(
       (target) => `${target.supplierRowId}:${target.shippingRouteId}`,
@@ -245,6 +300,18 @@ export async function processProfitCalculation(runId: string) {
         if (target) overriddenCosts[target] = value.value.toString();
       }
       const calculatedAt = new Date();
+      const userEntered = override?.userEnteredSalePrice
+        ? {
+            price: override.userEnteredSalePrice.toString(),
+            currency: run.financialPolicy.currency,
+            provider: "user-entered",
+            observedAt: override.updatedAt.toISOString(),
+            freshUntil: new Date(
+              calculatedAt.getTime() + 60 * 60_000,
+            ).toISOString(),
+            freshnessState: "FRESH" as const,
+          }
+        : undefined;
       const matchVerified = isProfitVerifiedMatch({
         status: row.matchDecision?.status,
         reasonCodes: row.matchDecision?.reasonCodes,
@@ -280,6 +347,7 @@ export async function processProfitCalculation(runId: string) {
           effectiveFrom: route.effectiveFrom.toISOString(),
         },
         calculatedAt: calculatedAt.toISOString(),
+        userEntered,
         decisionInputs,
       };
       const currencyMismatch =
@@ -296,14 +364,21 @@ export async function processProfitCalculation(runId: string) {
         !current ||
         !conservative ||
         !fees ||
-        currencyMismatch
+        currencyMismatch ||
+        policyVersionMismatch
       ) {
         partial = true;
         results.push({
           supplierRowId: row.id,
           shippingRouteId: route.id,
           status: "PARTIAL_SUCCESS",
-          recommendation: !candidate ? "REVIEW_MATCH" : "INSUFFICIENT_DATA",
+          recommendation: !candidate
+            ? "REVIEW_MATCH"
+            : eligibility === "RESTRICTED"
+              ? "AVOID"
+              : eligibility === "APPROVAL_REQUIRED"
+                ? "REVIEW_APPROVAL"
+                : "INSUFFICIENT_DATA",
           engineVersion: PROFIT_ENGINE_VERSION,
           inputSnapshot: json({
             supplierRowId: row.id,
@@ -325,6 +400,8 @@ export async function processProfitCalculation(runId: string) {
                   id: override.id,
                   revision: override.revision,
                   reason: override.reason,
+                  userEnteredSalePrice:
+                    override.userEnteredSalePrice?.toString() ?? null,
                 }
               : null,
           }),
@@ -332,9 +409,15 @@ export async function processProfitCalculation(runId: string) {
           reasonCodes: json(
             !candidate
               ? ["MATCH_REQUIRED"]
-              : currencyMismatch
-                ? ["CURRENCY_MISMATCH"]
-                : ["MISSING_OR_STALE_EVIDENCE"],
+              : eligibility === "RESTRICTED"
+                ? ["SELLER_RESTRICTED"]
+                : eligibility === "APPROVAL_REQUIRED"
+                  ? ["SELLER_APPROVAL_REQUIRED"]
+                  : policyVersionMismatch
+                    ? ["FORMULA_VERSION_MISMATCH"]
+                    : currencyMismatch
+                      ? ["CURRENCY_MISMATCH"]
+                      : ["MISSING_OR_STALE_EVIDENCE"],
           ),
           ...(override ? { appliedOverrideRevision: override.revision } : {}),
         });
@@ -346,6 +429,7 @@ export async function processProfitCalculation(runId: string) {
         conservative,
         feeQuote: fees,
         costs: overriddenCosts,
+        ...(userEntered ? { userEntered } : {}),
         stressDiscountPercent:
           override?.stressDiscountPercent?.toString() ??
           run.financialPolicy.stressDiscountPercent.toString(),
@@ -360,14 +444,17 @@ export async function processProfitCalculation(runId: string) {
       const currentProfit = scenarios.CURRENT!;
       const conservativeProfit = scenarios.CONSERVATIVE!;
       const stressProfit = scenarios.STRESS!;
+      const userEnteredProfit = scenarios.USER_ENTERED;
       const completed =
         currentProfit.status === "CALCULATED" &&
         conservativeProfit.status === "CALCULATED" &&
-        stressProfit.status === "CALCULATED";
+        stressProfit.status === "CALCULATED" &&
+        (!userEnteredProfit || userEnteredProfit.status === "CALCULATED");
       partial ||= !completed;
       const currentExact = currentProfit.exactValues;
       const conservativeExact = conservativeProfit.exactValues;
       const stressExact = stressProfit.exactValues;
+      const userEnteredExact = userEnteredProfit?.exactValues;
       results.push({
         supplierRowId: row.id,
         shippingRouteId: route.id,
@@ -376,6 +463,7 @@ export async function processProfitCalculation(runId: string) {
         ...(currentExact
           ? {
               currentNetProfit: currentExact.netProfit,
+              currentProceeds: currentExact.proceeds,
               effectiveCogs: currentExact.effectiveCogs,
               amazonFees: currentExact.amazonFees,
             }
@@ -384,6 +472,9 @@ export async function processProfitCalculation(runId: string) {
           ? { conservativeNetProfit: conservativeExact.netProfit }
           : {}),
         ...(stressExact ? { stressNetProfit: stressExact.netProfit } : {}),
+        ...(userEnteredExact
+          ? { userEnteredNetProfit: userEnteredExact.netProfit }
+          : {}),
         ...(currentProfit.roiPercent
           ? { roiPercent: currentProfit.roiPercent }
           : {}),
@@ -413,6 +504,8 @@ export async function processProfitCalculation(runId: string) {
                 id: override.id,
                 revision: override.revision,
                 reason: override.reason,
+                userEnteredSalePrice:
+                  override.userEnteredSalePrice?.toString() ?? null,
               }
             : null,
         }),
@@ -421,6 +514,7 @@ export async function processProfitCalculation(runId: string) {
           ...currentProfit.reasonCodes,
           ...conservativeProfit.reasonCodes,
           ...stressProfit.reasonCodes,
+          ...(userEnteredProfit?.reasonCodes ?? []),
           ...decision.reasonCodes,
           ...decision.failedRules,
         ]),

@@ -269,14 +269,37 @@ export class MockAmazonProvider
   async estimateFees(request: FeeEstimateRequest): Promise<FeeEstimate> {
     const fixedFee = "2.0000";
     const percentageOfPrice = "0.1500";
-    const totalFee = new Decimal(fixedFee)
-      .plus(new Decimal(request.price).mul(percentageOfPrice))
+    const percentageFee = new Decimal(request.price)
+      .mul(percentageOfPrice)
       .toFixed(4);
+    const totalFee = new Decimal(fixedFee).plus(percentageFee).toFixed(4);
     return {
       value: {
+        operation: "getMyFeesEstimateForASIN",
+        asin: request.asin,
+        marketplaceId: request.marketplace.marketplaceId,
         totalFee,
         quotedPrice: request.price,
+        listingPrice: request.listingPrice ?? request.price,
+        shippingPrice: request.shippingPrice,
         currency: request.currency,
+        fulfillmentChannel: request.fulfillmentChannel,
+        scenarioSource: request.scenarioSource,
+        completeness: "COMPLETE",
+        components: [
+          {
+            feeType: "FulfillmentFee",
+            feeAmount: fixedFee,
+            finalFee: fixedFee,
+            currency: request.currency,
+          },
+          {
+            feeType: "ReferralFee",
+            feeAmount: percentageFee,
+            finalFee: percentageFee,
+            currency: request.currency,
+          },
+        ],
         model: { fixedFee, percentageOfPrice },
       },
       provenance: {
@@ -284,6 +307,9 @@ export class MockAmazonProvider
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: request.requestId,
+        marketplaceId: request.marketplace.marketplaceId,
+        requestId: request.requestId,
+        responseCompleteness: "COMPLETE",
       },
     };
   }
@@ -295,13 +321,31 @@ export class MockAmazonProvider
     void _marketplace;
     return {
       value: {
-        status: asin === "B000000003" ? "REQUIRES_APPROVAL" : "ALLOWED",
+        operation: "getListingsRestrictions",
+        asin,
+        marketplaceId: _marketplace.marketplaceId,
+        state: asin === "B000000003" ? "APPROVAL_REQUIRED" : "ELIGIBLE",
+        completeness: "COMPLETE",
+        conditionType: "new_new",
+        reasons:
+          asin === "B000000003"
+            ? [
+                {
+                  code: "APPROVAL_REQUIRED" as const,
+                  message:
+                    "Approval is required for this deterministic fixture.",
+                  links: [],
+                },
+              ]
+            : [],
       },
       provenance: {
         provider: "mock-amazon",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
+        marketplaceId: _marketplace.marketplaceId,
+        responseCompleteness: "COMPLETE",
       },
     };
   }

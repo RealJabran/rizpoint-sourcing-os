@@ -46,6 +46,13 @@ function feeQuote(quotedPrice = "20.00"): FeeQuote {
     observedAt: "2026-07-12T00:00:00Z",
     freshUntil: "2026-07-14T00:00:00Z",
     freshnessState: "FRESH",
+    completeness: "COMPLETE",
+    scenarioSource: "CURRENT_FEATURED_OFFER",
+    fulfillmentChannel: "AMAZON",
+    components: [
+      { feeType: "FulfillmentFee", finalFee: "2.0000", currency: "USD" },
+      { feeType: "ReferralFee", finalFee: "3.0000", currency: "USD" },
+    ],
     model: { fixedFee: "2.0000", percentageOfPrice: "0.1500" },
   };
 }
@@ -60,7 +67,7 @@ function profitAt(value: string) {
   });
 }
 
-describe("profit engine v2", () => {
+describe("profit engine v3", () => {
   it("matches an independently audited dynamic-fee example", () => {
     const result = profitAt("20.00");
     expect(result).toMatchObject({
@@ -182,7 +189,7 @@ describe("profit engine v2", () => {
       conservativeProfit,
       stressProfit,
       matchVerified: true,
-      sellerEligibility: "ALLOWED" as const,
+      sellerEligibility: "ELIGIBLE" as const,
       brandPolicy: "UNRESTRICTED" as const,
       demandEvidenceSufficient: true,
     };
@@ -211,6 +218,142 @@ describe("profit engine v2", () => {
       }).recommendation,
     ).toBe("INSUFFICIENT_DATA");
   });
+
+  it("uses complete component fees only at their quoted price when no model exists", () => {
+    const { model: _model, ...baseQuote } = feeQuote();
+    void _model;
+    const pointQuote: FeeQuote = {
+      ...baseQuote,
+      components: [
+        { feeType: "ReferralFee", finalFee: "3.0000", currency: "USD" },
+        { feeType: "FBAFees", finalFee: "2.0000", currency: "USD" },
+      ],
+    };
+    const exact = calculateProfit({
+      packGuardStatus: "VERIFIED",
+      price: price("20.00"),
+      feeQuote: pointQuote,
+      costs,
+      calculatedAt,
+    });
+    expect(exact).toMatchObject({
+      status: "CALCULATED",
+      proceeds: "20.00",
+      amazonFees: "5.00",
+      netProfit: "7.51",
+    });
+    expect(exact.breakEvenPrice).toBeUndefined();
+    expect(
+      calculateProfit({
+        packGuardStatus: "VERIFIED",
+        price: price("19.00"),
+        feeQuote: pointQuote,
+        costs,
+        calculatedAt,
+      }).status,
+    ).toBe("BLOCKED_INVALID_INPUT");
+    expect(
+      calculateProfit({
+        packGuardStatus: "VERIFIED",
+        price: price("20.00"),
+        feeQuote: { ...pointQuote, completeness: "PARTIAL" },
+        costs,
+        calculatedAt,
+      }).status,
+    ).toBe("BLOCKED_INVALID_INPUT");
+  });
+
+  it("blocks component currency/total defects and guards zero prices", () => {
+    expect(
+      calculateProfit({
+        packGuardStatus: "VERIFIED",
+        price: price("20.00"),
+        feeQuote: {
+          ...feeQuote(),
+          components: [
+            { feeType: "AmazonFees", finalFee: "5.0000", currency: "CAD" },
+          ],
+        },
+        costs,
+        calculatedAt,
+      }).status,
+    ).toBe("BLOCKED_CURRENCY_MISMATCH");
+    expect(
+      calculateProfit({
+        packGuardStatus: "VERIFIED",
+        price: price("0"),
+        feeQuote: feeQuote("0"),
+        costs,
+        calculatedAt,
+      }).status,
+    ).toBe("BLOCKED_INVALID_INPUT");
+  });
+
+  it("keeps negative profit deterministic without converting it to missing data", () => {
+    const result = calculateProfit({
+      packGuardStatus: "VERIFIED",
+      price: price("10.00"),
+      feeQuote: feeQuote(),
+      costs: { ...costs, supplierCostPerSellableUnit: "20.0000" },
+      calculatedAt,
+    });
+    expect(result.status).toBe("CALCULATED");
+    expect(new Decimal(result.netProfit!).lt(0)).toBe(true);
+  });
+
+  it("supports an explicitly quoted user-entered scenario without inventing fees", () => {
+    const { model: _model, ...baseQuote } = feeQuote("24.00");
+    void _model;
+    const userFee = {
+      ...baseQuote,
+      totalFee: "5.6000",
+      scenarioSource: "USER_ENTERED" as const,
+      components: [
+        { feeType: "AmazonFees", finalFee: "5.6000", currency: "USD" },
+      ],
+    };
+    const scenarios = buildScenarios({
+      packGuardStatus: "VERIFIED",
+      feeQuote: feeQuote(),
+      feeQuotes: { USER_ENTERED: userFee },
+      costs,
+      current: price("20.00"),
+      conservative: price("19.00"),
+      userEntered: price("24.00"),
+      stressDiscountPercent: "10",
+      calculatedAt,
+    });
+    expect(scenarios.USER_ENTERED).toMatchObject({
+      status: "CALCULATED",
+      proceeds: "24.00",
+      amazonFees: "5.60",
+    });
+  });
+
+  it.each([
+    ["RESTRICTED", "AVOID"],
+    ["APPROVAL_REQUIRED", "REVIEW_APPROVAL"],
+    ["INCOMPLETE", "INSUFFICIENT_DATA"],
+    ["UNAUTHORIZED", "INSUFFICIENT_DATA"],
+    ["THROTTLED", "INSUFFICIENT_DATA"],
+    ["UNKNOWN", "INSUFFICIENT_DATA"],
+  ] as const)(
+    "maps %s seller eligibility to %s",
+    (sellerEligibility, expected) => {
+      const profit = profitAt("20.00");
+      expect(
+        decide({
+          currentProfit: profit,
+          conservativeProfit: profit,
+          stressProfit: profit,
+          matchVerified: true,
+          sellerEligibility,
+          brandPolicy: "UNRESTRICTED",
+          demandEvidenceSufficient: true,
+        }).recommendation,
+      ).toBe(expected);
+    },
+  );
 
   it("preserves Decimal monotonicity and break-even invariants", () => {
     const centsToDecimal = (cents: number) => {

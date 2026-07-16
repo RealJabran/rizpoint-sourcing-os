@@ -26,12 +26,18 @@ describe("analysis workspace contracts", () => {
         featuredOfferState: "PRESENT",
         amazonRetailPresence: "UNKNOWN",
         pricingCompleteness: "PARTIAL",
+        feeCompleteness: "COMPLETE",
+        restrictionState: "APPROVAL_REQUIRED",
+        restrictionReasonCode: "APPROVAL_REQUIRED",
         minFbaOfferCount: "1",
         maxFbmOfferCount: "4",
       }).success,
     ).toBe(true);
     expect(
       analysisQuerySchema.safeParse({ minFbaOfferCount: "-1" }).success,
+    ).toBe(false);
+    expect(
+      analysisQuerySchema.safeParse({ restrictionState: "ALLOWED" }).success,
     ).toBe(false);
   });
 
@@ -68,8 +74,18 @@ describe("analysis workspace contracts", () => {
         reason: "Correct stress assumption",
         values: [],
         stressDiscountPercent: "8",
+        userEnteredSalePrice: "19.99",
       }).success,
     ).toBe(true);
+    expect(
+      overrideSchema.safeParse({
+        expectedRevision: 3,
+        idempotencyKey: "3a9e1fd1-59f1-4d51-8cfe-9b2f36dfd614",
+        reason: "Invalid zero price",
+        values: [],
+        userEnteredSalePrice: "0",
+      }).success,
+    ).toBe(false);
     expect(
       overrideSchema.safeParse({
         expectedRevision: 3,

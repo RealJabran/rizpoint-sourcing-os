@@ -33,6 +33,52 @@ const provenance = {
   providerReference: "B000000001",
 };
 
+function feeResult(price = "18.99") {
+  return {
+    value: {
+      operation: "getMyFeesEstimateForASIN",
+      asin: "B000000001",
+      marketplaceId: "ATVPDKIKX0DER",
+      totalFee: "3.10",
+      quotedPrice: price,
+      listingPrice: price,
+      shippingPrice: "0",
+      currency: "USD",
+      fulfillmentChannel: "AMAZON" as const,
+      scenarioSource: "CURRENT_FEATURED_OFFER" as const,
+      completeness: "COMPLETE" as const,
+      components: [
+        {
+          feeType: "AmazonFees",
+          feeAmount: "3.10",
+          finalFee: "3.10",
+          currency: "USD",
+        },
+      ],
+      model: { fixedFee: "0.2515", percentageOfPrice: "0.15" },
+    },
+    provenance,
+    rawProviderObservation: { fee: "private" },
+  };
+}
+
+function restrictionResult(
+  state: "ELIGIBLE" | "APPROVAL_REQUIRED" | "RESTRICTED" = "ELIGIBLE",
+) {
+  return {
+    value: {
+      operation: "getListingsRestrictions",
+      asin: "B000000001",
+      marketplaceId: "ATVPDKIKX0DER",
+      state,
+      completeness: "COMPLETE" as const,
+      conditionType: "new_new",
+      reasons: [],
+    },
+    provenance,
+  };
+}
+
 describe("competitive-pricing enrichment", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -76,14 +122,8 @@ describe("competitive-pricing enrichment", () => {
       getCompetitivePricingBatch,
       getCompetitivePricing: vi.fn(),
       getItem: vi.fn().mockResolvedValue({ value: {}, provenance }),
-      estimateFees: vi.fn().mockResolvedValue({
-        value: { totalFee: "3.10", quotedPrice: "17.99", currency: "USD" },
-        provenance,
-      }),
-      getRestrictions: vi.fn().mockResolvedValue({
-        value: { status: "ALLOWED" },
-        provenance,
-      }),
+      estimateFees: vi.fn().mockResolvedValue(feeResult()),
+      getRestrictions: vi.fn().mockResolvedValue(restrictionResult()),
       getHistory: vi.fn().mockResolvedValue({
         value: [{ observedAt, price: "17.99", currency: "USD" }],
         provenance,
@@ -161,7 +201,47 @@ describe("competitive-pricing enrichment", () => {
       expect(pricing.requestHash).toMatch(/^[a-f0-9]{64}$/);
       expect(pricing.rawEvidenceReference).toMatch(/^[a-f0-9]{64}$/);
       expect(pricing.rawEvidence).toEqual({ response: "private-evidence" });
+      const fees = call[0].observations.find(
+        (observation: { metricType: string }) =>
+          observation.metricType === "FEES",
+      );
+      expect(fees).toMatchObject({
+        operation: "getMyFeesEstimateForASIN",
+        observationStatus: "SUCCESS",
+        completeness: "COMPLETE",
+        quotedPrice: "18.99",
+        feeScenarioSource: "CURRENT_FEATURED_OFFER",
+        feeFulfillment: "AMAZON",
+        feeComponents: [
+          {
+            feeType: "AmazonFees",
+            feeAmount: "3.10",
+            finalFee: "3.10",
+            currency: "USD",
+          },
+        ],
+      });
+      const restriction = call[0].observations.find(
+        (observation: { metricType: string }) =>
+          observation.metricType === "RESTRICTIONS",
+      );
+      expect(restriction).toMatchObject({
+        operation: "getListingsRestrictions",
+        observationStatus: "SUCCESS",
+        restrictionState: "ELIGIBLE",
+        completeness: "COMPLETE",
+      });
     }
+    expect(provider.estimateFees).toHaveBeenCalledOnce();
+    expect(provider.estimateFees).toHaveBeenCalledWith(
+      expect.objectContaining({
+        price: "18.99",
+        currency: "USD",
+        fulfillmentChannel: "AMAZON",
+        scenarioSource: "CURRENT_FEATURED_OFFER",
+      }),
+    );
+    expect(provider.getRestrictions).toHaveBeenCalledOnce();
   });
 
   it("does not call pricing again for a successful persisted observation", async () => {
@@ -171,18 +251,8 @@ describe("competitive-pricing enrichment", () => {
         getCompetitivePricingBatch,
         getCompetitivePricing: vi.fn(),
         getItem: vi.fn().mockResolvedValue({ value: {}, provenance }),
-        estimateFees: vi.fn().mockResolvedValue({
-          value: {
-            totalFee: "3.10",
-            quotedPrice: "17.99",
-            currency: "USD",
-          },
-          provenance,
-        }),
-        getRestrictions: vi.fn().mockResolvedValue({
-          value: { status: "ALLOWED" },
-          provenance,
-        }),
+        estimateFees: vi.fn().mockResolvedValue(feeResult("17.99")),
+        getRestrictions: vi.fn().mockResolvedValue(restrictionResult()),
         getHistory: vi.fn().mockResolvedValue({ value: [], provenance }),
       },
       providerKind: "MOCK_AMAZON",
@@ -258,10 +328,7 @@ describe("competitive-pricing enrichment", () => {
         getCompetitivePricing: vi.fn(),
         getItem: vi.fn().mockResolvedValue({ value: {}, provenance }),
         estimateFees: vi.fn(),
-        getRestrictions: vi.fn().mockResolvedValue({
-          value: { status: "UNKNOWN" },
-          provenance,
-        }),
+        getRestrictions: vi.fn().mockResolvedValue(restrictionResult()),
         getHistory: vi.fn().mockResolvedValue({ value: [], provenance }),
       };
       mocks.createEnrichmentProvider.mockReturnValue({

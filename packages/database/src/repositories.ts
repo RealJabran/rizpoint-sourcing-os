@@ -91,7 +91,7 @@ export async function ensurePhaseZeroOrganization() {
     create: {
       organizationId: organization.id,
       currency: "USD",
-      engineVersion: "profit-engine/v2",
+      engineVersion: "profit-engine/v3",
       minNetProfit: "3.00",
       minRoiPercent: "30.00",
       minMarginPercent: "10.00",
@@ -1642,12 +1642,36 @@ export async function persistEnrichmentItem(input: {
     fbmOfferCountCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
     lowestFbaPrice?: string;
     lowestFbmPrice?: string;
+    feeScenarioSource?:
+      "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+    feeFulfillment?: "AMAZON" | "MERCHANT" | "UNKNOWN";
+    feeComponents?: Array<{
+      feeType: string;
+      parentFeeType?: string;
+      currency: string;
+      feeAmount: string;
+      promotionAmount?: string;
+      taxAmount?: string;
+      finalFee: string;
+    }>;
+    restrictionState?:
+      | "ELIGIBLE"
+      | "RESTRICTED"
+      | "APPROVAL_REQUIRED"
+      | "INCOMPLETE"
+      | "UNAUTHORIZED"
+      | "THROTTLED"
+      | "UNKNOWN";
+    restrictionReasonCodes?: string[];
+    restrictionReasons?: Prisma.InputJsonValue;
+    restrictionConditionType?: string;
   }>;
   missingMetrics: string[];
   errorCode?: string;
 }) {
   await db.$transaction(async (transaction) => {
     for (const observation of input.observations) {
+      const { feeComponents, ...observationData } = observation;
       const current = await transaction.providerObservation.findUnique({
         where: {
           enrichmentItemId_metricType_provider: {
@@ -1667,7 +1691,7 @@ export async function persistEnrichmentItem(input: {
         )
       )
         continue;
-      await transaction.providerObservation.upsert({
+      const persisted = await transaction.providerObservation.upsert({
         where: {
           enrichmentItemId_metricType_provider: {
             enrichmentItemId: input.enrichmentItemId,
@@ -1676,12 +1700,37 @@ export async function persistEnrichmentItem(input: {
           },
         },
         create: {
-          ...observation,
+          ...observationData,
           enrichmentItemId: input.enrichmentItemId,
           freshnessState: observation.freshnessState,
         },
-        update: { ...observation, errorCode: null },
+        update: { ...observationData, errorCode: null },
       });
+      if (observation.metricType === "FEES") {
+        await transaction.providerFeeComponent.deleteMany({
+          where: { providerObservationId: persisted.id },
+        });
+        if (feeComponents?.length)
+          await transaction.providerFeeComponent.createMany({
+            data: feeComponents.map((component, ordinal) => ({
+              providerObservationId: persisted.id,
+              ordinal,
+              feeType: component.feeType,
+              currency: component.currency,
+              feeAmount: component.feeAmount,
+              finalFee: component.finalFee,
+              ...(component.parentFeeType
+                ? { parentFeeType: component.parentFeeType }
+                : {}),
+              ...(component.promotionAmount
+                ? { promotionAmount: component.promotionAmount }
+                : {}),
+              ...(component.taxAmount
+                ? { taxAmount: component.taxAmount }
+                : {}),
+            })),
+          });
+      }
     }
     await transaction.enrichmentItem.update({
       where: { id: input.enrichmentItemId },
@@ -2055,7 +2104,9 @@ export async function getProfitCalculationForProcessing(runId: string) {
           },
         },
       },
-      enrichmentItems: { include: { observations: true } },
+      enrichmentItems: {
+        include: { observations: { include: { feeComponents: true } } },
+      },
       profitCostOverrides: { include: { values: true } },
     },
   });
@@ -2141,8 +2192,10 @@ export async function persistProfitCalculation(input: {
     status: "COMPLETED" | "PARTIAL_SUCCESS";
     recommendation?: ProductRecommendation;
     currentNetProfit?: string;
+    currentProceeds?: string;
     conservativeNetProfit?: string;
     stressNetProfit?: string;
+    userEnteredNetProfit?: string;
     effectiveCogs?: string;
     amazonFees?: string;
     roiPercent?: string;
@@ -2307,6 +2360,18 @@ type AnalysisFilters = {
   featuredOfferState?: "PRESENT" | "ABSENT" | "UNKNOWN" | undefined;
   amazonRetailPresence?: "PRESENT" | "ABSENT" | "UNKNOWN" | undefined;
   pricingCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN" | undefined;
+  feeCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN" | undefined;
+  restrictionState?:
+    | "ELIGIBLE"
+    | "RESTRICTED"
+    | "APPROVAL_REQUIRED"
+    | "INCOMPLETE"
+    | "UNAUTHORIZED"
+    | "THROTTLED"
+    | "UNKNOWN"
+    | undefined;
+  restrictionReasonCode?:
+    "APPROVAL_REQUIRED" | "ASIN_NOT_FOUND" | "NOT_ELIGIBLE" | undefined;
   minFbaOfferCount?: number | undefined;
   maxFbaOfferCount?: number | undefined;
   minFbmOfferCount?: number | undefined;
@@ -2336,11 +2401,52 @@ function analysisWhere(
     filters.maxFbaOfferCount !== undefined ||
     filters.minFbmOfferCount !== undefined ||
     filters.maxFbmOfferCount !== undefined;
+  const typedObservationFilters: Prisma.ProfitResultWhereInput[] = [];
+  if (filters.feeCompleteness)
+    typedObservationFilters.push({
+      supplierRow: {
+        enrichmentItems: {
+          some: {
+            observations: {
+              some: {
+                metricType: "FEES",
+                completeness: filters.feeCompleteness,
+              },
+            },
+          },
+        },
+      },
+    });
+  if (filters.restrictionState || filters.restrictionReasonCode)
+    typedObservationFilters.push({
+      supplierRow: {
+        enrichmentItems: {
+          some: {
+            observations: {
+              some: {
+                metricType: "RESTRICTIONS",
+                ...(filters.restrictionState
+                  ? { restrictionState: filters.restrictionState }
+                  : {}),
+                ...(filters.restrictionReasonCode
+                  ? {
+                      restrictionReasonCodes: {
+                        has: filters.restrictionReasonCode,
+                      },
+                    }
+                  : {}),
+              },
+            },
+          },
+        },
+      },
+    });
   return {
     organizationId,
     scanJobId,
     shippingRouteId,
     isCurrent: true,
+    ...(typedObservationFilters.length ? { AND: typedObservationFilters } : {}),
     ...(filters.recommendation
       ? { recommendation: filters.recommendation }
       : {}),
@@ -2580,8 +2686,10 @@ export async function listAnalysisResults(input: {
         status: true,
         recommendation: true,
         currentNetProfit: true,
+        currentProceeds: true,
         conservativeNetProfit: true,
         stressNetProfit: true,
+        userEnteredNetProfit: true,
         effectiveCogs: true,
         amazonFees: true,
         roiPercent: true,
@@ -2637,6 +2745,7 @@ export async function listAnalysisResults(input: {
                     freshUntil: true,
                     freshnessState: true,
                     primaryAmount: true,
+                    quotedPrice: true,
                     currency: true,
                     payload: true,
                     operation: true,
@@ -2660,6 +2769,25 @@ export async function listAnalysisResults(input: {
                     fbmOfferCountCompleteness: true,
                     lowestFbaPrice: true,
                     lowestFbmPrice: true,
+                    feeScenarioSource: true,
+                    feeFulfillment: true,
+                    feeComponents: {
+                      select: {
+                        ordinal: true,
+                        feeType: true,
+                        parentFeeType: true,
+                        currency: true,
+                        feeAmount: true,
+                        promotionAmount: true,
+                        taxAmount: true,
+                        finalFee: true,
+                      },
+                      orderBy: { ordinal: "asc" },
+                    },
+                    restrictionState: true,
+                    restrictionReasonCodes: true,
+                    restrictionReasons: true,
+                    restrictionConditionType: true,
                   },
                 },
               },
@@ -2670,6 +2798,8 @@ export async function listAnalysisResults(input: {
                 revision: true,
                 status: true,
                 stressDiscountPercent: true,
+                userEnteredSalePrice: true,
+                updatedAt: true,
                 values: { select: { field: true, value: true } },
               },
             },
@@ -2700,9 +2830,6 @@ export async function listAnalysisResults(input: {
             right.observedAt.getTime() - left.observedAt.getTime(),
         )[0];
       if (!observation) return null;
-      const restrictionValue = (
-        observation.payload as { value?: { status?: unknown } }
-      ).value?.status;
       return {
         provider: observation.provider,
         observedAt: observation.observedAt.toISOString(),
@@ -2711,13 +2838,21 @@ export async function listAnalysisResults(input: {
         value: observation.primaryAmount?.toString() ?? null,
         currency: observation.currency,
         restrictionStatus:
-          metricType === "RESTRICTIONS" && typeof restrictionValue === "string"
-            ? restrictionValue
-            : null,
+          metricType === "RESTRICTIONS" ? observation.restrictionState : null,
       };
     };
     const pricing = observations
       .filter((candidate) => candidate.metricType === "PRICING")
+      .sort(
+        (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
+      )[0];
+    const fee = observations
+      .filter((candidate) => candidate.metricType === "FEES")
+      .sort(
+        (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
+      )[0];
+    const restriction = observations
+      .filter((candidate) => candidate.metricType === "RESTRICTIONS")
       .sort(
         (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
       )[0];
@@ -2768,6 +2903,54 @@ export async function listAnalysisResults(input: {
             },
             lowestFbaPrice: pricing.lowestFbaPrice?.toString() ?? null,
             lowestFbmPrice: pricing.lowestFbmPrice?.toString() ?? null,
+          }
+        : null,
+      feeEstimate: fee
+        ? {
+            asin: fee.asin,
+            marketplaceId: fee.marketplaceId,
+            provider: fee.provider,
+            operation: fee.operation,
+            status: fee.observationStatus,
+            observedAt: fee.observedAt.toISOString(),
+            expiresAt: fee.freshUntil.toISOString(),
+            freshnessState: fee.freshnessState,
+            requestHash: fee.requestHash,
+            rawEvidenceReference: fee.rawEvidenceReference,
+            completeness: fee.completeness,
+            scenarioSource: fee.feeScenarioSource,
+            fulfillmentChannel: fee.feeFulfillment,
+            scenarioPrice: fee.quotedPrice?.toString() ?? null,
+            total: fee.primaryAmount?.toString() ?? null,
+            currency: fee.currency,
+            components: fee.feeComponents.map((component) => ({
+              type: component.feeType,
+              parentType: component.parentFeeType,
+              currency: component.currency,
+              amount: component.feeAmount.toString(),
+              promotion: component.promotionAmount?.toString() ?? null,
+              tax: component.taxAmount?.toString() ?? null,
+              finalFee: component.finalFee.toString(),
+            })),
+          }
+        : null,
+      listingRestriction: restriction
+        ? {
+            asin: restriction.asin,
+            marketplaceId: restriction.marketplaceId,
+            provider: restriction.provider,
+            operation: restriction.operation,
+            status: restriction.observationStatus,
+            observedAt: restriction.observedAt.toISOString(),
+            expiresAt: restriction.freshUntil.toISOString(),
+            freshnessState: restriction.freshnessState,
+            requestHash: restriction.requestHash,
+            rawEvidenceReference: restriction.rawEvidenceReference,
+            completeness: restriction.completeness,
+            state: restriction.restrictionState ?? "UNKNOWN",
+            conditionType: restriction.restrictionConditionType,
+            reasonCodes: restriction.restrictionReasonCodes,
+            reasons: restriction.restrictionReasons ?? [],
           }
         : null,
     };
@@ -2851,7 +3034,49 @@ export async function getAnalysisResult(
             },
             orderBy: { confidence: "desc" },
           },
-          enrichmentItems: { include: { observations: true } },
+          enrichmentItems: {
+            include: {
+              observations: {
+                select: {
+                  metricType: true,
+                  provider: true,
+                  providerReference: true,
+                  marketplaceId: true,
+                  observedAt: true,
+                  freshUntil: true,
+                  freshnessState: true,
+                  operation: true,
+                  observationStatus: true,
+                  requestHash: true,
+                  completeness: true,
+                  rawEvidenceReference: true,
+                  asin: true,
+                  currency: true,
+                  primaryAmount: true,
+                  quotedPrice: true,
+                  feeScenarioSource: true,
+                  feeFulfillment: true,
+                  feeComponents: {
+                    select: {
+                      ordinal: true,
+                      feeType: true,
+                      parentFeeType: true,
+                      currency: true,
+                      feeAmount: true,
+                      promotionAmount: true,
+                      taxAmount: true,
+                      finalFee: true,
+                    },
+                    orderBy: { ordinal: "asc" },
+                  },
+                  restrictionState: true,
+                  restrictionReasonCodes: true,
+                  restrictionReasons: true,
+                  restrictionConditionType: true,
+                },
+              },
+            },
+          },
           profitCostOverrides: {
             include: {
               values: true,
@@ -2905,6 +3130,7 @@ export async function getAnalysisOverrideForResult(
               shippingRouteId: true,
               revision: true,
               stressDiscountPercent: true,
+              userEnteredSalePrice: true,
               values: { select: { field: true, value: true } },
             },
           },
@@ -3079,6 +3305,7 @@ export async function applyAnalysisOverride(input: {
   reason: string;
   values: Array<{ field: CostOverrideField; value: string | null }>;
   stressDiscountPercent?: string | null | undefined;
+  userEnteredSalePrice?: string | null | undefined;
 }) {
   return db.$transaction(async (transaction) => {
     const result = await transaction.profitResult.findFirst({
@@ -3160,6 +3387,10 @@ export async function applyAnalysisOverride(input: {
               input.stressDiscountPercent === undefined
                 ? (existing.stressDiscountPercent?.toString() ?? null)
                 : input.stressDiscountPercent,
+            userEnteredSalePrice:
+              input.userEnteredSalePrice === undefined
+                ? (existing.userEnteredSalePrice?.toString() ?? null)
+                : input.userEnteredSalePrice,
             values: {
               deleteMany: {},
               create: [...nextValues].map(([field, value]) => ({
@@ -3178,6 +3409,7 @@ export async function applyAnalysisOverride(input: {
             revision: nextRevision,
             reason: input.reason,
             stressDiscountPercent: input.stressDiscountPercent ?? null,
+            userEnteredSalePrice: input.userEnteredSalePrice ?? null,
             calculationRunId: run.id,
             values: {
               create: [...nextValues].map(([field, value]) => ({
@@ -3194,13 +3426,29 @@ export async function applyAnalysisOverride(input: {
         revision: nextRevision,
         idempotencyKey: input.idempotencyKey,
         reason: input.reason,
-        previousValues: Object.fromEntries(
-          existing?.values.map((value) => [
-            value.field,
-            value.value.toString(),
-          ]) ?? [],
-        ),
-        nextValues: Object.fromEntries(nextValues),
+        previousValues: {
+          costs: Object.fromEntries(
+            existing?.values.map((value) => [
+              value.field,
+              value.value.toString(),
+            ]) ?? [],
+          ),
+          stressDiscountPercent:
+            existing?.stressDiscountPercent?.toString() ?? null,
+          userEnteredSalePrice:
+            existing?.userEnteredSalePrice?.toString() ?? null,
+        },
+        nextValues: {
+          costs: Object.fromEntries(nextValues),
+          stressDiscountPercent:
+            input.stressDiscountPercent === undefined
+              ? (existing?.stressDiscountPercent?.toString() ?? null)
+              : input.stressDiscountPercent,
+          userEnteredSalePrice:
+            input.userEnteredSalePrice === undefined
+              ? (existing?.userEnteredSalePrice?.toString() ?? null)
+              : input.userEnteredSalePrice,
+        },
       },
     });
     await transaction.outboxEvent.create({

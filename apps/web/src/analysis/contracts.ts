@@ -31,6 +31,21 @@ export const analysisQuerySchema = z.object({
   featuredOfferState: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]).optional(),
   amazonRetailPresence: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]).optional(),
   pricingCompleteness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]).optional(),
+  feeCompleteness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]).optional(),
+  restrictionState: z
+    .enum([
+      "ELIGIBLE",
+      "RESTRICTED",
+      "APPROVAL_REQUIRED",
+      "INCOMPLETE",
+      "UNAUTHORIZED",
+      "THROTTLED",
+      "UNKNOWN",
+    ])
+    .optional(),
+  restrictionReasonCode: z
+    .enum(["APPROVAL_REQUIRED", "ASIN_NOT_FOUND", "NOT_ELIGIBLE"])
+    .optional(),
   minFbaOfferCount: z.coerce.number().int().nonnegative().optional(),
   maxFbaOfferCount: z.coerce.number().int().nonnegative().optional(),
   minFbmOfferCount: z.coerce.number().int().nonnegative().optional(),
@@ -50,6 +65,9 @@ export const analysisViewStateSchema = z.object({
   featuredOfferState: analysisQuerySchema.shape.featuredOfferState,
   amazonRetailPresence: analysisQuerySchema.shape.amazonRetailPresence,
   pricingCompleteness: analysisQuerySchema.shape.pricingCompleteness,
+  feeCompleteness: analysisQuerySchema.shape.feeCompleteness,
+  restrictionState: analysisQuerySchema.shape.restrictionState,
+  restrictionReasonCode: analysisQuerySchema.shape.restrictionReasonCode,
   minFbaOfferCount: z.number().int().nonnegative().optional(),
   maxFbaOfferCount: z.number().int().nonnegative().optional(),
   minFbmOfferCount: z.number().int().nonnegative().optional(),
@@ -85,9 +103,17 @@ export const overrideSchema = z
       .refine((value) => new Decimal(value).lt(100))
       .nullable()
       .optional(),
+    userEnteredSalePrice: nonNegativeDecimal
+      .refine((value) => new Decimal(value).gt(0))
+      .nullable()
+      .optional(),
   })
   .superRefine((value, context) => {
-    if (value.values.length === 0 && value.stressDiscountPercent === undefined)
+    if (
+      value.values.length === 0 &&
+      value.stressDiscountPercent === undefined &&
+      value.userEnteredSalePrice === undefined
+    )
       context.addIssue({
         code: "custom",
         path: ["values"],

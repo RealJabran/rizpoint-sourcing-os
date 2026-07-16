@@ -45,6 +45,42 @@ type CachedResult = {
     lowestFbaPrice?: string;
     lowestFbmPrice?: string;
   };
+  fee?: {
+    requestHash: string;
+    requestInputs: ReturnType<typeof feeRequestInputs>;
+    rawEvidenceReference?: string;
+    rawEvidence?: unknown;
+    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    scenarioSource: "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+    fulfillment: "AMAZON" | "MERCHANT" | "UNKNOWN";
+    components: Array<{
+      feeType: string;
+      parentFeeType?: string;
+      currency: string;
+      feeAmount: string;
+      promotionAmount?: string;
+      taxAmount?: string;
+      finalFee: string;
+    }>;
+  };
+  restrictions?: {
+    requestHash: string;
+    requestInputs: ReturnType<typeof restrictionRequestInputs>;
+    rawEvidenceReference?: string;
+    rawEvidence?: unknown;
+    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    state:
+      | "ELIGIBLE"
+      | "RESTRICTED"
+      | "APPROVAL_REQUIRED"
+      | "INCOMPLETE"
+      | "UNAUTHORIZED"
+      | "THROTTLED"
+      | "UNKNOWN";
+    reasonCodes: string[];
+    reasons: unknown[];
+    conditionType?: string;
+  };
 };
 
 function stableHash(value: unknown): string {
@@ -59,6 +95,58 @@ function pricingRequestInputs(asin: string, marketplaceId: string) {
     includedData: ["featuredBuyingOptions", "lowestPricedOffers"],
     lowestPricedOffersInputs: [{ itemCondition: "New", offerType: "Consumer" }],
   };
+}
+
+function feeRequestInputs(input: {
+  asin: string;
+  marketplaceId: string;
+  price: string;
+  listingPrice?: string;
+  shippingPrice: string;
+  currency: string;
+  fulfillmentChannel: "AMAZON" | "MERCHANT";
+  scenarioSource: "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+}) {
+  return { operation: "getMyFeesEstimateForASIN", ...input };
+}
+
+function restrictionRequestInputs(asin: string, marketplaceId: string) {
+  return {
+    operation: "getListingsRestrictions",
+    asin,
+    marketplaceId,
+    conditionType: "new_new",
+  };
+}
+
+function observationFailureStatus(detail: ReturnType<typeof providerError>) {
+  return detail.code === "UNAUTHORIZED" || detail.code === "FORBIDDEN"
+    ? ("UNAUTHORIZED" as const)
+    : detail.status === "THROTTLED"
+      ? ("THROTTLED" as const)
+      : detail.status === "RETRYABLE_ERROR"
+        ? ("RETRYABLE_FAILURE" as const)
+        : detail.code === "NOT_FOUND"
+          ? ("UNAVAILABLE" as const)
+          : ("TERMINAL_FAILURE" as const);
+}
+
+function restrictionFailureState(detail: ReturnType<typeof providerError>) {
+  return detail.code === "UNAUTHORIZED" || detail.code === "FORBIDDEN"
+    ? ("UNAUTHORIZED" as const)
+    : detail.status === "THROTTLED"
+      ? ("THROTTLED" as const)
+      : ("UNKNOWN" as const);
+}
+
+function operationForMetric(metric: Metric) {
+  return metric === "PRICING"
+    ? "getCompetitiveSummary"
+    : metric === "FEES"
+      ? "getMyFeesEstimateForASIN"
+      : metric === "RESTRICTIONS"
+        ? "getListingsRestrictions"
+        : metric;
 }
 
 function providerError(error: unknown) {
@@ -108,7 +196,7 @@ export async function processEnrichment(scanJobId: string) {
           organizationId: run.organizationId,
           enrichmentRunId: run.id,
           provider,
-          operation: metric === "PRICING" ? "getCompetitiveSummary" : metric,
+          operation: operationForMetric(metric),
           requestKey:
             metric === "PRICING"
               ? stableHash(pricingInputs)
@@ -159,6 +247,58 @@ export async function processEnrichment(scanJobId: string) {
             visibleOfferCountCompleteness: "UNKNOWN",
             fbaOfferCountCompleteness: "UNKNOWN",
             fbmOfferCountCompleteness: "UNKNOWN",
+          },
+          {
+            metricType: "FEES",
+            provider,
+            observedAt: new Date(),
+            freshUntil: new Date(),
+            freshnessState: "UNKNOWN",
+            marketplaceId: run.providerConnection?.marketplaceId ?? "UNKNOWN",
+            payload: { errorCode: detail.code },
+            operation: "getMyFeesEstimateForASIN",
+            observationStatus: observationFailureStatus(detail),
+            requestHash: stableHash({
+              operation: "getMyFeesEstimateForASIN",
+              asin: item.asin,
+              marketplaceId: run.providerConnection?.marketplaceId ?? "UNKNOWN",
+            }),
+            requestInputs: {
+              operation: "getMyFeesEstimateForASIN",
+              asin: item.asin,
+              marketplaceId: run.providerConnection?.marketplaceId ?? "UNKNOWN",
+            },
+            completeness: "UNKNOWN",
+            asin: item.asin,
+            feeScenarioSource: "CURRENT_FEATURED_OFFER",
+            feeFulfillment: "UNKNOWN",
+          },
+          {
+            metricType: "RESTRICTIONS",
+            provider,
+            observedAt: new Date(),
+            freshUntil: new Date(),
+            freshnessState: "UNKNOWN",
+            marketplaceId: run.providerConnection?.marketplaceId ?? "UNKNOWN",
+            payload: { errorCode: detail.code },
+            operation: "getListingsRestrictions",
+            observationStatus: observationFailureStatus(detail),
+            requestHash: stableHash(
+              restrictionRequestInputs(
+                item.asin,
+                run.providerConnection?.marketplaceId ?? "UNKNOWN",
+              ),
+            ),
+            requestInputs: restrictionRequestInputs(
+              item.asin,
+              run.providerConnection?.marketplaceId ?? "UNKNOWN",
+            ),
+            completeness: "UNKNOWN",
+            asin: item.asin,
+            restrictionState: restrictionFailureState(detail),
+            restrictionReasonCodes: [],
+            restrictionReasons: [],
+            restrictionConditionType: "new_new",
           },
         ],
         missingMetrics,
@@ -262,18 +402,45 @@ export async function processEnrichment(scanJobId: string) {
             : metric === "FEES"
               ? await (async () => {
                   const pricing = await call(asin, "PRICING");
-                  const quotePrice = (
-                    pricing.value as { value?: { lowestPrice?: string } }
-                  ).value?.lowestPrice;
-                  if (!quotePrice) throw new ProviderError("INVALID_RESPONSE");
-                  return provider.estimateFees({
+                  const offer = (
+                    pricing.value as {
+                      value?: {
+                        featuredOfferState?: string;
+                        featuredOffer?: {
+                          listingPrice?: string;
+                          shippingPrice?: string;
+                          landedPrice?: string;
+                          currency?: string;
+                          fulfillmentChannel?: string;
+                        };
+                      };
+                    }
+                  ).value;
+                  const featured = offer?.featuredOffer;
+                  if (
+                    offer?.featuredOfferState !== "PRESENT" ||
+                    !featured?.landedPrice ||
+                    !featured.currency ||
+                    !["AMAZON", "MERCHANT"].includes(
+                      featured.fulfillmentChannel ?? "",
+                    )
+                  )
+                    throw new ProviderError("NOT_FOUND");
+                  const request = {
                     asin,
                     marketplace,
-                    fulfillmentChannel: "AMAZON",
-                    price: quotePrice,
-                    currency: "USD",
-                    requestId: `${run.id}:${asin}:${quotePrice}`,
-                  });
+                    fulfillmentChannel: featured.fulfillmentChannel as
+                      "AMAZON" | "MERCHANT",
+                    price: featured.landedPrice,
+                    ...(featured.listingPrice
+                      ? { listingPrice: featured.listingPrice }
+                      : {}),
+                    shippingPrice: featured.shippingPrice ?? "0",
+                    currency: featured.currency,
+                    scenarioSource: "CURRENT_FEATURED_OFFER" as const,
+                    requestId: `${run.id}:${asin}:CURRENT_FEATURED_OFFER:${featured.landedPrice}`,
+                  };
+                  return provider.estimateFees(request);
                 })()
               : metric === "RESTRICTIONS"
                 ? await provider.getRestrictions(asin, marketplace)
@@ -290,7 +457,35 @@ export async function processEnrichment(scanJobId: string) {
               lowestPrice?: string;
               totalFee?: string;
               quotedPrice?: string;
+              listingPrice?: string;
+              shippingPrice?: string;
               currency?: string;
+              operation?: string;
+              asin?: string;
+              marketplaceId?: string;
+              fulfillmentChannel?: "AMAZON" | "MERCHANT";
+              scenarioSource?:
+                "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+              completeness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+              components?: Array<{
+                feeType: string;
+                parentFeeType?: string;
+                currency: string;
+                feeAmount: string;
+                promotion?: string;
+                tax?: string;
+                finalFee: string;
+              }>;
+              state?:
+                | "ELIGIBLE"
+                | "RESTRICTED"
+                | "APPROVAL_REQUIRED"
+                | "INCOMPLETE"
+                | "UNAUTHORIZED"
+                | "THROTTLED"
+                | "UNKNOWN";
+              reasons?: Array<{ code?: string }>;
+              conditionType?: string;
             }
           | Array<{ currency?: string }>;
         rawProviderObservation?: unknown;
@@ -301,8 +496,10 @@ export async function processEnrichment(scanJobId: string) {
       }
       const amount =
         metric === "PRICING"
-          ? (observed.value as { lowestPrice?: string } | undefined)
-              ?.lowestPrice
+          ? (
+              observed.value as
+                { featuredOffer?: { landedPrice?: string } } | undefined
+            )?.featuredOffer?.landedPrice
           : metric === "FEES"
             ? (observed.value as { totalFee?: string } | undefined)?.totalFee
             : undefined;
@@ -347,6 +544,63 @@ export async function processEnrichment(scanJobId: string) {
         asin,
         marketplace.marketplaceId,
       );
+      const feeValue =
+        metric === "FEES"
+          ? (observed.value as
+              | {
+                  quotedPrice: string;
+                  listingPrice: string;
+                  shippingPrice: string;
+                  currency: string;
+                  fulfillmentChannel: "AMAZON" | "MERCHANT";
+                  scenarioSource:
+                    "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+                  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                  components: Array<{
+                    feeType: string;
+                    parentFeeType?: string;
+                    currency: string;
+                    feeAmount: string;
+                    promotion?: string;
+                    tax?: string;
+                    finalFee: string;
+                  }>;
+                }
+              | undefined)
+          : undefined;
+      const feeInputs = feeValue
+        ? feeRequestInputs({
+            asin,
+            marketplaceId: marketplace.marketplaceId,
+            price: feeValue.quotedPrice,
+            listingPrice: feeValue.listingPrice,
+            shippingPrice: feeValue.shippingPrice,
+            currency: feeValue.currency,
+            fulfillmentChannel: feeValue.fulfillmentChannel,
+            scenarioSource: feeValue.scenarioSource,
+          })
+        : undefined;
+      const restrictionValue =
+        metric === "RESTRICTIONS"
+          ? (observed.value as
+              | {
+                  state:
+                    | "ELIGIBLE"
+                    | "RESTRICTED"
+                    | "APPROVAL_REQUIRED"
+                    | "INCOMPLETE"
+                    | "UNAUTHORIZED"
+                    | "THROTTLED"
+                    | "UNKNOWN";
+                  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                  reasons: Array<{ code?: string }>;
+                  conditionType?: string;
+                }
+              | undefined)
+          : undefined;
+      const restrictionInputs = restrictionValue
+        ? restrictionRequestInputs(asin, marketplace.marketplaceId)
+        : undefined;
       return {
         metric,
         value,
@@ -424,6 +678,63 @@ export async function processEnrichment(scanJobId: string) {
               },
             }
           : {}),
+        ...(feeValue && feeInputs
+          ? {
+              fee: {
+                requestHash: stableHash(feeInputs),
+                requestInputs: feeInputs,
+                ...(observed.rawProviderObservation !== undefined
+                  ? {
+                      rawEvidence: observed.rawProviderObservation,
+                      rawEvidenceReference: stableHash(
+                        observed.rawProviderObservation,
+                      ),
+                    }
+                  : {}),
+                completeness: feeValue.completeness,
+                scenarioSource: feeValue.scenarioSource,
+                fulfillment: feeValue.fulfillmentChannel,
+                components: feeValue.components.map((component) => ({
+                  feeType: component.feeType,
+                  currency: component.currency,
+                  feeAmount: component.feeAmount,
+                  finalFee: component.finalFee,
+                  ...(component.parentFeeType
+                    ? { parentFeeType: component.parentFeeType }
+                    : {}),
+                  ...(component.promotion
+                    ? { promotionAmount: component.promotion }
+                    : {}),
+                  ...(component.tax ? { taxAmount: component.tax } : {}),
+                })),
+              },
+            }
+          : {}),
+        ...(restrictionValue && restrictionInputs
+          ? {
+              restrictions: {
+                requestHash: stableHash(restrictionInputs),
+                requestInputs: restrictionInputs,
+                ...(observed.rawProviderObservation !== undefined
+                  ? {
+                      rawEvidence: observed.rawProviderObservation,
+                      rawEvidenceReference: stableHash(
+                        observed.rawProviderObservation,
+                      ),
+                    }
+                  : {}),
+                completeness: restrictionValue.completeness,
+                state: restrictionValue.state,
+                reasonCodes: restrictionValue.reasons.flatMap((reason) =>
+                  reason.code ? [reason.code] : [],
+                ),
+                reasons: restrictionValue.reasons,
+                ...(restrictionValue.conditionType
+                  ? { conditionType: restrictionValue.conditionType }
+                  : {}),
+              },
+            }
+          : {}),
       };
     })();
     cache.set(key, task);
@@ -456,17 +767,28 @@ export async function processEnrichment(scanJobId: string) {
         const result = await call(item.asin, metric);
         if (metric === "PRICING" && result.pricing?.completeness !== "COMPLETE")
           missingMetrics.push("PRICING_PARTIAL_RESPONSE");
+        if (metric === "FEES" && result.fee?.completeness !== "COMPLETE")
+          missingMetrics.push("FEES_PARTIAL_RESPONSE");
+        if (
+          metric === "RESTRICTIONS" &&
+          result.restrictions?.completeness !== "COMPLETE"
+        )
+          missingMetrics.push("RESTRICTIONS_PARTIAL_RESPONSE");
         await recordProviderCallAttempt({
           organizationId: run.organizationId,
           enrichmentRunId: run.id,
           provider: result.provider,
-          operation: metric === "PRICING" ? "getCompetitiveSummary" : metric,
+          operation: operationForMetric(metric),
           requestKey:
             metric === "PRICING"
               ? stableHash(
                   pricingRequestInputs(item.asin, marketplace.marketplaceId),
                 )
-              : `${marketplace.marketplaceId}:${item.asin}`,
+              : metric === "FEES" && result.fee
+                ? result.fee.requestHash
+                : metric === "RESTRICTIONS" && result.restrictions
+                  ? result.restrictions.requestHash
+                  : `${marketplace.marketplaceId}:${item.asin}`,
           attempt: run.attemptCount,
           status: "SUCCESS",
         });
@@ -549,6 +871,69 @@ export async function processEnrichment(scanJobId: string) {
                   : {}),
               }
             : {}),
+          ...(result.fee
+            ? {
+                operation: "getMyFeesEstimateForASIN",
+                observationStatus:
+                  result.fee.completeness === "COMPLETE"
+                    ? ("SUCCESS" as const)
+                    : ("PARTIAL" as const),
+                requestHash: result.fee.requestHash,
+                requestInputs: result.fee.requestInputs,
+                completeness: result.fee.completeness,
+                ...(result.fee.rawEvidenceReference
+                  ? { rawEvidenceReference: result.fee.rawEvidenceReference }
+                  : {}),
+                ...(result.fee.rawEvidence !== undefined
+                  ? {
+                      rawEvidence: JSON.parse(
+                        JSON.stringify(result.fee.rawEvidence),
+                      ),
+                    }
+                  : {}),
+                asin: item.asin,
+                feeScenarioSource: result.fee.scenarioSource,
+                feeFulfillment: result.fee.fulfillment,
+                feeComponents: result.fee.components,
+              }
+            : {}),
+          ...(result.restrictions
+            ? {
+                operation: "getListingsRestrictions",
+                observationStatus:
+                  result.restrictions.completeness === "COMPLETE"
+                    ? ("SUCCESS" as const)
+                    : ("PARTIAL" as const),
+                requestHash: result.restrictions.requestHash,
+                requestInputs: result.restrictions.requestInputs,
+                completeness: result.restrictions.completeness,
+                ...(result.restrictions.rawEvidenceReference
+                  ? {
+                      rawEvidenceReference:
+                        result.restrictions.rawEvidenceReference,
+                    }
+                  : {}),
+                ...(result.restrictions.rawEvidence !== undefined
+                  ? {
+                      rawEvidence: JSON.parse(
+                        JSON.stringify(result.restrictions.rawEvidence),
+                      ),
+                    }
+                  : {}),
+                asin: item.asin,
+                restrictionState: result.restrictions.state,
+                restrictionReasonCodes: result.restrictions.reasonCodes,
+                restrictionReasons: JSON.parse(
+                  JSON.stringify(result.restrictions.reasons),
+                ),
+                ...(result.restrictions.conditionType
+                  ? {
+                      restrictionConditionType:
+                        result.restrictions.conditionType,
+                    }
+                  : {}),
+              }
+            : {}),
         });
       } catch (error) {
         const detail = providerError(error);
@@ -588,6 +973,54 @@ export async function processEnrichment(scanJobId: string) {
             fbaOfferCountCompleteness: "UNKNOWN",
             fbmOfferCountCompleteness: "UNKNOWN",
           });
+        } else if (metric === "FEES") {
+          const requestInputs = {
+            operation: "getMyFeesEstimateForASIN",
+            asin: item.asin,
+            marketplaceId: marketplace.marketplaceId,
+            scenarioSource: "CURRENT_FEATURED_OFFER",
+          };
+          observations.push({
+            metricType: "FEES",
+            provider: providerKind,
+            observedAt: new Date(),
+            freshUntil: new Date(),
+            freshnessState: "UNKNOWN",
+            marketplaceId: marketplace.marketplaceId,
+            payload: { errorCode: detail.code },
+            operation: "getMyFeesEstimateForASIN",
+            observationStatus: observationFailureStatus(detail),
+            requestHash: stableHash(requestInputs),
+            requestInputs,
+            completeness: "UNKNOWN",
+            asin: item.asin,
+            feeScenarioSource: "CURRENT_FEATURED_OFFER",
+            feeFulfillment: "UNKNOWN",
+          });
+        } else if (metric === "RESTRICTIONS") {
+          const requestInputs = restrictionRequestInputs(
+            item.asin,
+            marketplace.marketplaceId,
+          );
+          observations.push({
+            metricType: "RESTRICTIONS",
+            provider: providerKind,
+            observedAt: new Date(),
+            freshUntil: new Date(),
+            freshnessState: "UNKNOWN",
+            marketplaceId: marketplace.marketplaceId,
+            payload: { errorCode: detail.code },
+            operation: "getListingsRestrictions",
+            observationStatus: observationFailureStatus(detail),
+            requestHash: stableHash(requestInputs),
+            requestInputs,
+            completeness: "UNKNOWN",
+            asin: item.asin,
+            restrictionState: restrictionFailureState(detail),
+            restrictionReasonCodes: [],
+            restrictionReasons: [],
+            restrictionConditionType: "new_new",
+          });
         }
         await recordProviderCallAttempt({
           organizationId: run.organizationId,
@@ -596,13 +1029,27 @@ export async function processEnrichment(scanJobId: string) {
             metric === "HISTORY" && providerKind === "MOCK_AMAZON"
               ? "MOCK_HISTORY"
               : providerKind,
-          operation: metric === "PRICING" ? "getCompetitiveSummary" : metric,
+          operation: operationForMetric(metric),
           requestKey:
             metric === "PRICING"
               ? stableHash(
                   pricingRequestInputs(item.asin, marketplace.marketplaceId),
                 )
-              : `${marketplace.marketplaceId}:${item.asin}`,
+              : metric === "FEES"
+                ? stableHash({
+                    operation: "getMyFeesEstimateForASIN",
+                    asin: item.asin,
+                    marketplaceId: marketplace.marketplaceId,
+                    scenarioSource: "CURRENT_FEATURED_OFFER",
+                  })
+                : metric === "RESTRICTIONS"
+                  ? stableHash(
+                      restrictionRequestInputs(
+                        item.asin,
+                        marketplace.marketplaceId,
+                      ),
+                    )
+                  : `${marketplace.marketplaceId}:${item.asin}`,
           attempt: run.attemptCount,
           status: detail.status,
           ...(detail.httpStatus ? { httpStatus: detail.httpStatus } : {}),

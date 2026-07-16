@@ -36,7 +36,9 @@ it("returns provenance-bearing enrichment fixtures", async () => {
       asin: "B000000001",
       marketplace,
       fulfillmentChannel: "AMAZON",
+      scenarioSource: "CURRENT_FEATURED_OFFER",
       price: "10.00",
+      shippingPrice: "0",
       currency: "USD",
       requestId: "test",
     }),
@@ -45,7 +47,9 @@ it("returns provenance-bearing enrichment fixtures", async () => {
   expect(pricing.provenance.observedAt).toBeTruthy();
   expect(fees.value.totalFee).toBe("3.5000");
   expect(fees.value.quotedPrice).toBe("10.00");
-  expect(restrictions.value.status).toBe("ALLOWED");
+  expect(fees.value.components).toHaveLength(2);
+  expect(fees.value.completeness).toBe("COMPLETE");
+  expect(restrictions.value.state).toBe("ELIGIBLE");
 });
 
 it("keeps deterministic offer presence and unknown states distinct", async () => {

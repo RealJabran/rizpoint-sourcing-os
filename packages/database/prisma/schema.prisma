@@ -230,6 +230,22 @@ enum OfferFulfillmentChannel {
   UNKNOWN
 }
 
+enum FeeScenarioSource {
+  CURRENT_FEATURED_OFFER
+  CONSERVATIVE
+  USER_ENTERED
+}
+
+enum ListingRestrictionState {
+  ELIGIBLE
+  RESTRICTED
+  APPROVAL_REQUIRED
+  INCOMPLETE
+  UNAUTHORIZED
+  THROTTLED
+  UNKNOWN
+}
+
 enum BrandPolicyStatus {
   PROHIBITED
   APPROVAL_REQUIRED
@@ -293,6 +309,7 @@ enum ShortlistStatus {
   ACTIVE
   ARCHIVED
 }
+
 enum ShortlistItemStatus {
   RESEARCH
   REVIEW
@@ -301,12 +318,14 @@ enum ShortlistItemStatus {
   REJECTED
   ORDERED
 }
+
 enum PurchaseOrderStatus {
   DRAFT
   VALIDATED
   EXPORTED
   CANCELLED
 }
+
 enum ExportStatus {
   PENDING
   RUNNING
@@ -314,10 +333,12 @@ enum ExportStatus {
   FAILED_RETRYABLE
   FAILED_FINAL
 }
+
 enum ExportFormat {
   CSV
   XLSX
 }
+
 enum ExportKind {
   SHORTLIST
   PURCHASE_ORDER
@@ -434,23 +455,23 @@ model ScanJob {
 }
 
 model Supplier {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
-  code           String
-  name           String
-  isVsiPreset    Boolean  @default(false) @map("is_vsi_preset")
-  minimumOrderCases Int   @default(1) @map("minimum_order_cases")
-  orderMultipleCases Int  @default(1) @map("order_multiple_cases")
-  minimumOrderAmount Decimal? @map("minimum_order_amount") @db.Decimal(18, 4)
-  orderingRulesSource String? @map("ordering_rules_source")
+  id                      String    @id @default(cuid())
+  organizationId          String    @map("organization_id")
+  code                    String
+  name                    String
+  isVsiPreset             Boolean   @default(false) @map("is_vsi_preset")
+  minimumOrderCases       Int       @default(1) @map("minimum_order_cases")
+  orderMultipleCases      Int       @default(1) @map("order_multiple_cases")
+  minimumOrderAmount      Decimal?  @map("minimum_order_amount") @db.Decimal(18, 4)
+  orderingRulesSource     String?   @map("ordering_rules_source")
   orderingRulesObservedAt DateTime? @map("ordering_rules_observed_at")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  uploads       Upload[]
-  scans         ScanJob[]
-  sheetProfiles SheetProfile[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploads        Upload[]
+  scans          ScanJob[]
+  sheetProfiles  SheetProfile[]
   purchaseOrders PurchaseOrder[]
 
   @@unique([organizationId, code])
@@ -563,8 +584,8 @@ model SupplierRow {
   profitResults            ProfitResult[]
   profitCostOverrides      ProfitCostOverride[]
   profitCalculationTargets ProfitCalculationTarget[]
-  shortlistItems              ShortlistItem[]
-  purchaseOrderLines          PurchaseOrderLine[]
+  shortlistItems           ShortlistItem[]
+  purchaseOrderLines       PurchaseOrderLine[]
 
   @@unique([scanJobId, sourceRowNumber])
   @@index([scanJobId, normalizationStatus])
@@ -617,26 +638,26 @@ model NormalizationWarning {
 }
 
 model CatalogProduct {
-  id                String                 @id @default(cuid())
-  provider          String
-  providerReference String                 @map("provider_reference")
-  asin              String?
-  title             String
-  brand             String?
-  model             String?
-  mpn               String?
-  sizeText          String?                @map("size_text")
-  packCount         Int?                   @map("pack_count")
-  variation         String?
-  marketplaceId     String?                @map("marketplace_id")
-  responseCompleteness String?             @map("response_completeness")
-  requestLineage    String?                @map("request_lineage")
-  identityProjection Json?                 @map("identity_projection")
-  observedAt        DateTime               @map("observed_at")
-  freshnessState    ExternalFreshnessState @map("freshness_state")
-  rawPayload        Json?                  @map("raw_payload")
-  createdAt         DateTime               @default(now()) @map("created_at")
-  updatedAt         DateTime               @updatedAt @map("updated_at")
+  id                   String                 @id @default(cuid())
+  provider             String
+  providerReference    String                 @map("provider_reference")
+  asin                 String?
+  title                String
+  brand                String?
+  model                String?
+  mpn                  String?
+  sizeText             String?                @map("size_text")
+  packCount            Int?                   @map("pack_count")
+  variation            String?
+  marketplaceId        String?                @map("marketplace_id")
+  responseCompleteness String?                @map("response_completeness")
+  requestLineage       String?                @map("request_lineage")
+  identityProjection   Json?                  @map("identity_projection")
+  observedAt           DateTime               @map("observed_at")
+  freshnessState       ExternalFreshnessState @map("freshness_state")
+  rawPayload           Json?                  @map("raw_payload")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
 
   identifiers       ProductIdentifier[]
   listingCandidates ListingCandidate[]
@@ -855,55 +876,84 @@ model EnrichmentItem {
 }
 
 model ProviderObservation {
-  id                            String                 @id @default(cuid())
-  enrichmentItemId              String                 @map("enrichment_item_id")
-  metricType                    EnrichmentMetricType   @map("metric_type")
+  id                            String                    @id @default(cuid())
+  enrichmentItemId              String                    @map("enrichment_item_id")
+  metricType                    EnrichmentMetricType      @map("metric_type")
   provider                      ProviderKind
-  providerReference             String?                @map("provider_reference")
-  marketplaceId                 String                 @map("marketplace_id")
-  observedAt                    DateTime               @map("observed_at")
-  freshUntil                    DateTime               @map("fresh_until")
-  freshnessState                ExternalFreshnessState @map("freshness_state")
+  providerReference             String?                   @map("provider_reference")
+  marketplaceId                 String                    @map("marketplace_id")
+  observedAt                    DateTime                  @map("observed_at")
+  freshUntil                    DateTime                  @map("fresh_until")
+  freshnessState                ExternalFreshnessState    @map("freshness_state")
   currency                      String?
-  primaryAmount                 Decimal?               @map("primary_amount") @db.Decimal(18, 4)
-  secondaryAmount               Decimal?               @map("secondary_amount") @db.Decimal(18, 4)
-  quotedPrice                   Decimal?               @map("quoted_price") @db.Decimal(18, 4)
+  primaryAmount                 Decimal?                  @map("primary_amount") @db.Decimal(18, 4)
+  secondaryAmount               Decimal?                  @map("secondary_amount") @db.Decimal(18, 4)
+  quotedPrice                   Decimal?                  @map("quoted_price") @db.Decimal(18, 4)
   rank                          Int?
-  payload                       Json                   @map("payload")
-  responseChecksum              String?                @map("response_checksum")
-  errorCode                     String?                @map("error_code")
+  payload                       Json                      @map("payload")
+  responseChecksum              String?                   @map("response_checksum")
+  errorCode                     String?                   @map("error_code")
   operation                     String?
   observationStatus             ProviderObservationStatus @default(SUCCESS) @map("observation_status")
-  requestHash                   String?                @map("request_hash")
-  requestInputs                 Json?                  @map("request_inputs")
+  requestHash                   String?                   @map("request_hash")
+  requestInputs                 Json?                     @map("request_inputs")
   completeness                  OfferCompleteness?
-  rawEvidenceReference          String?                @map("raw_evidence_reference")
-  rawEvidence                   Json?                  @map("raw_evidence")
+  rawEvidenceReference          String?                   @map("raw_evidence_reference")
+  rawEvidence                   Json?                     @map("raw_evidence")
   asin                          String?
-  featuredOfferState            OfferPresence?          @map("featured_offer_state")
-  featuredPrice                 Decimal?               @map("featured_price") @db.Decimal(18, 4)
-  featuredCurrency              String?                @map("featured_currency")
-  featuredFulfillment           OfferFulfillmentChannel? @map("featured_fulfillment")
-  featuredSellerId              String?                @map("featured_seller_id")
-  amazonRetailPresence          OfferPresence?          @map("amazon_retail_presence")
-  visibleOfferCount             Int?                   @map("visible_offer_count")
-  visibleOfferCountCompleteness OfferCompleteness?      @map("visible_offer_count_completeness")
-  fbaOfferCount                 Int?                   @map("fba_offer_count")
-  fbaOfferCountCompleteness     OfferCompleteness?      @map("fba_offer_count_completeness")
-  fbmOfferCount                 Int?                   @map("fbm_offer_count")
-  fbmOfferCountCompleteness     OfferCompleteness?      @map("fbm_offer_count_completeness")
-  lowestFbaPrice                Decimal?               @map("lowest_fba_price") @db.Decimal(18, 4)
-  lowestFbmPrice                Decimal?               @map("lowest_fbm_price") @db.Decimal(18, 4)
-  createdAt                     DateTime               @default(now()) @map("created_at")
-  updatedAt                     DateTime               @updatedAt @map("updated_at")
+  featuredOfferState            OfferPresence?            @map("featured_offer_state")
+  featuredPrice                 Decimal?                  @map("featured_price") @db.Decimal(18, 4)
+  featuredCurrency              String?                   @map("featured_currency")
+  featuredFulfillment           OfferFulfillmentChannel?  @map("featured_fulfillment")
+  featuredSellerId              String?                   @map("featured_seller_id")
+  amazonRetailPresence          OfferPresence?            @map("amazon_retail_presence")
+  visibleOfferCount             Int?                      @map("visible_offer_count")
+  visibleOfferCountCompleteness OfferCompleteness?        @map("visible_offer_count_completeness")
+  fbaOfferCount                 Int?                      @map("fba_offer_count")
+  fbaOfferCountCompleteness     OfferCompleteness?        @map("fba_offer_count_completeness")
+  fbmOfferCount                 Int?                      @map("fbm_offer_count")
+  fbmOfferCountCompleteness     OfferCompleteness?        @map("fbm_offer_count_completeness")
+  lowestFbaPrice                Decimal?                  @map("lowest_fba_price") @db.Decimal(18, 4)
+  lowestFbmPrice                Decimal?                  @map("lowest_fbm_price") @db.Decimal(18, 4)
+  feeScenarioSource             FeeScenarioSource?        @map("fee_scenario_source")
+  feeFulfillment                OfferFulfillmentChannel?  @map("fee_fulfillment")
+  restrictionState              ListingRestrictionState?  @map("restriction_state")
+  restrictionReasonCodes        String[]                  @default([]) @map("restriction_reason_codes")
+  restrictionReasons            Json?                     @map("restriction_reasons")
+  restrictionConditionType      String?                   @map("restriction_condition_type")
+  createdAt                     DateTime                  @default(now()) @map("created_at")
+  updatedAt                     DateTime                  @updatedAt @map("updated_at")
 
-  enrichmentItem EnrichmentItem @relation(fields: [enrichmentItemId], references: [id], onDelete: Cascade)
+  enrichmentItem EnrichmentItem         @relation(fields: [enrichmentItemId], references: [id], onDelete: Cascade)
+  feeComponents  ProviderFeeComponent[]
 
   @@unique([enrichmentItemId, metricType, provider])
   @@index([metricType, freshUntil])
   @@index([metricType, featuredOfferState])
   @@index([metricType, amazonRetailPresence])
+  @@index([metricType, completeness])
+  @@index([metricType, restrictionState])
   @@map("provider_observations")
+}
+
+model ProviderFeeComponent {
+  id                    String   @id @default(cuid())
+  providerObservationId String   @map("provider_observation_id")
+  ordinal               Int
+  feeType               String   @map("fee_type")
+  parentFeeType         String?  @map("parent_fee_type")
+  currency              String
+  feeAmount             Decimal  @map("fee_amount") @db.Decimal(18, 4)
+  promotionAmount       Decimal? @map("promotion_amount") @db.Decimal(18, 4)
+  taxAmount             Decimal? @map("tax_amount") @db.Decimal(18, 4)
+  finalFee              Decimal  @map("final_fee") @db.Decimal(18, 4)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  providerObservation ProviderObservation @relation(fields: [providerObservationId], references: [id], onDelete: Cascade)
+
+  @@unique([providerObservationId, ordinal])
+  @@index([providerObservationId, feeType])
+  @@map("provider_fee_components")
 }
 
 model FinancialPolicy {
@@ -952,7 +1002,7 @@ model ShippingRoute {
   profitResults            ProfitResult[]
   profitCostOverrides      ProfitCostOverride[]
   profitCalculationTargets ProfitCalculationTarget[]
-  purchaseOrders             PurchaseOrder[]
+  purchaseOrders           PurchaseOrder[]
 
   @@unique([organizationId, name, effectiveFrom])
   @@index([organizationId, active, effectiveFrom])
@@ -1013,8 +1063,10 @@ model ProfitResult {
   recommendation          ProductRecommendation?
   scenarioType            ProfitScenarioType      @default(CURRENT) @map("scenario_type")
   currentNetProfit        Decimal?                @map("current_net_profit") @db.Decimal(18, 4)
+  currentProceeds         Decimal?                @map("current_proceeds") @db.Decimal(18, 4)
   conservativeNetProfit   Decimal?                @map("conservative_net_profit") @db.Decimal(18, 4)
   stressNetProfit         Decimal?                @map("stress_net_profit") @db.Decimal(18, 4)
+  userEnteredNetProfit    Decimal?                @map("user_entered_net_profit") @db.Decimal(18, 4)
   effectiveCogs           Decimal?                @map("effective_cogs") @db.Decimal(18, 4)
   amazonFees              Decimal?                @map("amazon_fees") @db.Decimal(18, 4)
   roiPercent              Decimal?                @map("roi_percent") @db.Decimal(12, 4)
@@ -1073,6 +1125,7 @@ model ProfitCostOverride {
   status                AnalysisOverrideStatus @default(PENDING_RECALCULATION)
   reason                String
   stressDiscountPercent Decimal?               @map("stress_discount_percent") @db.Decimal(12, 4)
+  userEnteredSalePrice  Decimal?               @map("user_entered_sale_price") @db.Decimal(18, 4)
   calculationRunId      String?                @map("calculation_run_id")
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
@@ -1243,10 +1296,10 @@ model ShortlistItem {
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  shortlist    Shortlist          @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
-  supplierRow  SupplierRow        @relation(fields: [supplierRowId], references: [id], onDelete: Restrict)
-  profitResult ProfitResult       @relation(fields: [profitResultId], references: [id], onDelete: Restrict)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  shortlist    Shortlist           @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  supplierRow  SupplierRow         @relation(fields: [supplierRowId], references: [id], onDelete: Restrict)
+  profitResult ProfitResult        @relation(fields: [profitResultId], references: [id], onDelete: Restrict)
   notes        ShortlistNote[]
   poLines      PurchaseOrderLine[]
 
@@ -1256,15 +1309,15 @@ model ShortlistItem {
 }
 
 model ShortlistNote {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
-  shortlistItemId String  @map("shortlist_item_id")
-  body           String
-  authorReference String? @map("author_reference")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  shortlistItemId String   @map("shortlist_item_id")
+  body            String
+  authorReference String?  @map("author_reference")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   shortlistItem ShortlistItem @relation(fields: [shortlistItemId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, shortlistItemId, createdAt])
@@ -1345,27 +1398,27 @@ model PurchaseOrderLine {
 }
 
 model ExportJob {
-  id             String       @id @default(cuid())
-  organizationId String       @map("organization_id")
-  shortlistId    String?      @map("shortlist_id")
-  purchaseOrderId String?     @map("purchase_order_id")
-  kind           ExportKind
-  format         ExportFormat
-  status         ExportStatus @default(PENDING)
-  sourceRevision Int          @map("source_revision")
-  idempotencyKey String       @map("idempotency_key")
-  objectKey      String?      @unique @map("object_key")
-  filename       String?      @map("filename")
-  contentType    String?      @map("content_type")
-  checksumSha256 String?      @map("checksum_sha256")
-  byteSize       Int?         @map("byte_size")
-  generatorVersion String?    @map("generator_version")
-  attemptCount   Int          @default(0) @map("attempt_count")
-  failureCode    String?      @map("failure_code")
-  completedAt    DateTime?    @map("completed_at")
-  expiresAt      DateTime?    @map("expires_at")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  id               String       @id @default(cuid())
+  organizationId   String       @map("organization_id")
+  shortlistId      String?      @map("shortlist_id")
+  purchaseOrderId  String?      @map("purchase_order_id")
+  kind             ExportKind
+  format           ExportFormat
+  status           ExportStatus @default(PENDING)
+  sourceRevision   Int          @map("source_revision")
+  idempotencyKey   String       @map("idempotency_key")
+  objectKey        String?      @unique @map("object_key")
+  filename         String?      @map("filename")
+  contentType      String?      @map("content_type")
+  checksumSha256   String?      @map("checksum_sha256")
+  byteSize         Int?         @map("byte_size")
+  generatorVersion String?      @map("generator_version")
+  attemptCount     Int          @default(0) @map("attempt_count")
+  failureCode      String?      @map("failure_code")
+  completedAt      DateTime?    @map("completed_at")
+  expiresAt        DateTime?    @map("expires_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   shortlist     Shortlist?     @relation(fields: [shortlistId], references: [id], onDelete: Restrict)

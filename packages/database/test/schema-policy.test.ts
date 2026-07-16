@@ -13,6 +13,8 @@ import {
   PurchaseOrderStatus,
   ShortlistItemStatus,
   ProfitCalculationStatus,
+  FeeScenarioSource,
+  ListingRestrictionState,
 } from "../src/index.js";
 import { readFile } from "node:fs/promises";
 
@@ -122,5 +124,21 @@ describe("database policy", () => {
       "requestHash",
     ])
       expect(schema).toContain(field);
+  });
+
+  it("stores account fee components as NUMERIC and restriction outcomes as explicit states", async () => {
+    const schema = await readFile(
+      new URL("../prisma/schema.prisma", import.meta.url),
+      "utf8",
+    );
+    expect(FeeScenarioSource.CURRENT_FEATURED_OFFER).toBe(
+      "CURRENT_FEATURED_OFFER",
+    );
+    expect(ListingRestrictionState.ELIGIBLE).toBe("ELIGIBLE");
+    expect(ListingRestrictionState.UNAUTHORIZED).toBe("UNAUTHORIZED");
+    expect(schema).toContain("model ProviderFeeComponent");
+    expect(schema).toMatch(/feeAmount\s+Decimal[^\n]+@db\.Decimal\(18, 4\)/);
+    expect(schema).toMatch(/finalFee\s+Decimal[^\n]+@db\.Decimal\(18, 4\)/);
+    expect(schema).toContain("restrictionReasonCodes");
   });
 });

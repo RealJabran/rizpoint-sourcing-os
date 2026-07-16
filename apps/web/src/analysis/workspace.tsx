@@ -47,6 +47,7 @@ type Row = {
   currentNetProfit: DecimalValue | null;
   conservativeNetProfit: DecimalValue | null;
   stressNetProfit: DecimalValue | null;
+  userEnteredNetProfit: DecimalValue | null;
   effectiveCogs: DecimalValue | null;
   amazonFees: DecimalValue | null;
   roiPercent: DecimalValue | null;
@@ -87,6 +88,7 @@ type Row = {
       revision: number;
       status: string;
       stressDiscountPercent: { toString(): string } | null;
+      userEnteredSalePrice: { toString(): string } | null;
       values: Array<{ field: string; value: { toString(): string } }>;
     }>;
   };
@@ -95,6 +97,22 @@ type Row = {
     fees: ExternalEvidence;
     restrictions: ExternalEvidence;
   };
+  feeEstimate: {
+    completeness: string | null;
+    scenarioSource: string | null;
+    observedAt: string;
+    expiresAt: string;
+    freshnessState: string;
+    components: Array<{ type: string; finalFee: string; currency: string }>;
+  } | null;
+  listingRestriction: {
+    state: string;
+    completeness: string | null;
+    reasonCodes: string[];
+    observedAt: string;
+    expiresAt: string;
+    freshnessState: string;
+  } | null;
 };
 type Route = { id: string; name: string; currency: string };
 type ScanContext = {
@@ -153,6 +171,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const [status, setStatus] = useState("");
   const [minRoiPercent, setMinRoiPercent] = useState("");
   const [maxRoiPercent, setMaxRoiPercent] = useState("");
+  const [feeCompleteness, setFeeCompleteness] = useState("");
+  const [restrictionState, setRestrictionState] = useState("");
+  const [restrictionReasonCode, setRestrictionReasonCode] = useState("");
   const [sort, setSort] = useState("sourceRowNumber");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [groups, setGroups] = useState<Set<Group>>(new Set(GROUPS));
@@ -177,13 +198,16 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         search?: string;
         minRoiPercent?: string;
         maxRoiPercent?: string;
+        feeCompleteness?: string;
+        restrictionState?: string;
+        restrictionReasonCode?: string;
         sort?: string;
         direction?: "asc" | "desc";
         visibleGroups?: Group[];
       };
     }>
   >([]);
-  const queryKey = `${routeId ?? ""}|${search}|${recommendation}|${status}|${minRoiPercent}|${maxRoiPercent}|${sort}|${direction}|${refreshNonce}`;
+  const queryKey = `${routeId ?? ""}|${search}|${recommendation}|${status}|${minRoiPercent}|${maxRoiPercent}|${feeCompleteness}|${restrictionState}|${restrictionReasonCode}|${sort}|${direction}|${refreshNonce}`;
   queryKeyRef.current = queryKey;
 
   const requestPage = useCallback(
@@ -203,6 +227,10 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         params.set("minRoiPercent", minRoiPercent.trim());
       if (maxRoiPercent.trim())
         params.set("maxRoiPercent", maxRoiPercent.trim());
+      if (feeCompleteness) params.set("feeCompleteness", feeCompleteness);
+      if (restrictionState) params.set("restrictionState", restrictionState);
+      if (restrictionReasonCode)
+        params.set("restrictionReasonCode", restrictionReasonCode);
       const requestedQueryKey = queryKey;
       const response = await fetch(`/api/scans/${scanId}/results?${params}`, {
         cache: "no-store",
@@ -228,10 +256,13 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     },
     [
       direction,
+      feeCompleteness,
       maxRoiPercent,
       minRoiPercent,
       queryKey,
       recommendation,
+      restrictionReasonCode,
+      restrictionState,
       routeId,
       scanId,
       search,
@@ -340,7 +371,10 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     recommendation ||
     status ||
     minRoiPercent.trim() ||
-    maxRoiPercent.trim(),
+    maxRoiPercent.trim() ||
+    feeCompleteness ||
+    restrictionState ||
+    restrictionReasonCode,
   );
 
   async function openDetail(resultId: string): Promise<void> {
@@ -368,6 +402,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
           search: search || undefined,
           minRoiPercent: minRoiPercent || undefined,
           maxRoiPercent: maxRoiPercent || undefined,
+          feeCompleteness: feeCompleteness || undefined,
+          restrictionState: restrictionState || undefined,
+          restrictionReasonCode: restrictionReasonCode || undefined,
           sort,
           direction,
           visibleGroups: [...groups],
@@ -588,6 +625,55 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
             />
           </label>
         </div>
+        <div className="analysis-filter-group analysis-filter-group--wide">
+          <strong>Fees and eligibility</strong>
+          <label>
+            Fee data
+            <SelectControl
+              value={feeCompleteness}
+              onChange={(event) => setFeeCompleteness(event.target.value)}
+            >
+              <option value="">All completeness states</option>
+              <option value="COMPLETE">Complete</option>
+              <option value="PARTIAL">Partial</option>
+              <option value="UNKNOWN">Unknown</option>
+            </SelectControl>
+          </label>
+          <label>
+            Seller eligibility
+            <SelectControl
+              value={restrictionState}
+              onChange={(event) => setRestrictionState(event.target.value)}
+            >
+              <option value="">All eligibility states</option>
+              {[
+                "ELIGIBLE",
+                "RESTRICTED",
+                "APPROVAL_REQUIRED",
+                "INCOMPLETE",
+                "UNAUTHORIZED",
+                "THROTTLED",
+                "UNKNOWN",
+              ].map((value) => (
+                <option key={value} value={value}>
+                  {humanize(value)}
+                </option>
+              ))}
+            </SelectControl>
+          </label>
+          <label>
+            Restriction reason
+            <SelectControl
+              value={restrictionReasonCode}
+              onChange={(event) => setRestrictionReasonCode(event.target.value)}
+            >
+              <option value="">All reasons</option>
+              <option value="APPROVAL_REQUIRED">Approval required</option>
+              <option value="NOT_ELIGIBLE">Not eligible</option>
+              <option value="ASIN_NOT_FOUND">ASIN not found</option>
+            </SelectControl>
+          </label>
+        </div>
         <div className="analysis-filter-group analysis-filter-presets">
           <strong>Quick filters</strong>
           <fieldset>
@@ -710,6 +796,11 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
                   setSearch(view.queryState.search ?? "");
                   setMinRoiPercent(view.queryState.minRoiPercent ?? "");
                   setMaxRoiPercent(view.queryState.maxRoiPercent ?? "");
+                  setFeeCompleteness(view.queryState.feeCompleteness ?? "");
+                  setRestrictionState(view.queryState.restrictionState ?? "");
+                  setRestrictionReasonCode(
+                    view.queryState.restrictionReasonCode ?? "",
+                  );
                   setSort(view.queryState.sort ?? "sourceRowNumber");
                   setDirection(view.queryState.direction ?? "asc");
                   if (view.queryState.visibleGroups?.length)
@@ -785,6 +876,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
                 setStatus("");
                 setMinRoiPercent("");
                 setMaxRoiPercent("");
+                setFeeCompleteness("");
+                setRestrictionState("");
+                setRestrictionReasonCode("");
               }}
             >
               Clear filters
@@ -957,7 +1051,10 @@ function GridRow({
               : ""}
           </small>
           <small>
-            Eligibility: {humanize(restrictions?.restrictionStatus)}
+            Eligibility: {humanize(row.listingRestriction?.state)}
+            {row.listingRestriction?.reasonCodes.length
+              ? ` · ${row.listingRestriction.reasonCodes.map(humanize).join(", ")}`
+              : ""}
           </small>
         </span>
       ) : null}
@@ -972,6 +1069,11 @@ function GridRow({
             {decimal(offer?.unitCost ?? null)} · market price{" "}
             {pricing?.currency ?? currency} {pricing?.value ?? "—"} · fees{" "}
             {fees?.currency ?? currency} {decimal(row.amazonFees)}
+          </small>
+          <small>
+            Fee estimate: {humanize(row.feeEstimate?.completeness)} · scenario{" "}
+            {humanize(row.feeEstimate?.scenarioSource)} ·{" "}
+            {row.feeEstimate?.components.length ?? 0} components
           </small>
           <small>
             Landed COGS {currency} {decimal(row.effectiveCogs)} · conservative
@@ -1019,12 +1121,15 @@ function InlineEditor({ row, onQueued }: { row: Row; onQueued: () => void }) {
       .find((value) => value.field === "SUPPLIER_COST_PER_SELLABLE_UNIT")
       ?.value.toString() ?? "";
   const existingStress = override?.stressDiscountPercent?.toString() ?? "";
+  const existingSalePrice = override?.userEnteredSalePrice?.toString() ?? "";
   const [cost, setCost] = useState(existingCost);
   const [stress, setStress] = useState(existingStress);
+  const [salePrice, setSalePrice] = useState(existingSalePrice);
   const [reason, setReason] = useState("");
   const [state, setState] = useState("");
   const costChanged = cost !== existingCost;
   const stressChanged = stress !== existingStress;
+  const salePriceChanged = salePrice !== existingSalePrice;
   async function save(): Promise<void> {
     const response = await fetch(`/api/results/${row.id}`, {
       method: "PATCH",
@@ -1042,6 +1147,9 @@ function InlineEditor({ row, onQueued }: { row: Row; onQueued: () => void }) {
             ]
           : [],
         ...(stressChanged ? { stressDiscountPercent: stress || null } : {}),
+        ...(salePriceChanged
+          ? { userEnteredSalePrice: salePrice || null }
+          : {}),
       }),
     });
     if (response.ok) {
@@ -1058,6 +1166,15 @@ function InlineEditor({ row, onQueued }: { row: Row; onQueued: () => void }) {
           inputMode="decimal"
           value={cost}
           onChange={(event) => setCost(event.target.value)}
+        />
+      </label>
+      <label>
+        Sale price{" "}
+        <input
+          aria-label={`User-entered sale price for row ${row.supplierRow.sourceRowNumber}`}
+          inputMode="decimal"
+          value={salePrice}
+          onChange={(event) => setSalePrice(event.target.value)}
         />
       </label>
       <label>
@@ -1079,7 +1196,10 @@ function InlineEditor({ row, onQueued }: { row: Row; onQueued: () => void }) {
       </label>
       <button
         type="button"
-        disabled={!reason.trim() || (!costChanged && !stressChanged)}
+        disabled={
+          !reason.trim() ||
+          (!costChanged && !stressChanged && !salePriceChanged)
+        }
         onClick={() => void save()}
       >
         Apply

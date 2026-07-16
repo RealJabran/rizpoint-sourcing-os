@@ -8,10 +8,11 @@ Decimal.set({
   toExpPos: 100,
 });
 
-export const PROFIT_ENGINE_VERSION = "profit-engine/v2";
+export const PROFIT_ENGINE_VERSION = "profit-engine/v3";
 export const ROUNDING_MODE = "HALF_UP";
 export type DecimalString = string;
-export type ScenarioType = "CURRENT" | "CONSERVATIVE" | "STRESS" | "MAP";
+export type ScenarioType =
+  "CURRENT" | "CONSERVATIVE" | "STRESS" | "MAP" | "USER_ENTERED";
 export type Recommendation =
   | "BUY"
   | "WATCH"
@@ -52,7 +53,17 @@ export type FeeQuote = Readonly<{
   observedAt: string;
   freshUntil: string;
   freshnessState: FreshnessState;
-  model: FeeModel;
+  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+  scenarioSource: "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+  fulfillmentChannel: "AMAZON" | "MERCHANT";
+  components: readonly Readonly<{
+    feeType: string;
+    finalFee: DecimalString;
+    currency: string;
+    parentFeeType?: string;
+  }>[];
+  /** Present only for an explicit deterministic fixture/config fee model. */
+  model?: FeeModel;
 }>;
 
 export type PriceEvidence = Readonly<{
@@ -86,6 +97,7 @@ export type ProfitOutput = Readonly<{
     | "BLOCKED_STALE_EVIDENCE"
     | "BLOCKED_CURRENCY_MISMATCH";
   effectiveCogs?: DecimalString;
+  proceeds?: DecimalString;
   amazonFees?: DecimalString;
   netProfit?: DecimalString;
   roiPercent?: DecimalString;
@@ -93,9 +105,10 @@ export type ProfitOutput = Readonly<{
   breakEvenPrice?: DecimalString;
   exactValues?: Readonly<{
     effectiveCogs: DecimalString;
+    proceeds: DecimalString;
     amazonFees: DecimalString;
     netProfit: DecimalString;
-    breakEvenPrice: DecimalString;
+    breakEvenPrice?: DecimalString;
   }>;
   evidence?: CalculationEvidence;
   reasonCodes: readonly string[];
@@ -107,10 +120,12 @@ export type ScenarioInput = Readonly<{
   current: PriceEvidence;
   conservative: PriceEvidence;
   feeQuote: FeeQuote;
+  feeQuotes?: Readonly<Partial<Record<ScenarioType, FeeQuote>>>;
   costs: CostInputs;
   packGuardStatus: PackGuardStatus;
   stressDiscountPercent: DecimalString;
   map?: PriceEvidence;
+  userEntered?: PriceEvidence;
   calculatedAt?: Date;
 }>;
 
@@ -120,7 +135,14 @@ export type DecisionInput = Readonly<{
   stressProfit: ProfitOutput;
   mapProfit?: ProfitOutput;
   matchVerified: boolean;
-  sellerEligibility: "ALLOWED" | "REQUIRES_APPROVAL" | "RESTRICTED" | "UNKNOWN";
+  sellerEligibility:
+    | "ELIGIBLE"
+    | "RESTRICTED"
+    | "APPROVAL_REQUIRED"
+    | "INCOMPLETE"
+    | "UNAUTHORIZED"
+    | "THROTTLED"
+    | "UNKNOWN";
   brandPolicy:
     | "PROHIBITED"
     | "APPROVAL_REQUIRED"
@@ -205,7 +227,7 @@ function isFresh(
   );
 }
 
-function feeAtPrice(
+function modeledFeeAtPrice(
   price: InstanceType<typeof Decimal>,
   model: FeeModel,
 ): InstanceType<typeof Decimal> {
@@ -230,10 +252,10 @@ function solveBreakEvenPrice(
   let lower = new Decimal(0);
   let upper = Decimal.max(
     new Decimal(1),
-    cogs.plus(feeAtPrice(cogs, model)).mul(2),
+    cogs.plus(modeledFeeAtPrice(cogs, model)).mul(2),
   );
   const netAt = (price: InstanceType<typeof Decimal>) =>
-    price.minus(cogs).minus(feeAtPrice(price, model));
+    price.minus(cogs).minus(modeledFeeAtPrice(price, model));
   while (netAt(upper).lt(0)) {
     upper = upper.mul(2);
     if (upper.gt("1000000")) throw new Error("BREAK_EVEN_UNBOUNDED");
@@ -258,11 +280,37 @@ function assertEvidence(input: ProfitInput, now: Date): void {
   }
   const quotedPrice = decimal(input.feeQuote.quotedPrice);
   const quotedFee = decimal(input.feeQuote.totalFee);
+  if (input.feeQuote.completeness !== "COMPLETE")
+    throw new Error("INCOMPLETE_FEE_QUOTE");
   if (!quotedPrice.gt(0) || quotedFee.lt(0))
     throw new Error("INVALID_FEE_QUOTE");
-  if (!feeAtPrice(quotedPrice, input.feeQuote.model).eq(quotedFee)) {
+  if (input.feeQuote.components.length === 0)
+    throw new Error("MISSING_FEE_COMPONENTS");
+  const topLevelTotal = input.feeQuote.components
+    .filter((component) => !component.parentFeeType)
+    .reduce((total, component) => {
+      if (component.currency !== input.feeQuote.currency)
+        throw new Error("CURRENCY_MISMATCH");
+      return total.plus(decimal(component.finalFee));
+    }, new Decimal(0));
+  if (!topLevelTotal.eq(quotedFee))
+    throw new Error("FEE_COMPONENT_TOTAL_MISMATCH");
+  if (
+    input.feeQuote.model &&
+    !modeledFeeAtPrice(quotedPrice, input.feeQuote.model).eq(quotedFee)
+  ) {
     throw new Error("FEE_QUOTE_MODEL_MISMATCH");
   }
+}
+
+function feeAtPrice(
+  price: InstanceType<typeof Decimal>,
+  quote: FeeQuote,
+): InstanceType<typeof Decimal> {
+  if (quote.model) return modeledFeeAtPrice(price, quote.model);
+  if (!price.eq(decimal(quote.quotedPrice)))
+    throw new Error("FEE_QUOTE_PRICE_MISMATCH");
+  return decimal(quote.totalFee);
 }
 
 /** Throws at the boundary so blocked pack relationships cannot enter a financial formula. */
@@ -297,22 +345,26 @@ export function calculateProfit(input: ProfitInput): ProfitOutput {
       (total, value) => total.plus(value),
       new Decimal(0),
     );
-    const amazonFees = feeAtPrice(price, input.feeQuote.model);
+    const amazonFees = feeAtPrice(price, input.feeQuote);
     const netProfit = price.minus(effectiveCogs).minus(amazonFees);
-    const breakEven = solveBreakEvenPrice(effectiveCogs, input.feeQuote.model);
+    const breakEven = input.feeQuote.model
+      ? solveBreakEvenPrice(effectiveCogs, input.feeQuote.model)
+      : null;
     return {
       status: "CALCULATED",
       effectiveCogs: money(effectiveCogs),
+      proceeds: money(price),
       amazonFees: money(amazonFees),
       netProfit: money(netProfit),
       roiPercent: ratio(netProfit.div(effectiveCogs).mul(100)),
       marginPercent: ratio(netProfit.div(price).mul(100)),
-      breakEvenPrice: roundUpMoney(breakEven),
+      ...(breakEven ? { breakEvenPrice: roundUpMoney(breakEven) } : {}),
       exactValues: {
         effectiveCogs: effectiveCogs.toFixed(4),
+        proceeds: price.toFixed(4),
         amazonFees: amazonFees.toFixed(4),
         netProfit: netProfit.toFixed(4),
-        breakEvenPrice: breakEven.toFixed(4),
+        ...(breakEven ? { breakEvenPrice: breakEven.toFixed(4) } : {}),
       },
       evidence: {
         price: input.price,
@@ -354,7 +406,6 @@ export function buildScenarios(
       .toFixed(4);
     const common = {
       packGuardStatus: input.packGuardStatus,
-      feeQuote: input.feeQuote,
       costs: input.costs,
       ...(input.calculatedAt ? { calculatedAt: input.calculatedAt } : {}),
     };
@@ -363,11 +414,38 @@ export function buildScenarios(
       price: stressPrice,
     };
     return {
-      CURRENT: calculateProfit({ ...common, price: input.current }),
-      CONSERVATIVE: calculateProfit({ ...common, price: input.conservative }),
-      STRESS: calculateProfit({ ...common, price: stressEvidence }),
+      CURRENT: calculateProfit({
+        ...common,
+        price: input.current,
+        feeQuote: input.feeQuotes?.CURRENT ?? input.feeQuote,
+      }),
+      CONSERVATIVE: calculateProfit({
+        ...common,
+        price: input.conservative,
+        feeQuote: input.feeQuotes?.CONSERVATIVE ?? input.feeQuote,
+      }),
+      STRESS: calculateProfit({
+        ...common,
+        price: stressEvidence,
+        feeQuote: input.feeQuotes?.STRESS ?? input.feeQuote,
+      }),
       ...(input.map
-        ? { MAP: calculateProfit({ ...common, price: input.map }) }
+        ? {
+            MAP: calculateProfit({
+              ...common,
+              price: input.map,
+              feeQuote: input.feeQuotes?.MAP ?? input.feeQuote,
+            }),
+          }
+        : {}),
+      ...(input.userEntered
+        ? {
+            USER_ENTERED: calculateProfit({
+              ...common,
+              price: input.userEntered,
+              feeQuote: input.feeQuotes?.USER_ENTERED ?? input.feeQuote,
+            }),
+          }
         : {}),
     };
   } catch {
@@ -429,13 +507,20 @@ export function decide(input: DecisionInput): DecisionOutput {
     };
   }
   if (
-    input.sellerEligibility !== "ALLOWED" ||
+    input.sellerEligibility === "APPROVAL_REQUIRED" ||
     ["APPROVAL_REQUIRED", "UNKNOWN"].includes(input.brandPolicy)
   ) {
     return {
       recommendation: "REVIEW_APPROVAL",
       reasonCodes: ["APPROVAL_EVIDENCE_REQUIRED"],
       failedRules: ["APPROVAL_RESOLVED"],
+    };
+  }
+  if (input.sellerEligibility !== "ELIGIBLE") {
+    return {
+      recommendation: "INSUFFICIENT_DATA",
+      reasonCodes: ["SELLER_ELIGIBILITY_UNRESOLVED"],
+      failedRules: ["ELIGIBILITY_COMPLETE"],
     };
   }
   if (

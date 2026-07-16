@@ -36,6 +36,86 @@ export * from "./connectivity.js";
 export * from "./offer-policy.js";
 import { amazonRetailPresence } from "./offer-policy.js";
 
+type ProviderMoney = { Amount?: unknown; CurrencyCode?: unknown };
+
+function providerMoney(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const money = value as ProviderMoney;
+  const amount =
+    typeof money.Amount === "string" || typeof money.Amount === "number"
+      ? String(money.Amount)
+      : null;
+  const currency =
+    typeof money.CurrencyCode === "string" ? money.CurrencyCode : null;
+  if (!amount || !/^-?\d+(\.\d+)?$/.test(amount) || currency?.length !== 3)
+    return null;
+  return { amount, currency };
+}
+
+type NormalizedFeeComponent = {
+  feeType: string;
+  feeAmount: string;
+  finalFee: string;
+  currency: string;
+  promotion?: string;
+  tax?: string;
+  parentFeeType?: string;
+};
+
+function normalizeFeeComponents(
+  value: unknown,
+  parentFeeType?: string,
+): { components: NormalizedFeeComponent[]; complete: boolean } {
+  if (!Array.isArray(value)) return { components: [], complete: false };
+  const components: NormalizedFeeComponent[] = [];
+  let complete = true;
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      complete = false;
+      continue;
+    }
+    const detail = entry as Record<string, unknown>;
+    const feeType =
+      typeof detail.FeeType === "string" ? detail.FeeType : undefined;
+    const feeAmount = providerMoney(detail.FeeAmount);
+    const finalFee = providerMoney(detail.FinalFee);
+    if (!feeType || !feeAmount || !finalFee) {
+      complete = false;
+      continue;
+    }
+    const promotion = providerMoney(detail.FeePromotion);
+    const tax = providerMoney(detail.TaxAmount);
+    if (
+      feeAmount.currency !== finalFee.currency ||
+      (detail.FeePromotion !== undefined && !promotion) ||
+      (detail.TaxAmount !== undefined && !tax)
+    )
+      complete = false;
+    components.push({
+      feeType,
+      feeAmount: feeAmount.amount,
+      finalFee: finalFee.amount,
+      currency: finalFee.currency,
+      ...(promotion ? { promotion: promotion.amount } : {}),
+      ...(tax ? { tax: tax.amount } : {}),
+      ...(parentFeeType ? { parentFeeType } : {}),
+    });
+    if (detail.IncludedFeeDetailList !== undefined) {
+      const nested: ReturnType<typeof normalizeFeeComponents> =
+        normalizeFeeComponents(detail.IncludedFeeDetailList, feeType);
+      components.push(...nested.components);
+      complete &&= nested.complete;
+    }
+  }
+  return { components, complete };
+}
+
+const restrictionReasonCodes = new Set([
+  "APPROVAL_REQUIRED",
+  "ASIN_NOT_FOUND",
+  "NOT_ELIGIBLE",
+]);
+
 export type EncryptedSecret = {
   ciphertext: string;
   nonce: string;
@@ -106,6 +186,10 @@ export class AmazonSpApiProvider
   private pricingRateLimitPerSecond = 0.033;
   private nextPricingRequestAt = 0;
   private pricingQueue: Promise<void> = Promise.resolve();
+  private readonly operationLimits = {
+    fees: { rate: 1, nextRequestAt: 0, queue: Promise.resolve() },
+    restrictions: { rate: 5, nextRequestAt: 0, queue: Promise.resolve() },
+  };
 
   constructor(
     private readonly config: SpApiConfig,
@@ -125,6 +209,38 @@ export class AmazonSpApiProvider
     const delay = this.nextPricingRequestAt - Date.now();
     if (delay > 0)
       await new Promise<void>((resolve) => setTimeout(resolve, delay));
+  }
+
+  private async rateLimitedRequest(
+    operation: keyof typeof this.operationLimits,
+    path: string,
+    init: RequestInit = {},
+  ): Promise<SpApiResponse> {
+    const state = this.operationLimits[operation];
+    let output: SpApiResponse | undefined;
+    let failure: unknown;
+    const task = state.queue.then(async () => {
+      const delay = state.nextRequestAt - Date.now();
+      if (delay > 0)
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      try {
+        output = await this.request(path, init);
+        if (
+          output.rateLimitPerSecond !== undefined &&
+          output.rateLimitPerSecond > 0
+        )
+          state.rate = output.rateLimitPerSecond;
+      } catch (error) {
+        failure = error;
+      } finally {
+        state.nextRequestAt = Date.now() + Math.ceil(1_000 / state.rate);
+      }
+    });
+    state.queue = task.catch(() => undefined);
+    await task;
+    if (failure) throw failure;
+    if (!output) throw new ProviderError("TRANSIENT");
+    return output;
   }
 
   private catalogPath(query: Record<string, string>): string {
@@ -806,7 +922,8 @@ export class AmazonSpApiProvider
   }
 
   async estimateFees(request: FeeEstimateRequest): Promise<FeeEstimate> {
-    const result = await this.request(
+    const result = await this.rateLimitedRequest(
+      "fees",
       `/products/fees/v0/items/${encodeURIComponent(request.asin)}/feesEstimate`,
       {
         method: "POST",
@@ -818,9 +935,12 @@ export class AmazonSpApiProvider
             PriceToEstimateFees: {
               ListingPrice: {
                 CurrencyCode: request.currency,
-                Amount: request.price,
+                Amount: request.listingPrice ?? request.price,
               },
-              Shipping: { CurrencyCode: request.currency, Amount: "0" },
+              Shipping: {
+                CurrencyCode: request.currency,
+                Amount: request.shippingPrice,
+              },
             },
             Identifier: request.requestId,
           },
@@ -830,28 +950,72 @@ export class AmazonSpApiProvider
     const body = result.body as {
       payload?: {
         FeesEstimateResult?: {
-          FeesEstimate?: {
-            TotalFeesEstimate?: { Amount?: string; CurrencyCode?: string };
+          Status?: unknown;
+          FeesEstimateIdentifier?: {
+            MarketplaceId?: unknown;
+            IdValue?: unknown;
+            SellerInputIdentifier?: unknown;
+            IsAmazonFulfilled?: unknown;
           };
+          FeesEstimate?: {
+            TimeOfFeesEstimation?: unknown;
+            TotalFeesEstimate?: ProviderMoney;
+            FeeDetailList?: unknown;
+          };
+          Error?: { Code?: unknown; Message?: unknown };
         };
       };
     };
-    const fee =
-      body.payload?.FeesEstimateResult?.FeesEstimate?.TotalFeesEstimate;
-    if (!fee?.Amount || !fee.CurrencyCode)
+    const estimateResult = body.payload?.FeesEstimateResult;
+    if (!estimateResult) throw new ProviderError("INVALID_RESPONSE");
+    if (estimateResult.Status === "ClientError")
+      throw new ProviderError("INVALID_REQUEST");
+    if (estimateResult.Status === "ServiceError")
+      throw new ProviderError("PROVIDER_OUTAGE");
+    if (estimateResult.Status !== "Success")
       throw new ProviderError("INVALID_RESPONSE");
+    const estimate = estimateResult.FeesEstimate;
+    const total = providerMoney(estimate?.TotalFeesEstimate);
+    if (!total) throw new ProviderError("INVALID_RESPONSE");
+    const normalized = normalizeFeeComponents(estimate?.FeeDetailList);
+    const identifier = estimateResult.FeesEstimateIdentifier;
+    const identifierComplete =
+      identifier?.MarketplaceId === request.marketplace.marketplaceId &&
+      identifier.IdValue === request.asin &&
+      identifier.SellerInputIdentifier === request.requestId &&
+      identifier.IsAmazonFulfilled ===
+        (request.fulfillmentChannel === "AMAZON");
+    // An absent or empty detail list cannot support component-audited profit,
+    // even when Amazon provides an aggregate total (including its static sandbox).
+    const complete =
+      identifierComplete &&
+      normalized.complete &&
+      normalized.components.length > 0;
     return feeEstimateSchema.parse({
       value: {
-        totalFee: fee.Amount,
+        operation: "getMyFeesEstimateForASIN",
+        asin: request.asin,
+        marketplaceId: request.marketplace.marketplaceId,
+        totalFee: total.amount,
         quotedPrice: request.price,
-        currency: fee.CurrencyCode,
+        listingPrice: request.listingPrice ?? request.price,
+        shippingPrice: request.shippingPrice,
+        currency: total.currency,
+        fulfillmentChannel: request.fulfillmentChannel,
+        scenarioSource: request.scenarioSource,
+        completeness: complete ? "COMPLETE" : "PARTIAL",
+        components: normalized.components,
       },
       provenance: {
         provider: "amazon-sp-api",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
         providerReference: result.requestId ?? request.requestId,
+        marketplaceId: request.marketplace.marketplaceId,
+        requestId: result.requestId,
+        responseCompleteness: complete ? "COMPLETE" : "PARTIAL",
       },
+      rawProviderObservation: result.body,
     });
   }
 
@@ -860,21 +1024,116 @@ export class AmazonSpApiProvider
     marketplace: MarketplaceContext,
   ): Promise<Restrictions> {
     if (!marketplace.sellerId) throw new ProviderError("PERMANENT");
-    const result = await this.request(
+    const result = await this.rateLimitedRequest(
+      "restrictions",
       `/listings/2021-08-01/restrictions?asin=${encodeURIComponent(asin)}&sellerId=${encodeURIComponent(marketplace.sellerId)}&marketplaceIds=${encodeURIComponent(marketplace.marketplaceId)}&conditionType=new_new`,
     );
-    const restrictions =
-      (result.body as { restrictions?: unknown[] }).restrictions ?? [];
+    const response = result.body as { restrictions?: unknown };
+    if (!Array.isArray(response.restrictions))
+      throw new ProviderError("INVALID_RESPONSE");
+    const normalizedReasons: Array<{
+      code: "APPROVAL_REQUIRED" | "ASIN_NOT_FOUND" | "NOT_ELIGIBLE";
+      message: string;
+      links: Array<{
+        resource: string;
+        verb?: string;
+        title?: string;
+        type?: string;
+      }>;
+    }> = [];
+    let complete = true;
+    for (const restriction of response.restrictions) {
+      if (!restriction || typeof restriction !== "object") {
+        complete = false;
+        continue;
+      }
+      const entry = restriction as Record<string, unknown>;
+      if (entry.marketplaceId !== marketplace.marketplaceId) complete = false;
+      if (!Array.isArray(entry.reasons) || entry.reasons.length === 0) {
+        complete = false;
+        continue;
+      }
+      for (const reason of entry.reasons) {
+        if (!reason || typeof reason !== "object") {
+          complete = false;
+          continue;
+        }
+        const value = reason as Record<string, unknown>;
+        if (
+          typeof value.reasonCode !== "string" ||
+          !restrictionReasonCodes.has(value.reasonCode) ||
+          typeof value.message !== "string" ||
+          value.message.length === 0
+        ) {
+          complete = false;
+          continue;
+        }
+        const links = Array.isArray(value.links)
+          ? value.links.flatMap((link) => {
+              if (!link || typeof link !== "object") return [];
+              const candidate = link as Record<string, unknown>;
+              if (typeof candidate.resource !== "string") return [];
+              try {
+                new URL(candidate.resource);
+              } catch {
+                return [];
+              }
+              return [
+                {
+                  resource: candidate.resource,
+                  ...(typeof candidate.verb === "string"
+                    ? { verb: candidate.verb }
+                    : {}),
+                  ...(typeof candidate.title === "string"
+                    ? { title: candidate.title }
+                    : {}),
+                  ...(typeof candidate.type === "string"
+                    ? { type: candidate.type }
+                    : {}),
+                },
+              ];
+            })
+          : [];
+        normalizedReasons.push({
+          code: value.reasonCode as
+            "APPROVAL_REQUIRED" | "ASIN_NOT_FOUND" | "NOT_ELIGIBLE",
+          message: value.message,
+          links,
+        });
+      }
+    }
+    const reasonCodes = new Set(normalizedReasons.map((reason) => reason.code));
+    const state = !complete
+      ? "INCOMPLETE"
+      : response.restrictions.length === 0
+        ? "ELIGIBLE"
+        : reasonCodes.has("NOT_ELIGIBLE")
+          ? "RESTRICTED"
+          : reasonCodes.has("APPROVAL_REQUIRED")
+            ? "APPROVAL_REQUIRED"
+            : "INCOMPLETE";
     return restrictionsSchema.parse({
       value: {
-        status: restrictions.length === 0 ? "ALLOWED" : "REQUIRES_APPROVAL",
+        operation: "getListingsRestrictions",
+        asin,
+        marketplaceId: marketplace.marketplaceId,
+        state,
+        completeness:
+          complete && state !== "INCOMPLETE" ? "COMPLETE" : "PARTIAL",
+        conditionType: "new_new",
+        reasons: normalizedReasons,
       },
       provenance: {
         provider: "amazon-sp-api",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
         providerReference: result.requestId ?? asin,
+        marketplaceId: marketplace.marketplaceId,
+        requestId: result.requestId,
+        responseCompleteness:
+          complete && state !== "INCOMPLETE" ? "COMPLETE" : "PARTIAL",
       },
+      rawProviderObservation: result.body,
     });
   }
 

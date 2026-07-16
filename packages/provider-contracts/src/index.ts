@@ -217,11 +217,38 @@ export type CompetitivePricingBatchResult =
       };
     };
 
+export const feeCompletenessSchema = z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]);
+export const feeScenarioSourceSchema = z.enum([
+  "CURRENT_FEATURED_OFFER",
+  "CONSERVATIVE",
+  "USER_ENTERED",
+]);
+export const feeComponentSchema = z.object({
+  feeType: z.string().min(1),
+  feeAmount: decimalStringSchema,
+  finalFee: decimalStringSchema,
+  currency: z.string().length(3),
+  promotion: decimalStringSchema.optional(),
+  tax: decimalStringSchema.optional(),
+  parentFeeType: z.string().min(1).optional(),
+});
+export type FeeComponent = z.infer<typeof feeComponentSchema>;
+
 export const feeEstimateSchema = observedMetricSchema(
   z.object({
+    operation: z.literal("getMyFeesEstimateForASIN"),
+    asin: z.string().regex(/^B[A-Z0-9]{9}$/),
+    marketplaceId: z.string().min(1),
     totalFee: decimalStringSchema,
     quotedPrice: decimalStringSchema,
+    listingPrice: decimalStringSchema,
+    shippingPrice: decimalStringSchema,
     currency: z.string().length(3),
+    fulfillmentChannel: z.enum(["AMAZON", "MERCHANT"]),
+    scenarioSource: feeScenarioSourceSchema,
+    completeness: feeCompletenessSchema,
+    components: z.array(feeComponentSchema),
+    /** Deterministic fixture/config model only. Live SP-API responses never infer one. */
     model: z
       .object({
         fixedFee: decimalStringSchema,
@@ -230,24 +257,56 @@ export const feeEstimateSchema = observedMetricSchema(
       })
       .optional(),
   }),
-);
+).extend({ rawProviderObservation: z.unknown().optional() });
 export type FeeEstimate = z.infer<typeof feeEstimateSchema>;
 
 export const feeEstimateRequestSchema = z.object({
   asin: z.string().regex(/^B[A-Z0-9]{9}$/),
   price: decimalStringSchema,
+  listingPrice: decimalStringSchema.optional(),
   currency: z.string().length(3),
   fulfillmentChannel: z.enum(["AMAZON", "MERCHANT"]),
+  scenarioSource: feeScenarioSourceSchema,
+  shippingPrice: decimalStringSchema.default("0"),
   marketplace: marketplaceContextSchema,
   requestId: z.string().min(1),
 });
 export type FeeEstimateRequest = z.infer<typeof feeEstimateRequestSchema>;
 
+export const restrictionStateSchema = z.enum([
+  "ELIGIBLE",
+  "RESTRICTED",
+  "APPROVAL_REQUIRED",
+  "INCOMPLETE",
+  "UNAUTHORIZED",
+  "THROTTLED",
+  "UNKNOWN",
+]);
+export const restrictionReasonSchema = z.object({
+  code: z.enum(["APPROVAL_REQUIRED", "ASIN_NOT_FOUND", "NOT_ELIGIBLE"]),
+  message: z.string().min(1),
+  links: z
+    .array(
+      z.object({
+        resource: z.url(),
+        verb: z.string().min(1).optional(),
+        title: z.string().min(1).optional(),
+        type: z.string().min(1).optional(),
+      }),
+    )
+    .default([]),
+});
 export const restrictionsSchema = observedMetricSchema(
   z.object({
-    status: z.enum(["ALLOWED", "REQUIRES_APPROVAL", "RESTRICTED", "UNKNOWN"]),
+    operation: z.literal("getListingsRestrictions"),
+    asin: z.string().regex(/^B[A-Z0-9]{9}$/),
+    marketplaceId: z.string().min(1),
+    state: restrictionStateSchema,
+    completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]),
+    conditionType: z.string().min(1).optional(),
+    reasons: z.array(restrictionReasonSchema),
   }),
-);
+).extend({ rawProviderObservation: z.unknown().optional() });
 export type Restrictions = z.infer<typeof restrictionsSchema>;
 
 export const marketHistorySchema = observedMetricSchema(

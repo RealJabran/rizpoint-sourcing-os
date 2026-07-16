@@ -44,7 +44,7 @@ describe("profit calculation with partial rows", () => {
       financialPolicy: {
         id: "policy-1",
         currency: "USD",
-        engineVersion: "profit-engine/v2",
+        engineVersion: "profit-engine/v3",
         minimumDemandScore: 1,
         minNetProfit: decimal("3"),
         minRoiPercent: decimal("20"),

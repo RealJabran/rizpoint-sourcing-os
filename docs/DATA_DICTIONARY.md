@@ -52,6 +52,19 @@
 
 Every catalog, price, fee, restriction, or history observation must carry `provider`, `observed_at`, `freshness_state`, and the relevant provider reference. Cached or stale values may be displayed only with their freshness state.
 
+`ProviderObservation` stores the typed fee scenario source, quoted scenario
+price, fulfillment input, completeness, request hash, operation, marketplace,
+observation status, and private raw-evidence reference. `ProviderFeeComponent`
+stores each returned fee type, parent fee type when nested, currency, fee amount,
+promotion, tax, and final fee as `NUMERIC(18,4)`. Components are replaced in the
+same transaction as a newer observation, so a retry cannot leave a mixed quote.
+
+Listing restrictions use `ListingRestrictionState`: `ELIGIBLE`, `RESTRICTED`,
+`APPROVAL_REQUIRED`, `INCOMPLETE`, `UNAUTHORIZED`, `THROTTLED`, or `UNKNOWN`.
+Reason codes and readable provider reasons are retained separately. Missing or
+malformed response collections are never equivalent to an empty, complete
+restriction list.
+
 `ProviderObservation` is unique by enrichment item, metric, and provider. A
 competitive-pricing observation additionally stores the operation, ASIN,
 marketplace, request hash and non-secret inputs, status, completeness, private

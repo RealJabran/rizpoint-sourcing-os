@@ -13,7 +13,7 @@
     "format:check": "prettier --check .",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "test:integration": "tsx tests/integration/mock-scan.integration.ts && tsx tests/integration/upload-mapping.integration.ts && tsx tests/integration/profit-decision.integration.ts",
+    "test:integration": "tsx tests/integration/mock-scan.integration.ts && tsx tests/integration/upload-mapping.integration.ts && tsx tests/integration/profit-decision.integration.ts && docker compose run --rm --no-deps --volume \"${PWD}/tests/integration/fees-restrictions.integration.ts:/app/tests/integration/fees-restrictions.integration.ts:ro\" worker pnpm exec tsx tests/integration/fees-restrictions.integration.ts",
     "test:browser": "playwright test",
     "typecheck": "turbo run typecheck",
     "check:private-assets": "node scripts/check-private-assets.mjs",
