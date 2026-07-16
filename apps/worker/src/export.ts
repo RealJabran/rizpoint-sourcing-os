@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { db } from "@rizpoint/database";
+import {
+  db,
+  listAnalysisResults,
+  type AnalysisFilters,
+  type AnalysisSort,
+} from "@rizpoint/database";
 import {
   EXPORT_ENGINE_VERSION,
   toCsv,
@@ -281,6 +286,161 @@ function shortlistTable(
   };
 }
 
+function analysisFilters(queryState: unknown): AnalysisFilters {
+  const query = record(queryState);
+  const textValue = (key: string) =>
+    typeof query[key] === "string" ? query[key] : undefined;
+  const numberValue = (key: string) =>
+    typeof query[key] === "number" ? query[key] : undefined;
+  return {
+    recommendation: textValue("recommendation") as AnalysisFilters["recommendation"],
+    status: textValue("status") as AnalysisFilters["status"],
+    search: textValue("search"),
+    minRoiPercent: textValue("minRoiPercent"),
+    maxRoiPercent: textValue("maxRoiPercent"),
+    minNetProfit: textValue("minNetProfit"),
+    maxNetProfit: textValue("maxNetProfit"),
+    minMarginPercent: textValue("minMarginPercent"),
+    maxMarginPercent: textValue("maxMarginPercent"),
+    matchStatus: textValue("matchStatus") as AnalysisFilters["matchStatus"],
+    minMatchConfidence: numberValue("minMatchConfidence"),
+    packGuardStatus: textValue("packGuardStatus") as AnalysisFilters["packGuardStatus"],
+    featuredOfferState: textValue("featuredOfferState") as AnalysisFilters["featuredOfferState"],
+    amazonRetailPresence: textValue("amazonRetailPresence") as AnalysisFilters["amazonRetailPresence"],
+    pricingCompleteness: textValue("pricingCompleteness") as AnalysisFilters["pricingCompleteness"],
+    pricingFreshness: textValue("pricingFreshness") as AnalysisFilters["pricingFreshness"],
+    feeCompleteness: textValue("feeCompleteness") as AnalysisFilters["feeCompleteness"],
+    restrictionState: textValue("restrictionState") as AnalysisFilters["restrictionState"],
+    restrictionReasonCode: textValue("restrictionReasonCode") as AnalysisFilters["restrictionReasonCode"],
+    minVisibleOfferCount: numberValue("minVisibleOfferCount"),
+    maxVisibleOfferCount: numberValue("maxVisibleOfferCount"),
+    minFbaOfferCount: numberValue("minFbaOfferCount"),
+    minFbmOfferCount: numberValue("minFbmOfferCount"),
+    partialData: query.partialData === true ? true : undefined,
+    supplierCode: textValue("supplierCode"),
+    brand: textValue("brand"),
+    category: textValue("category"),
+  };
+}
+
+async function analysisTable(
+  job: { organizationId: string; scanJobId: string | null; queryState: unknown; sourceRevision: number },
+): Promise<ExportTable> {
+  if (!job.scanJobId) throw new Error("ANALYSIS_EXPORT_SOURCE_NOT_FOUND");
+  const scan = await db.scanJob.findFirst({
+    where: { id: job.scanJobId, organizationId: job.organizationId },
+    select: { attemptCount: true },
+  });
+  if (!scan) throw new Error("ANALYSIS_EXPORT_SOURCE_NOT_FOUND");
+  if (scan.attemptCount !== job.sourceRevision)
+    throw new Error("ANALYSIS_EXPORT_SOURCE_STALE");
+  const query = record(job.queryState);
+  const routeId = typeof query.routeId === "string" ? query.routeId : undefined;
+  const sort =
+    typeof query.sort === "string" ? (query.sort as AnalysisSort) : "sourceRowNumber";
+  const direction = query.direction === "desc" ? "desc" : "asc";
+  const filters = analysisFilters(job.queryState);
+  const columns = [
+    "Supplier SKU",
+    "Supplied ASIN",
+    "UPC",
+    "EAN",
+    "GTIN",
+    "Amazon ASIN",
+    "Amazon title",
+    "Brand",
+    "Variation",
+    "Product types",
+    "Match status",
+    "Match confidence",
+    "PackGuard",
+    "Featured offer state",
+    "Featured offer price",
+    "Amazon Retail presence",
+    "Visible sellers",
+    "Visible seller completeness",
+    "FBA sellers",
+    "FBM sellers",
+    "Lowest FBA price",
+    "Lowest FBM price",
+    "Fee completeness",
+    "Fee scenario source",
+    "Fee component summary",
+    "Landed COGS",
+    "Net profit",
+    "ROI %",
+    "Margin %",
+    "Recommendation",
+    "Formula gates",
+    "Eligibility",
+    "Restriction reasons",
+    "Pricing provider",
+    "Pricing observed at",
+    "Pricing freshness",
+  ];
+  const rows: Array<Array<string | number | null>> = [];
+  for (let offset = 0; ; offset += 200) {
+    const page = await listAnalysisResults({
+      organizationId: job.organizationId,
+      scanJobId: job.scanJobId,
+      ...(routeId ? { shippingRouteId: routeId } : {}),
+      offset,
+      limit: 200,
+      filters,
+      sort,
+      direction,
+    });
+    if (!page) throw new Error("ANALYSIS_EXPORT_SOURCE_NOT_FOUND");
+    for (const result of page.rows) {
+      const offer = result.supplierRow.normalizedOffer;
+      const catalog = result.supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
+      const intelligence = result.offerIntelligence;
+      rows.push([
+        text(offer?.itemNumber),
+        text(offer?.asin),
+        text(offer?.upc),
+        text(offer?.ean),
+        text(offer?.gtin),
+        text(catalog?.asin),
+        text(catalog?.title),
+        text(catalog?.brand ?? offer?.brand),
+        text(catalog?.variation),
+        catalog?.identity.productTypes.join(" | ") ?? "",
+        text(result.supplierRow.matchDecision?.status),
+        result.supplierRow.matchDecision?.confidence ?? null,
+        text(result.supplierRow.matchDecision?.selectedCandidate?.packGuard?.status),
+        text(intelligence?.featuredOffer.state),
+        text(intelligence?.featuredOffer.price),
+        text(intelligence?.amazonRetailPresence),
+        intelligence?.counts.total.value ?? null,
+        text(intelligence?.counts.total.completeness),
+        intelligence?.counts.fba.value ?? null,
+        intelligence?.counts.fbm.value ?? null,
+        text(intelligence?.lowestFbaPrice),
+        text(intelligence?.lowestFbmPrice),
+        text(result.feeEstimate?.completeness),
+        text(result.feeEstimate?.scenarioSource),
+        result.feeEstimate?.components
+          .map((component) => `${component.type}:${component.finalFee} ${component.currency}`)
+          .join(" | ") ?? "",
+        text(result.effectiveCogs),
+        text(result.currentNetProfit),
+        text(result.roiPercent),
+        text(result.marginPercent),
+        text(result.recommendation),
+        result.reasonCodes.join(" | "),
+        text(result.listingRestriction?.state),
+        result.listingRestriction?.reasonCodes.join(" | ") ?? "",
+        text(intelligence?.provider),
+        text(intelligence?.observedAt),
+        text(intelligence?.freshnessState),
+      ]);
+    }
+    if (offset + page.rows.length >= page.total) break;
+  }
+  return { sheetName: "Active analysis view", columns, rows };
+}
+
 export async function processExport(exportJobId: string): Promise<void> {
   const job = await db.exportJob.findUnique({ where: { id: exportJobId } });
   if (!job || job.status === "COMPLETED" || job.status === "FAILED_FINAL")
@@ -305,27 +465,31 @@ export async function processExport(exportJobId: string): Promise<void> {
   });
   if (!claimed.count) return;
   try {
+    const analysis = job.kind === "ANALYSIS_VIEW" ? await analysisTable(job) : null;
     const source = job.purchaseOrderId
       ? await loadOrder(job.purchaseOrderId)
       : job.shortlistId
         ? await loadShortlist(job.shortlistId)
         : null;
-    if (!source || source.organizationId !== job.organizationId)
+    if (!analysis && (!source || source.organizationId !== job.organizationId))
       throw new Error("EXPORT_SOURCE_NOT_FOUND");
-    if (source.revision !== job.sourceRevision)
+    if (source && source.revision !== job.sourceRevision)
       throw new Error("EXPORT_SOURCE_STALE");
-    const isOrder = "lines" in source;
+    const isOrder = Boolean(source && "lines" in source);
     if (
       isOrder &&
+      source &&
       source.status !== "VALIDATED" &&
       source.status !== "EXPORTED"
     )
       throw new Error("PURCHASE_ORDER_NOT_VALIDATED");
-    const table = isOrder
-      ? poTable(source, job.kind === "AUDIT_REPORT")
-      : shortlistTable(source);
+    const table = analysis
+      ? analysis
+      : isOrder && source
+        ? poTable(source, job.kind === "AUDIT_REPORT")
+        : shortlistTable(source!);
     const tables =
-      isOrder && job.kind === "PURCHASE_ORDER"
+      isOrder && source && job.kind === "PURCHASE_ORDER"
         ? [poSummaryTable(source), table, poTable(source, true)]
         : [table];
     const bytes =
@@ -334,7 +498,7 @@ export async function processExport(exportJobId: string): Promise<void> {
         : await createXlsxExport(xlsxPayload(tables));
     const checksumSha256 = createHash("sha256").update(bytes).digest("hex");
     const extension = job.format.toLowerCase();
-    const filename = `rizpoint-${job.kind.toLowerCase()}-${source.id}.${extension}`;
+    const filename = `rizpoint-${job.kind.toLowerCase()}-${job.scanJobId ?? source?.id}.${extension}`;
     const objectKey = `exports/${job.organizationId}/${job.id}/${checksumSha256}.${extension}`;
     const contentType =
       job.format === "CSV"
@@ -361,7 +525,7 @@ export async function processExport(exportJobId: string): Promise<void> {
           expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60_000),
         },
       });
-      if (isOrder && job.kind === "PURCHASE_ORDER")
+      if (isOrder && source && job.kind === "PURCHASE_ORDER")
         await transaction.purchaseOrder.update({
           where: { id: source.id },
           data: { status: "EXPORTED" },

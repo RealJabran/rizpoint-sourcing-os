@@ -13,6 +13,10 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import Image from "next/image";
 import { ANALYSIS_PAGE_SIZE, pageOffsetForIndex } from "./window";
 import { observationFreshness, requiredNextActions } from "./evidence";
+import {
+  ANALYSIS_PRESETS,
+  LOW_VISIBLE_COMPETITION_LABEL,
+} from "./presets";
 import { PageHeader } from "@/src/components/page-header";
 import {
   Alert,
@@ -24,6 +28,7 @@ import {
   SelectControl,
   Skeleton,
   TextInput,
+  useToast,
 } from "@/src/components/ui";
 import { scanStatusPresentation } from "@/src/components/dashboard-state";
 
@@ -59,7 +64,11 @@ type Row = {
     sourceRowNumber: number;
     normalizedOffer: {
       asin: string | null;
+      upc: string | null;
+      ean: string | null;
+      gtin: string | null;
       itemNumber: string | null;
+      mpn: string | null;
       description: string | null;
       brand: string | null;
       unitCost: DecimalValue | null;
@@ -77,10 +86,21 @@ type Row = {
           asin: string | null;
           title: string;
           brand: string | null;
+          model: string | null;
+          mpn: string | null;
+          sizeText: string | null;
+          variation: string | null;
           provider: string;
           observedAt: string;
           freshnessState: string;
           packCount?: number | null;
+          identity: {
+            manufacturer: string | null;
+            color: string | null;
+            productTypes: string[];
+            variationTheme: string | null;
+            images: Array<{ url: string; variant: string | null }>;
+          };
         };
         packGuard: { status: string; reasonCode: string } | null;
       } | null;
@@ -112,6 +132,27 @@ type Row = {
     completeness: string | null;
     freshnessState: string;
   }>;
+  offerIntelligence: {
+    provider: string;
+    observedAt: string;
+    expiresAt: string;
+    freshnessState: string;
+    completeness: string | null;
+    featuredOffer: {
+      state: string | null;
+      price: string | null;
+      currency: string | null;
+      fulfillmentChannel: string | null;
+    };
+    amazonRetailPresence: string | null;
+    counts: {
+      total: { value: number | null; completeness: string | null };
+      fba: { value: number | null; completeness: string | null };
+      fbm: { value: number | null; completeness: string | null };
+    };
+    lowestFbaPrice: string | null;
+    lowestFbmPrice: string | null;
+  } | null;
   listingRestriction: {
     state: string;
     completeness: string | null;
@@ -165,6 +206,7 @@ function sourceLine(evidence: ExternalEvidence): string {
 }
 
 export function AnalysisWorkspace({ scanId }: { scanId: string }) {
+  const { notify } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef(new Map<number, Row[]>());
   const [pages, setPages] = useState(new Map<number, Row[]>());
@@ -178,6 +220,24 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const [status, setStatus] = useState("");
   const [minRoiPercent, setMinRoiPercent] = useState("");
   const [maxRoiPercent, setMaxRoiPercent] = useState("");
+  const [minNetProfit, setMinNetProfit] = useState("");
+  const [maxNetProfit, setMaxNetProfit] = useState("");
+  const [minMarginPercent, setMinMarginPercent] = useState("");
+  const [maxMarginPercent, setMaxMarginPercent] = useState("");
+  const [matchStatus, setMatchStatus] = useState("");
+  const [minMatchConfidence, setMinMatchConfidence] = useState("");
+  const [packGuardStatus, setPackGuardStatus] = useState("");
+  const [featuredOfferState, setFeaturedOfferState] = useState("");
+  const [amazonRetailPresence, setAmazonRetailPresence] = useState("");
+  const [pricingCompleteness, setPricingCompleteness] = useState("");
+  const [pricingFreshness, setPricingFreshness] = useState("");
+  const [minVisibleOfferCount, setMinVisibleOfferCount] = useState("");
+  const [maxVisibleOfferCount, setMaxVisibleOfferCount] = useState("");
+  const [minFbaOfferCount, setMinFbaOfferCount] = useState("");
+  const [minFbmOfferCount, setMinFbmOfferCount] = useState("");
+  const [partialData, setPartialData] = useState(false);
+  const [brand, setBrand] = useState("");
+  const [category, setCategory] = useState("");
   const [feeCompleteness, setFeeCompleteness] = useState("");
   const [restrictionState, setRestrictionState] = useState("");
   const [restrictionReasonCode, setRestrictionReasonCode] = useState("");
@@ -191,6 +251,14 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const [accessibleMode, setAccessibleMode] = useState(false);
   const [viewName, setViewName] = useState("");
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [refreshState, setRefreshState] = useState("");
+  const [exportState, setExportState] = useState("");
+  const [exportJob, setExportJob] = useState<{
+    id: string;
+    status: string;
+    downloadState?: "READY" | "EXPIRED" | "PENDING" | "FAILED";
+    filename?: string | null;
+  } | null>(null);
   const [accessibleOffset, setAccessibleOffset] = useState(0);
   const queryKeyRef = useRef("");
   const detailTriggerRef = useRef<HTMLElement | null>(null);
@@ -205,16 +273,34 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         search?: string;
         minRoiPercent?: string;
         maxRoiPercent?: string;
+        minNetProfit?: string;
+        maxNetProfit?: string;
+        minMarginPercent?: string;
+        maxMarginPercent?: string;
+        matchStatus?: string;
+        minMatchConfidence?: number;
+        packGuardStatus?: string;
+        featuredOfferState?: string;
+        amazonRetailPresence?: string;
+        pricingCompleteness?: string;
+        pricingFreshness?: string;
         feeCompleteness?: string;
         restrictionState?: string;
         restrictionReasonCode?: string;
+        minVisibleOfferCount?: number;
+        maxVisibleOfferCount?: number;
+        minFbaOfferCount?: number;
+        minFbmOfferCount?: number;
+        partialData?: boolean;
+        brand?: string;
+        category?: string;
         sort?: string;
         direction?: "asc" | "desc";
         visibleGroups?: Group[];
       };
     }>
   >([]);
-  const queryKey = `${routeId ?? ""}|${search}|${recommendation}|${status}|${minRoiPercent}|${maxRoiPercent}|${feeCompleteness}|${restrictionState}|${restrictionReasonCode}|${sort}|${direction}|${refreshNonce}`;
+  const queryKey = `${routeId ?? ""}|${search}|${recommendation}|${status}|${minRoiPercent}|${maxRoiPercent}|${minNetProfit}|${maxNetProfit}|${minMarginPercent}|${maxMarginPercent}|${matchStatus}|${minMatchConfidence}|${packGuardStatus}|${featuredOfferState}|${amazonRetailPresence}|${pricingCompleteness}|${pricingFreshness}|${minVisibleOfferCount}|${maxVisibleOfferCount}|${minFbaOfferCount}|${minFbmOfferCount}|${partialData}|${brand}|${category}|${feeCompleteness}|${restrictionState}|${restrictionReasonCode}|${sort}|${direction}|${refreshNonce}`;
   queryKeyRef.current = queryKey;
 
   const requestPage = useCallback(
@@ -234,6 +320,34 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         params.set("minRoiPercent", minRoiPercent.trim());
       if (maxRoiPercent.trim())
         params.set("maxRoiPercent", maxRoiPercent.trim());
+      if (minNetProfit.trim()) params.set("minNetProfit", minNetProfit.trim());
+      if (maxNetProfit.trim()) params.set("maxNetProfit", maxNetProfit.trim());
+      if (minMarginPercent.trim())
+        params.set("minMarginPercent", minMarginPercent.trim());
+      if (maxMarginPercent.trim())
+        params.set("maxMarginPercent", maxMarginPercent.trim());
+      if (matchStatus) params.set("matchStatus", matchStatus);
+      if (minMatchConfidence.trim())
+        params.set("minMatchConfidence", minMatchConfidence.trim());
+      if (packGuardStatus) params.set("packGuardStatus", packGuardStatus);
+      if (featuredOfferState)
+        params.set("featuredOfferState", featuredOfferState);
+      if (amazonRetailPresence)
+        params.set("amazonRetailPresence", amazonRetailPresence);
+      if (pricingCompleteness)
+        params.set("pricingCompleteness", pricingCompleteness);
+      if (pricingFreshness) params.set("pricingFreshness", pricingFreshness);
+      if (minVisibleOfferCount.trim())
+        params.set("minVisibleOfferCount", minVisibleOfferCount.trim());
+      if (maxVisibleOfferCount.trim())
+        params.set("maxVisibleOfferCount", maxVisibleOfferCount.trim());
+      if (minFbaOfferCount.trim())
+        params.set("minFbaOfferCount", minFbaOfferCount.trim());
+      if (minFbmOfferCount.trim())
+        params.set("minFbmOfferCount", minFbmOfferCount.trim());
+      if (partialData) params.set("partialData", "true");
+      if (brand.trim()) params.set("brand", brand.trim());
+      if (category.trim()) params.set("category", category.trim());
       if (feeCompleteness) params.set("feeCompleteness", feeCompleteness);
       if (restrictionState) params.set("restrictionState", restrictionState);
       if (restrictionReasonCode)
@@ -264,7 +378,25 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     [
       direction,
       feeCompleteness,
+      featuredOfferState,
+      amazonRetailPresence,
+      pricingCompleteness,
+      pricingFreshness,
+      minFbaOfferCount,
+      minFbmOfferCount,
+      minMarginPercent,
+      minMatchConfidence,
+      minNetProfit,
       maxRoiPercent,
+      maxMarginPercent,
+      maxNetProfit,
+      minVisibleOfferCount,
+      maxVisibleOfferCount,
+      matchStatus,
+      packGuardStatus,
+      partialData,
+      brand,
+      category,
       minRoiPercent,
       queryKey,
       recommendation,
@@ -379,6 +511,24 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     status ||
     minRoiPercent.trim() ||
     maxRoiPercent.trim() ||
+    minNetProfit.trim() ||
+    maxNetProfit.trim() ||
+    minMarginPercent.trim() ||
+    maxMarginPercent.trim() ||
+    matchStatus ||
+    minMatchConfidence.trim() ||
+    packGuardStatus ||
+    featuredOfferState ||
+    amazonRetailPresence ||
+    pricingCompleteness ||
+    pricingFreshness ||
+    minVisibleOfferCount.trim() ||
+    maxVisibleOfferCount.trim() ||
+    minFbaOfferCount.trim() ||
+    minFbmOfferCount.trim() ||
+    partialData ||
+    brand.trim() ||
+    category.trim() ||
     feeCompleteness ||
     restrictionState ||
     restrictionReasonCode,
@@ -401,21 +551,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       body: JSON.stringify({
         scanId,
         name: viewName,
-        queryState: {
-          schemaVersion: 1,
-          routeId,
-          recommendation: recommendation || undefined,
-          status: status || undefined,
-          search: search || undefined,
-          minRoiPercent: minRoiPercent || undefined,
-          maxRoiPercent: maxRoiPercent || undefined,
-          feeCompleteness: feeCompleteness || undefined,
-          restrictionState: restrictionState || undefined,
-          restrictionReasonCode: restrictionReasonCode || undefined,
-          sort,
-          direction,
-          visibleGroups: [...groups],
-        },
+        queryState: activeViewState(),
       }),
     });
     if (!response.ok) return setError("Unable to save view.");
@@ -465,6 +601,177 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     }
   }
 
+  function clearFilters(): void {
+    setSearch("");
+    setRecommendation("");
+    setStatus("");
+    setMinRoiPercent("");
+    setMaxRoiPercent("");
+    setMinNetProfit("");
+    setMaxNetProfit("");
+    setMinMarginPercent("");
+    setMaxMarginPercent("");
+    setMatchStatus("");
+    setMinMatchConfidence("");
+    setPackGuardStatus("");
+    setFeaturedOfferState("");
+    setAmazonRetailPresence("");
+    setPricingCompleteness("");
+    setPricingFreshness("");
+    setMinVisibleOfferCount("");
+    setMaxVisibleOfferCount("");
+    setMinFbaOfferCount("");
+    setMinFbmOfferCount("");
+    setPartialData(false);
+    setBrand("");
+    setCategory("");
+    setFeeCompleteness("");
+    setRestrictionState("");
+    setRestrictionReasonCode("");
+  }
+
+  function applyPreset(id: (typeof ANALYSIS_PRESETS)[number]["id"]): void {
+    clearFilters();
+    const preset = ANALYSIS_PRESETS.find((candidate) => candidate.id === id);
+    if (!preset) return;
+    const state = preset.state;
+    if ("recommendation" in state) setRecommendation(state.recommendation);
+    if ("restrictionState" in state)
+      setRestrictionState(state.restrictionState);
+    if ("status" in state) setStatus(state.status);
+    if ("featuredOfferState" in state)
+      setFeaturedOfferState(state.featuredOfferState);
+    if ("amazonRetailPresence" in state)
+      setAmazonRetailPresence(state.amazonRetailPresence);
+    if ("maxVisibleOfferCount" in state)
+      setMaxVisibleOfferCount(state.maxVisibleOfferCount);
+    if ("minFbaOfferCount" in state)
+      setMinFbaOfferCount(state.minFbaOfferCount);
+    if ("partialData" in state) setPartialData(state.partialData);
+    if ("matchStatus" in state) setMatchStatus(state.matchStatus);
+  }
+
+  async function refreshEvidence(): Promise<void> {
+    setRefreshState("queued");
+    const response = await fetch(`/api/scans/${scanId}/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+    });
+    if (!response.ok) {
+      setRefreshState("failed");
+      setError("Evidence refresh could not be queued. Check the scan status.");
+      return;
+    }
+    const result = (await response.json()) as { status: string; duplicate?: boolean };
+    setRefreshState(
+      result.status === "PARTIAL_SUCCESS"
+        ? "partial"
+        : result.status.startsWith("FAILED")
+          ? "failed"
+          : "queued",
+    );
+    notify(
+      result.duplicate
+        ? "An equivalent refresh is already queued."
+        : "Evidence refresh queued. Provider rate limits and persisted checkpoints are honored.",
+      "info",
+    );
+    window.setTimeout(() => setRefreshNonce((current) => current + 1), 1_500);
+  }
+
+  function activeViewState() {
+    return {
+      schemaVersion: 1 as const,
+      routeId,
+      recommendation: recommendation || undefined,
+      status: status || undefined,
+      search: search || undefined,
+      minRoiPercent: minRoiPercent || undefined,
+      maxRoiPercent: maxRoiPercent || undefined,
+      minNetProfit: minNetProfit || undefined,
+      maxNetProfit: maxNetProfit || undefined,
+      minMarginPercent: minMarginPercent || undefined,
+      maxMarginPercent: maxMarginPercent || undefined,
+      matchStatus: matchStatus || undefined,
+      minMatchConfidence: minMatchConfidence
+        ? Number(minMatchConfidence)
+        : undefined,
+      packGuardStatus: packGuardStatus || undefined,
+      featuredOfferState: featuredOfferState || undefined,
+      amazonRetailPresence: amazonRetailPresence || undefined,
+      pricingCompleteness: pricingCompleteness || undefined,
+      pricingFreshness: pricingFreshness || undefined,
+      feeCompleteness: feeCompleteness || undefined,
+      restrictionState: restrictionState || undefined,
+      restrictionReasonCode: restrictionReasonCode || undefined,
+      minVisibleOfferCount: minVisibleOfferCount
+        ? Number(minVisibleOfferCount)
+        : undefined,
+      maxVisibleOfferCount: maxVisibleOfferCount
+        ? Number(maxVisibleOfferCount)
+        : undefined,
+      minFbaOfferCount: minFbaOfferCount ? Number(minFbaOfferCount) : undefined,
+      minFbmOfferCount: minFbmOfferCount ? Number(minFbmOfferCount) : undefined,
+      partialData: partialData || undefined,
+      brand: brand || undefined,
+      category: category || undefined,
+      sort,
+      direction,
+      visibleGroups: [...groups],
+    };
+  }
+
+  async function queueActiveViewExport(format: "CSV" | "XLSX"): Promise<void> {
+    setExportState("queued");
+    const response = await fetch(`/api/scans/${scanId}/analysis-exports`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        format,
+        idempotencyKey: crypto.randomUUID(),
+        queryState: activeViewState(),
+      }),
+    });
+    if (!response.ok) {
+      setExportState("failed");
+      setError("The active view export could not be queued. No file was created.");
+      return;
+    }
+    const job = (await response.json()) as { id: string; status: string };
+    setExportJob({ id: job.id, status: job.status });
+    setExportState("queued");
+    notify("Private active-view export queued. Identifiers remain text and unsafe spreadsheet formulas are escaped.", "info");
+  }
+
+  useEffect(() => {
+    if (!exportJob || !["PENDING", "RUNNING", "FAILED_RETRYABLE"].includes(exportJob.status))
+      return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/exports/${exportJob.id}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Export status is unavailable.");
+        const next = (await response.json()) as typeof exportJob;
+        if (cancelled) return;
+        setExportJob(next);
+        setExportState(next.status.toLowerCase());
+        if (["PENDING", "RUNNING", "FAILED_RETRYABLE"].includes(next.status))
+          timer = window.setTimeout(() => void poll(), 1_500);
+      } catch {
+        if (!cancelled) setExportState("failed");
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [exportJob?.id, exportJob?.status]);
+
   return (
     <main className="analysis-workspace">
       <a className="skip-link" href="#analysis-grid">
@@ -483,9 +790,37 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
           { label: "Analysis" },
         ]}
         actions={
-          <ButtonLink href="/scans" variant="secondary">
-            Scan list
-          </ButtonLink>
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={refreshState === "queued" || refreshState === "running"}
+              onClick={() => void refreshEvidence()}
+            >
+              Refresh evidence
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              loading={exportState === "queued" || exportState === "running"}
+              onClick={() => void queueActiveViewExport("CSV")}
+            >
+              Export CSV
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              loading={exportState === "queued" || exportState === "running"}
+              onClick={() => void queueActiveViewExport("XLSX")}
+            >
+              Export XLSX
+            </Button>
+            <ButtonLink href="/scans" variant="secondary">
+              Scan list
+            </ButtonLink>
+          </>
         }
       />
       {scanContext ? (
@@ -552,6 +887,38 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
           The audit trail retains {scanContext.recoverableErrors.length} failed
           attempt(s). Current results come from the latest persisted
           checkpoints.
+        </Alert>
+      ) : null}
+      {refreshState ? (
+        <Alert
+          tone={refreshState === "failed" ? "danger" : "info"}
+          title="Evidence refresh status"
+        >
+          {refreshState === "queued"
+            ? "Refresh queued. The worker will reuse fresh observations and wait for provider limits when needed."
+            : refreshState === "partial"
+              ? "Refresh completed with partial provider data. Unknown values remain visible."
+              : refreshState === "failed"
+                ? "Refresh could not be queued. Existing persisted evidence remains unchanged."
+                : "Refresh is running from persisted checkpoints."}
+        </Alert>
+      ) : null}
+      {exportState ? (
+        <Alert
+          tone={exportState === "failed" || exportJob?.status === "FAILED_FINAL" ? "danger" : "info"}
+          title="Active-view export"
+        >
+          {exportJob?.downloadState === "READY" ? (
+            <a href={`/api/exports/${exportJob.id}?download=1`}>
+              Download {exportJob.filename ?? "private export"}
+            </a>
+          ) : exportJob?.downloadState === "EXPIRED" ? (
+            "This private export expired. Queue a new export from the current view."
+          ) : exportState === "failed" || exportJob?.status === "FAILED_FINAL" ? (
+            "The export did not complete. Existing private objects were not exposed; queue a new export to retry."
+          ) : (
+            "The worker is building a private snapshot of the active server-side view."
+          )}
         </Alert>
       ) : null}
       <section className="analysis-toolbar" aria-label="Result filters">
@@ -689,34 +1056,50 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => {
-                setRecommendation("BUY");
-                setStatus("COMPLETED");
-              }}
+              onClick={() => applyPreset("profitable-eligible")}
             >
-              Buy candidates
+              Profitable & eligible
             </Button>
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => {
-                setRecommendation("");
-                setStatus("PARTIAL_SUCCESS");
-              }}
+              onClick={() => applyPreset("no-featured-offer")}
             >
-              Missing data
+              No featured offer
             </Button>
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => {
-                setRecommendation("REVIEW_MATCH");
-                setStatus("");
-              }}
+              onClick={() => applyPreset("amazon-absent")}
             >
-              Review matches
+              Amazon Retail absent
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => applyPreset("low-competition")}
+              title={LOW_VISIBLE_COMPETITION_LABEL}
+            >
+              Low competition
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => applyPreset("partial-stale")}
+            >
+              Missing / stale
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => applyPreset("pack-review")}
+            >
+              Pack / match review
             </Button>
           </fieldset>
         </div>
@@ -731,6 +1114,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               >
                 {[
                   "sourceRowNumber",
+                  "currentNetProfit",
                   "conservativeNetProfit",
                   "roiPercent",
                   "marginPercent",
@@ -750,6 +1134,164 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
             >
               Order: {direction}
             </Button>
+            <label>
+              Min / max profit
+              <span className="analysis-range">
+                <TextInput
+                  aria-label="Minimum profit"
+                  inputMode="decimal"
+                  value={minNetProfit}
+                  onChange={(event) => setMinNetProfit(event.target.value)}
+                  placeholder="Min"
+                />
+                <TextInput
+                  aria-label="Maximum profit"
+                  inputMode="decimal"
+                  value={maxNetProfit}
+                  onChange={(event) => setMaxNetProfit(event.target.value)}
+                  placeholder="Max"
+                />
+              </span>
+            </label>
+            <label>
+              Min / max margin %
+              <span className="analysis-range">
+                <TextInput
+                  aria-label="Minimum margin"
+                  inputMode="decimal"
+                  value={minMarginPercent}
+                  onChange={(event) => setMinMarginPercent(event.target.value)}
+                  placeholder="Min"
+                />
+                <TextInput
+                  aria-label="Maximum margin"
+                  inputMode="decimal"
+                  value={maxMarginPercent}
+                  onChange={(event) => setMaxMarginPercent(event.target.value)}
+                  placeholder="Max"
+                />
+              </span>
+            </label>
+            <label>
+              Match state
+              <SelectControl
+                value={matchStatus}
+                onChange={(event) => setMatchStatus(event.target.value)}
+              >
+                <option value="">All matches</option>
+                <option value="AUTO_ACCEPTED">Auto accepted</option>
+                <option value="USER_ACCEPTED">Human accepted</option>
+                <option value="REVIEW_REQUIRED">Manual review</option>
+                <option value="UNMATCHED">Unmatched</option>
+              </SelectControl>
+            </label>
+            <label>
+              Minimum confidence
+              <TextInput
+                inputMode="numeric"
+                value={minMatchConfidence}
+                onChange={(event) => setMinMatchConfidence(event.target.value)}
+              />
+            </label>
+            <label>
+              PackGuard
+              <SelectControl
+                value={packGuardStatus}
+                onChange={(event) => setPackGuardStatus(event.target.value)}
+              >
+                <option value="">All pack states</option>
+                <option value="VERIFIED">Verified</option>
+                <option value="BLOCKED_PACK_UNCERTAIN">Blocked: uncertain</option>
+                <option value="BLOCKED_PACK_CONTRADICTION">Blocked: contradiction</option>
+              </SelectControl>
+            </label>
+            <label>
+              Featured offer
+              <SelectControl
+                value={featuredOfferState}
+                onChange={(event) => setFeaturedOfferState(event.target.value)}
+              >
+                <option value="">All states</option>
+                <option value="PRESENT">Present</option>
+                <option value="ABSENT">No featured offer</option>
+                <option value="UNKNOWN">Unknown</option>
+              </SelectControl>
+            </label>
+            <label>
+              Amazon Retail
+              <SelectControl
+                value={amazonRetailPresence}
+                onChange={(event) => setAmazonRetailPresence(event.target.value)}
+              >
+                <option value="">All states</option>
+                <option value="PRESENT">Present</option>
+                <option value="ABSENT">Absent</option>
+                <option value="UNKNOWN">Unknown</option>
+              </SelectControl>
+            </label>
+            <label>
+              Offer freshness
+              <SelectControl
+                value={pricingFreshness}
+                onChange={(event) => setPricingFreshness(event.target.value)}
+              >
+                <option value="">All freshness</option>
+                <option value="FRESH">Fresh</option>
+                <option value="STALE">Stale</option>
+                <option value="EXPIRED">Expired</option>
+                <option value="UNKNOWN">Unknown</option>
+              </SelectControl>
+            </label>
+            <label>
+              Max visible sellers
+              <TextInput
+                inputMode="numeric"
+                value={maxVisibleOfferCount}
+                onChange={(event) => setMaxVisibleOfferCount(event.target.value)}
+                aria-describedby="competition-threshold"
+              />
+            </label>
+            <small id="competition-threshold">
+              {LOW_VISIBLE_COMPETITION_LABEL}
+            </small>
+            <label>
+              Minimum FBA sellers
+              <TextInput
+                inputMode="numeric"
+                value={minFbaOfferCount}
+                onChange={(event) => setMinFbaOfferCount(event.target.value)}
+              />
+            </label>
+            <label>
+              Minimum FBM sellers
+              <TextInput
+                inputMode="numeric"
+                value={minFbmOfferCount}
+                onChange={(event) => setMinFbmOfferCount(event.target.value)}
+              />
+            </label>
+            <label>
+              Brand
+              <TextInput value={brand} onChange={(event) => setBrand(event.target.value)} />
+            </label>
+            <label>
+              Category / product type
+              <TextInput value={category} onChange={(event) => setCategory(event.target.value)} />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={partialData}
+                onChange={(event) => setPartialData(event.target.checked)}
+              />{" "}
+              Missing, partial, or stale data
+            </label>
+            <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+            <span className="analysis-history-unavailable" role="status">
+              Historical stability unavailable — no licensed history provider is connected.
+            </span>
             <fieldset>
               <legend>Columns</legend>
               {GROUPS.filter((group) => group !== "identity").map((group) => (
@@ -803,11 +1345,45 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
                   setSearch(view.queryState.search ?? "");
                   setMinRoiPercent(view.queryState.minRoiPercent ?? "");
                   setMaxRoiPercent(view.queryState.maxRoiPercent ?? "");
+                  setMinNetProfit(view.queryState.minNetProfit ?? "");
+                  setMaxNetProfit(view.queryState.maxNetProfit ?? "");
+                  setMinMarginPercent(view.queryState.minMarginPercent ?? "");
+                  setMaxMarginPercent(view.queryState.maxMarginPercent ?? "");
+                  setMatchStatus(view.queryState.matchStatus ?? "");
+                  setMinMatchConfidence(
+                    String(view.queryState.minMatchConfidence ?? ""),
+                  );
+                  setPackGuardStatus(view.queryState.packGuardStatus ?? "");
+                  setFeaturedOfferState(
+                    view.queryState.featuredOfferState ?? "",
+                  );
+                  setAmazonRetailPresence(
+                    view.queryState.amazonRetailPresence ?? "",
+                  );
+                  setPricingCompleteness(
+                    view.queryState.pricingCompleteness ?? "",
+                  );
+                  setPricingFreshness(view.queryState.pricingFreshness ?? "");
                   setFeeCompleteness(view.queryState.feeCompleteness ?? "");
                   setRestrictionState(view.queryState.restrictionState ?? "");
                   setRestrictionReasonCode(
                     view.queryState.restrictionReasonCode ?? "",
                   );
+                  setMinVisibleOfferCount(
+                    String(view.queryState.minVisibleOfferCount ?? ""),
+                  );
+                  setMaxVisibleOfferCount(
+                    String(view.queryState.maxVisibleOfferCount ?? ""),
+                  );
+                  setMinFbaOfferCount(
+                    String(view.queryState.minFbaOfferCount ?? ""),
+                  );
+                  setMinFbmOfferCount(
+                    String(view.queryState.minFbmOfferCount ?? ""),
+                  );
+                  setPartialData(view.queryState.partialData ?? false);
+                  setBrand(view.queryState.brand ?? "");
+                  setCategory(view.queryState.category ?? "");
                   setSort(view.queryState.sort ?? "sourceRowNumber");
                   setDirection(view.queryState.direction ?? "asc");
                   if (view.queryState.visibleGroups?.length)
@@ -877,16 +1453,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
           {unfilteredTotal > 0 && hasFilters ? (
             <Button
               type="button"
-              onClick={() => {
-                setSearch("");
-                setRecommendation("");
-                setStatus("");
-                setMinRoiPercent("");
-                setMaxRoiPercent("");
-                setFeeCompleteness("");
-                setRestrictionState("");
-                setRestrictionReasonCode("");
-              }}
+              onClick={clearFilters}
             >
               Clear filters
             </Button>
@@ -1008,6 +1575,8 @@ function GridRow({
   const pricing = row.externalEvidence.pricing;
   const fees = row.externalEvidence.fees;
   const restrictions = row.externalEvidence.restrictions;
+  const offerIntelligence = row.offerIntelligence;
+  const image = catalog?.identity.images[0]?.url;
   return (
     <div
       className="analysis-grid-row"
@@ -1030,10 +1599,29 @@ function GridRow({
       </span>
       <span className="pin identity" role="gridcell" aria-colindex={2}>
         <button
-          className="row-link"
+        className="row-link"
           type="button"
-          onClick={() => void onOpen(row.id)}
+        onClick={() => void onOpen(row.id)}
         >
+          {image ? (
+            <Image
+              className="analysis-product-image"
+              src={image}
+              alt=""
+              width={44}
+              height={44}
+              unoptimized
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span
+              className="analysis-product-image analysis-product-image--empty"
+              aria-hidden="true"
+            >
+              ·
+            </span>
+          )}
           #{row.supplierRow.sourceRowNumber} ·{" "}
           {offer?.itemNumber ?? offer?.asin ?? "Unidentified supplier row"}
           <small>
@@ -1042,8 +1630,13 @@ function GridRow({
           </small>
           <small>
             {catalog?.asin
-              ? `Matched ${catalog.asin} · ${catalog.title}`
+              ? `Amazon ${catalog.asin} · ${catalog.title}`
               : "No accepted catalog match"}
+          </small>
+          <small>
+            {[offer?.upc, offer?.ean, offer?.gtin, offer?.mpn]
+              .filter(Boolean)
+              .join(" · ") || "No supplier identifier"}
           </small>
         </button>
       </span>
@@ -1063,6 +1656,14 @@ function GridRow({
               ? ` · ${row.listingRestriction.reasonCodes.map(humanize).join(", ")}`
               : ""}
           </small>
+          <small>
+            {catalog?.variation
+              ? `Variation: ${catalog.variation}`
+              : "Variation not returned"}
+            {catalog?.identity.productTypes.length
+              ? ` · ${catalog.identity.productTypes.join(", ")}`
+              : ""}
+          </small>
         </span>
       ) : null}
       {groups.has("economics") ? (
@@ -1074,7 +1675,8 @@ function GridRow({
           <small>
             Supplier unit cost {offer?.currency ?? currency}{" "}
             {decimal(offer?.unitCost ?? null)} · market price{" "}
-            {pricing?.currency ?? currency} {pricing?.value ?? "—"} · fees{" "}
+            {offerIntelligence?.featuredOffer.currency ?? pricing?.currency ?? currency}{" "}
+            {offerIntelligence?.featuredOffer.price ?? pricing?.value ?? "—"} · fees{" "}
             {fees?.currency ?? currency} {decimal(row.amazonFees)}
           </small>
           <small>
@@ -1088,6 +1690,13 @@ function GridRow({
             Landed COGS {currency} {decimal(row.effectiveCogs)} · conservative
             net {currency} {decimal(row.conservativeNetProfit)} · break-even{" "}
             {currency} {decimal(row.breakEvenPrice)}
+          </small>
+          <small>
+            Featured offer: {humanize(offerIntelligence?.featuredOffer.state)} ·
+            scenario {humanize(row.feeEstimate?.scenarioSource)} · formula gates{" "}
+            {row.reasonCodes.length
+              ? row.reasonCodes.map(humanize).join(", ")
+              : "clear"}
           </small>
         </span>
       ) : null}
@@ -1104,6 +1713,16 @@ function GridRow({
           </small>
           <small>{sourceLine(pricing)}</small>
           <small>{sourceLine(restrictions)}</small>
+          <small>
+            Amazon Retail: {humanize(offerIntelligence?.amazonRetailPresence)} ·
+            visible sellers {offerIntelligence?.counts.total.value ?? "unknown"} ({humanize(offerIntelligence?.counts.total.completeness)}) ·
+            FBA {offerIntelligence?.counts.fba.value ?? "unknown"} · FBM{" "}
+            {offerIntelligence?.counts.fbm.value ?? "unknown"}
+          </small>
+          <small>
+            Lowest FBA {currency} {offerIntelligence?.lowestFbaPrice ?? "—"} ·
+            lowest FBM {currency} {offerIntelligence?.lowestFbmPrice ?? "—"}
+          </small>
           {catalog ? (
             <small>
               {catalog.provider} ·{" "}

@@ -1441,8 +1441,31 @@ export async function getCatalogProviderConnection(organizationId: string) {
 export async function queueEnrichment(
   organizationId: string,
   scanJobId: string,
+  idempotencyKey?: string,
 ) {
   return db.$transaction(async (transaction) => {
+    // A user-visible refresh can be retried by the browser. Preserve the first
+    // persisted run instead of incrementing its attempt count or reissuing its
+    // outbox event. Worker retries remain checkpointed on the run itself.
+    if (idempotencyKey) {
+      const priorEvent = await transaction.workflowAuditEvent.findUnique({
+        where: {
+          organizationId_idempotencyKey: { organizationId, idempotencyKey },
+        },
+      });
+      if (priorEvent) {
+        if (
+          priorEvent.entityType !== "ENRICHMENT_RUN" ||
+          priorEvent.eventType !== "REFRESH_REQUESTED"
+        )
+          throw new Error("IDEMPOTENCY_KEY_REUSED");
+        const priorRun = await transaction.enrichmentRun.findFirst({
+          where: { id: priorEvent.entityId, organizationId, scanJobId },
+        });
+        if (!priorRun) throw new Error("IDEMPOTENCY_EVENT_INVALID");
+        return { ...priorRun, duplicate: true };
+      }
+    }
     const scan = await transaction.scanJob.findFirst({
       where: { id: scanJobId, organizationId, jobType: "UPLOAD" },
       include: { _count: { select: { supplierRows: true } } },
@@ -1554,7 +1577,18 @@ export async function queueEnrichment(
         payload: { scanJobId, kind: "ENRICH", runAttempt: run.attemptCount },
       },
     });
-    return run;
+    if (idempotencyKey)
+      await transaction.workflowAuditEvent.create({
+        data: {
+          organizationId,
+          entityType: "ENRICHMENT_RUN",
+          entityId: run.id,
+          eventType: "REFRESH_REQUESTED",
+          idempotencyKey,
+          payload: { scanJobId, attemptCount: run.attemptCount },
+        },
+      });
+    return { ...run, duplicate: false };
   });
 }
 
@@ -2369,15 +2403,33 @@ export async function listProfitResultsForScan(
   });
 }
 
-type AnalysisFilters = {
+export type AnalysisFilters = {
   recommendation?: ProductRecommendation | undefined;
   search?: string | undefined;
   minRoiPercent?: string | undefined;
   maxRoiPercent?: string | undefined;
+  minNetProfit?: string | undefined;
+  maxNetProfit?: string | undefined;
+  minMarginPercent?: string | undefined;
+  maxMarginPercent?: string | undefined;
   status?: "COMPLETED" | "PARTIAL_SUCCESS" | undefined;
+  matchStatus?:
+    | "AUTO_ACCEPTED"
+    | "REVIEW_REQUIRED"
+    | "UNMATCHED"
+    | "USER_ACCEPTED"
+    | "USER_REJECTED"
+    | undefined;
+  minMatchConfidence?: number | undefined;
+  packGuardStatus?:
+    | "VERIFIED"
+    | "BLOCKED_PACK_UNCERTAIN"
+    | "BLOCKED_PACK_CONTRADICTION"
+    | undefined;
   featuredOfferState?: "PRESENT" | "ABSENT" | "UNKNOWN" | undefined;
   amazonRetailPresence?: "PRESENT" | "ABSENT" | "UNKNOWN" | undefined;
   pricingCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN" | undefined;
+  pricingFreshness?: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN" | undefined;
   feeCompleteness?: "COMPLETE" | "PARTIAL" | "UNKNOWN" | undefined;
   restrictionState?:
     | "ELIGIBLE"
@@ -2394,11 +2446,18 @@ type AnalysisFilters = {
   maxFbaOfferCount?: number | undefined;
   minFbmOfferCount?: number | undefined;
   maxFbmOfferCount?: number | undefined;
+  minVisibleOfferCount?: number | undefined;
+  maxVisibleOfferCount?: number | undefined;
+  partialData?: boolean | undefined;
+  supplierCode?: string | undefined;
+  brand?: string | undefined;
+  category?: string | undefined;
 };
 
-type AnalysisSort =
+export type AnalysisSort =
   | "sourceRowNumber"
   | "recommendation"
+  | "currentNetProfit"
   | "conservativeNetProfit"
   | "roiPercent"
   | "marginPercent"
@@ -2415,6 +2474,9 @@ function analysisWhere(
     filters.featuredOfferState !== undefined ||
     filters.amazonRetailPresence !== undefined ||
     filters.pricingCompleteness !== undefined ||
+    filters.pricingFreshness !== undefined ||
+    filters.minVisibleOfferCount !== undefined ||
+    filters.maxVisibleOfferCount !== undefined ||
     filters.minFbaOfferCount !== undefined ||
     filters.maxFbaOfferCount !== undefined ||
     filters.minFbmOfferCount !== undefined ||
@@ -2460,6 +2522,87 @@ function analysisWhere(
         },
       },
     });
+  if (filters.matchStatus || filters.minMatchConfidence !== undefined)
+    typedObservationFilters.push({
+      supplierRow: {
+        matchDecision: {
+          ...(filters.matchStatus ? { status: filters.matchStatus } : {}),
+          ...(filters.minMatchConfidence !== undefined
+            ? { confidence: { gte: filters.minMatchConfidence } }
+            : {}),
+        },
+      },
+    });
+  if (filters.packGuardStatus)
+    typedObservationFilters.push({
+      supplierRow: {
+        matchDecision: {
+          selectedCandidate: {
+            packGuard: { status: filters.packGuardStatus },
+          },
+        },
+      },
+    });
+  if (filters.brand)
+    typedObservationFilters.push({
+      OR: [
+        {
+          supplierRow: {
+            normalizedOffer: {
+              brand: { equals: filters.brand, mode: "insensitive" },
+            },
+          },
+        },
+        {
+          supplierRow: {
+            matchDecision: {
+              selectedCandidate: {
+                catalogProduct: {
+                  brand: { equals: filters.brand, mode: "insensitive" },
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+  if (filters.category)
+    typedObservationFilters.push({
+      supplierRow: {
+        matchDecision: {
+          selectedCandidate: {
+            catalogProduct: {
+              identityProjection: {
+                path: ["productTypes"],
+                array_contains: filters.category,
+              },
+            },
+          },
+        },
+      },
+    });
+  if (filters.partialData)
+    typedObservationFilters.push({
+      OR: [
+        { status: "PARTIAL_SUCCESS" },
+        {
+          supplierRow: {
+            enrichmentItems: {
+              some: {
+                observations: {
+                  some: {
+                    OR: [
+                      { completeness: { not: "COMPLETE" } },
+                      { freshnessState: { not: "FRESH" } },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
   return {
     organizationId,
     scanJobId,
@@ -2475,6 +2618,21 @@ function analysisWhere(
       : {}),
     ...(filters.maxRoiPercent
       ? { roiPercent: { lte: filters.maxRoiPercent } }
+      : {}),
+    ...(filters.minNetProfit
+      ? { currentNetProfit: { gte: filters.minNetProfit } }
+      : {}),
+    ...(filters.maxNetProfit
+      ? { currentNetProfit: { lte: filters.maxNetProfit } }
+      : {}),
+    ...(filters.minMarginPercent
+      ? { marginPercent: { gte: filters.minMarginPercent } }
+      : {}),
+    ...(filters.maxMarginPercent
+      ? { marginPercent: { lte: filters.maxMarginPercent } }
+      : {}),
+    ...(filters.supplierCode
+      ? { scanJob: { supplier: { code: filters.supplierCode } } }
       : {}),
     ...(hasPricingFilter
       ? {
@@ -2494,6 +2652,22 @@ function analysisWhere(
                       : {}),
                     ...(filters.pricingCompleteness
                       ? { completeness: filters.pricingCompleteness }
+                      : {}),
+                    ...(filters.pricingFreshness
+                      ? { freshnessState: filters.pricingFreshness }
+                      : {}),
+                    ...(filters.minVisibleOfferCount !== undefined ||
+                    filters.maxVisibleOfferCount !== undefined
+                      ? {
+                          visibleOfferCount: {
+                            ...(filters.minVisibleOfferCount !== undefined
+                              ? { gte: filters.minVisibleOfferCount }
+                              : {}),
+                            ...(filters.maxVisibleOfferCount !== undefined
+                              ? { lte: filters.maxVisibleOfferCount }
+                              : {}),
+                          },
+                        }
                       : {}),
                     ...(filters.minFbaOfferCount !== undefined ||
                     filters.maxFbaOfferCount !== undefined
@@ -2718,10 +2892,14 @@ export async function listAnalysisResults(input: {
         supplierRow: {
           select: {
             sourceRowNumber: true,
-            normalizedOffer: {
-              select: {
-                asin: true,
-                itemNumber: true,
+                normalizedOffer: {
+                  select: {
+                    asin: true,
+                    upc: true,
+                    ean: true,
+                    gtin: true,
+                    itemNumber: true,
+                    mpn: true,
                 description: true,
                 brand: true,
                 unitCost: true,
@@ -2743,10 +2921,15 @@ export async function listAnalysisResults(input: {
                         asin: true,
                         title: true,
                         brand: true,
+                        model: true,
+                        mpn: true,
+                        sizeText: true,
+                        variation: true,
                         provider: true,
                         observedAt: true,
                         freshnessState: true,
                         packCount: true,
+                        identityProjection: true,
                       },
                     },
                     packGuard: { select: { status: true, reasonCode: true } },
@@ -2883,10 +3066,68 @@ export async function listAnalysisResults(input: {
         (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
       )[0];
     const { enrichmentItems, ...supplierRow } = row.supplierRow;
+    const selectedCatalog = supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
+    const identityProjection = selectedCatalog?.identityProjection;
+    const identity =
+      identityProjection && typeof identityProjection === "object"
+        ? (identityProjection as {
+            manufacturer?: unknown;
+            color?: unknown;
+            productTypes?: unknown;
+            variationTheme?: unknown;
+            images?: unknown;
+          })
+        : null;
+    const imageCandidates = Array.isArray(identity?.images)
+      ? identity.images
+          .filter(
+            (image): image is { url: string; variant?: string } =>
+              image !== null &&
+              typeof image === "object" &&
+              typeof (image as { url?: unknown }).url === "string",
+          )
+          .map((image) => ({ url: image.url, variant: image.variant ?? null }))
+      : [];
+    const normalizedCatalog = selectedCatalog
+      ? {
+          ...selectedCatalog,
+          identity: {
+            manufacturer:
+              typeof identity?.manufacturer === "string"
+                ? identity.manufacturer
+                : null,
+            color: typeof identity?.color === "string" ? identity.color : null,
+            productTypes: Array.isArray(identity?.productTypes)
+              ? identity.productTypes.filter(
+                  (value): value is string => typeof value === "string",
+                )
+              : [],
+            variationTheme:
+              typeof identity?.variationTheme === "string"
+                ? identity.variationTheme
+                : null,
+            images: imageCandidates,
+          },
+        }
+      : null;
+    const normalizedSupplierRow = {
+      ...supplierRow,
+      matchDecision: supplierRow.matchDecision
+        ? {
+            ...supplierRow.matchDecision,
+            selectedCandidate: supplierRow.matchDecision.selectedCandidate
+              ? {
+                  ...supplierRow.matchDecision.selectedCandidate,
+                  catalogProduct: normalizedCatalog,
+                }
+              : null,
+          }
+        : null,
+    };
     void enrichmentItems;
     return {
       ...row,
-      supplierRow,
+      supplierRow: normalizedSupplierRow,
       externalEvidence: {
         pricing: external("PRICING"),
         fees: external("FEES"),
@@ -4488,21 +4729,36 @@ export async function validatePurchaseOrder(
 
 export async function queueExport(input: {
   organizationId: string;
-  kind: "SHORTLIST" | "PURCHASE_ORDER" | "AUDIT_REPORT";
+  kind: "SHORTLIST" | "PURCHASE_ORDER" | "AUDIT_REPORT" | "ANALYSIS_VIEW";
   format: "CSV" | "XLSX";
   shortlistId?: string;
   purchaseOrderId?: string;
-  sourceRevision: number;
+  scanJobId?: string;
+  queryState?: Prisma.InputJsonValue;
+  sourceRevision?: number;
   idempotencyKey: string;
 }) {
   return db.$transaction(async (transaction) => {
-    const sourceId = input.purchaseOrderId ?? input.shortlistId;
+    const sourceId = input.purchaseOrderId ?? input.shortlistId ?? input.scanJobId;
     if (!sourceId) throw new Error("EXPORT_SOURCE_REQUIRED");
+    if (input.kind === "ANALYSIS_VIEW") {
+      if (!input.scanJobId || !input.queryState)
+        throw new Error("ANALYSIS_EXPORT_SOURCE_REQUIRED");
+      const scan = await transaction.scanJob.findFirst({
+        where: { id: input.scanJobId, organizationId: input.organizationId },
+        select: { attemptCount: true },
+      });
+      if (!scan) throw new Error("ANALYSIS_EXPORT_SCAN_NOT_FOUND");
+      input = { ...input, sourceRevision: scan.attemptCount };
+    }
+    if (input.sourceRevision === undefined)
+      throw new Error("EXPORT_SOURCE_REVISION_REQUIRED");
     const fingerprint = requestFingerprint({
       kind: input.kind,
       format: input.format,
       sourceId,
       sourceRevision: input.sourceRevision,
+      queryState: input.queryState ?? null,
     });
     const existing = await transaction.exportJob.findUnique({
       where: {

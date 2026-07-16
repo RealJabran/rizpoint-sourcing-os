@@ -74,6 +74,7 @@ export type AnalysisCostField = (typeof ANALYSIS_COST_FIELDS)[number];
 export const ANALYSIS_SORT_FIELDS = [
   "sourceRowNumber",
   "recommendation",
+  "currentNetProfit",
   "conservativeNetProfit",
   "roiPercent",
   "marginPercent",

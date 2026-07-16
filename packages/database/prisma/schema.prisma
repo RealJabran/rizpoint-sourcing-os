@@ -343,6 +343,7 @@ enum ExportKind {
   SHORTLIST
   PURCHASE_ORDER
   AUDIT_REPORT
+  ANALYSIS_VIEW
 }
 
 enum OrganizationRole {
@@ -447,6 +448,7 @@ model ScanJob {
   profitResults         ProfitResult[]
   analysisViews         AnalysisView[]
   profitCostOverrides   ProfitCostOverride[]
+  exportJobs            ExportJob[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status])
@@ -1403,10 +1405,12 @@ model ExportJob {
   organizationId   String       @map("organization_id")
   shortlistId      String?      @map("shortlist_id")
   purchaseOrderId  String?      @map("purchase_order_id")
+  scanJobId        String?      @map("scan_job_id")
   kind             ExportKind
   format           ExportFormat
   status           ExportStatus @default(PENDING)
   sourceRevision   Int          @map("source_revision")
+  queryState       Json?        @map("query_state")
   idempotencyKey   String       @map("idempotency_key")
   objectKey        String?      @unique @map("object_key")
   filename         String?      @map("filename")
@@ -1424,10 +1428,12 @@ model ExportJob {
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   shortlist     Shortlist?     @relation(fields: [shortlistId], references: [id], onDelete: Restrict)
   purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  scanJob       ScanJob?       @relation(fields: [scanJobId], references: [id], onDelete: Restrict)
   outboxEvents  OutboxEvent[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status, createdAt])
+  @@index([organizationId, scanJobId, createdAt])
   @@map("export_jobs")
 }
 

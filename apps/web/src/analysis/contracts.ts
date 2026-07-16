@@ -28,9 +28,31 @@ export const analysisQuerySchema = z.object({
   search: z.string().trim().min(2).max(120).optional(),
   minRoiPercent: decimal.optional(),
   maxRoiPercent: decimal.optional(),
+  minNetProfit: decimal.optional(),
+  maxNetProfit: decimal.optional(),
+  minMarginPercent: decimal.optional(),
+  maxMarginPercent: decimal.optional(),
+  matchStatus: z
+    .enum([
+      "AUTO_ACCEPTED",
+      "REVIEW_REQUIRED",
+      "UNMATCHED",
+      "USER_ACCEPTED",
+      "USER_REJECTED",
+    ])
+    .optional(),
+  minMatchConfidence: z.coerce.number().int().min(0).max(100).optional(),
+  packGuardStatus: z
+    .enum([
+      "VERIFIED",
+      "BLOCKED_PACK_UNCERTAIN",
+      "BLOCKED_PACK_CONTRADICTION",
+    ])
+    .optional(),
   featuredOfferState: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]).optional(),
   amazonRetailPresence: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]).optional(),
   pricingCompleteness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]).optional(),
+  pricingFreshness: z.enum(["FRESH", "STALE", "EXPIRED", "UNKNOWN"]).optional(),
   feeCompleteness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]).optional(),
   restrictionState: z
     .enum([
@@ -50,6 +72,12 @@ export const analysisQuerySchema = z.object({
   maxFbaOfferCount: z.coerce.number().int().nonnegative().optional(),
   minFbmOfferCount: z.coerce.number().int().nonnegative().optional(),
   maxFbmOfferCount: z.coerce.number().int().nonnegative().optional(),
+  minVisibleOfferCount: z.coerce.number().int().nonnegative().optional(),
+  maxVisibleOfferCount: z.coerce.number().int().nonnegative().optional(),
+  partialData: z.enum(["true"]).transform(() => true).optional(),
+  supplierCode: z.string().trim().min(1).max(80).optional(),
+  brand: z.string().trim().min(1).max(120).optional(),
+  category: z.string().trim().min(1).max(120).optional(),
   sort: z.enum(ANALYSIS_SORT_FIELDS).default("sourceRowNumber"),
   direction: z.enum(["asc", "desc"]).default("asc"),
 });
@@ -62,9 +90,17 @@ export const analysisViewStateSchema = z.object({
   search: z.string().trim().min(2).max(120).optional(),
   minRoiPercent: nonNegativeDecimal.optional(),
   maxRoiPercent: nonNegativeDecimal.optional(),
+  minNetProfit: decimal.optional(),
+  maxNetProfit: decimal.optional(),
+  minMarginPercent: nonNegativeDecimal.optional(),
+  maxMarginPercent: nonNegativeDecimal.optional(),
+  matchStatus: analysisQuerySchema.shape.matchStatus,
+  minMatchConfidence: z.number().int().min(0).max(100).optional(),
+  packGuardStatus: analysisQuerySchema.shape.packGuardStatus,
   featuredOfferState: analysisQuerySchema.shape.featuredOfferState,
   amazonRetailPresence: analysisQuerySchema.shape.amazonRetailPresence,
   pricingCompleteness: analysisQuerySchema.shape.pricingCompleteness,
+  pricingFreshness: analysisQuerySchema.shape.pricingFreshness,
   feeCompleteness: analysisQuerySchema.shape.feeCompleteness,
   restrictionState: analysisQuerySchema.shape.restrictionState,
   restrictionReasonCode: analysisQuerySchema.shape.restrictionReasonCode,
@@ -72,6 +108,12 @@ export const analysisViewStateSchema = z.object({
   maxFbaOfferCount: z.number().int().nonnegative().optional(),
   minFbmOfferCount: z.number().int().nonnegative().optional(),
   maxFbmOfferCount: z.number().int().nonnegative().optional(),
+  minVisibleOfferCount: z.number().int().nonnegative().optional(),
+  maxVisibleOfferCount: z.number().int().nonnegative().optional(),
+  partialData: z.boolean().optional(),
+  supplierCode: z.string().trim().min(1).max(80).optional(),
+  brand: z.string().trim().min(1).max(120).optional(),
+  category: z.string().trim().min(1).max(120).optional(),
   sort: z.enum(ANALYSIS_SORT_FIELDS).default("sourceRowNumber"),
   direction: z.enum(["asc", "desc"]).default("asc"),
   visibleGroups: z
@@ -82,6 +124,12 @@ export const analysisViewStateSchema = z.object({
 export const saveAnalysisViewSchema = z.object({
   name: z.string().trim().min(1).max(80),
   isDefault: z.boolean().optional(),
+  queryState: analysisViewStateSchema,
+});
+
+export const analysisExportSchema = z.object({
+  format: z.enum(["CSV", "XLSX"]),
+  idempotencyKey: z.string().uuid(),
   queryState: analysisViewStateSchema,
 });
 
