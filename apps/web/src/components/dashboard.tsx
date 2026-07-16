@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "./page-header";
-import { type DashboardSummary } from "./dashboard-state";
+import {
+  providerStatusPresentation,
+  type DashboardSummary,
+  type ProviderConnectionStatus,
+} from "./dashboard-state";
 import { ScanSummaryTable } from "./scan-summary-table";
 import { Alert, Badge, ButtonLink, Card, Skeleton } from "./ui";
 import { abortExpectedRequest, requestWasAborted } from "../abort";
@@ -11,6 +15,14 @@ type DashboardState =
   | { kind: "loading" }
   | { kind: "error" }
   | { kind: "ready"; data: DashboardSummary };
+
+type ProviderState =
+  | { kind: "loading" }
+  | { kind: "error" }
+  | {
+      kind: "ready";
+      data: { status: ProviderConnectionStatus; checkedAt: string };
+    };
 
 function MetricCard({
   label,
@@ -49,6 +61,7 @@ function DashboardLoading() {
 
 export function Dashboard() {
   const [state, setState] = useState<DashboardState>({ kind: "loading" });
+  const [provider, setProvider] = useState<ProviderState>({ kind: "loading" });
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -63,6 +76,22 @@ export function Dashboard() {
       } catch (error) {
         if (!active || requestWasAborted(error, controller.signal)) return;
         setState({ kind: "error" });
+      }
+    })();
+    void (async () => {
+      try {
+        const response = await fetch("/api/providers/amazon", {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("PROVIDER_STATUS_UNAVAILABLE");
+        const data = (await response.json()) as {
+          status: ProviderConnectionStatus;
+          checkedAt: string;
+        };
+        if (active) setProvider({ kind: "ready", data });
+      } catch (error) {
+        if (!active || requestWasAborted(error, controller.signal)) return;
+        setProvider({ kind: "error" });
       }
     })();
     return () => {
@@ -86,6 +115,39 @@ export function Dashboard() {
       ) : null}
       {state.kind === "ready" ? (
         <>
+          <section
+            className="dashboard-provider"
+            aria-label="Amazon provider status"
+          >
+            <div>
+              <span className="dashboard-provider__eyebrow">Amazon data</span>
+              <h2>Provider connection</h2>
+            </div>
+            {provider.kind === "loading" ? (
+              <Skeleton className="provider-skeleton" />
+            ) : null}
+            {provider.kind === "error" ? (
+              <Alert tone="warning" title="Provider status is unavailable">
+                Amazon data status could not be confirmed. Your persisted scan
+                data is unchanged.
+              </Alert>
+            ) : null}
+            {provider.kind === "ready"
+              ? (() => {
+                  const presentation = providerStatusPresentation(
+                    provider.data.status,
+                  );
+                  return (
+                    <div className="dashboard-provider__status">
+                      <Badge tone={presentation.tone}>
+                        {presentation.label}
+                      </Badge>
+                      <p>{presentation.detail}</p>
+                    </div>
+                  );
+                })()
+              : null}
+          </section>
           <section className="metric-grid" aria-label="Catalog scan summary">
             <MetricCard
               label="Catalog scans"

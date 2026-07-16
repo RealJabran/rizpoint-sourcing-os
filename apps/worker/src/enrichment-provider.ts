@@ -1,6 +1,8 @@
 import {
   AmazonSpApiProvider,
-  exchangeRefreshToken,
+  LwaAccessTokenProvider,
+  providerMode,
+  readSpApiConfig,
   vaultFromEnvironment,
 } from "@rizpoint/amazon-sp-api";
 import { MockAmazonProvider } from "@rizpoint/mock-providers";
@@ -62,7 +64,7 @@ export function createEnrichmentProvider(
 ): EnrichmentProviderBundle {
   if (!connection || connection.mode === "MOCK") return mockBundle();
   if (
-    process.env.PROVIDER_MODE !== "sp-api" ||
+    providerMode() !== "sp_api" ||
     connection.provider !== "AMAZON_SP_API" ||
     connection.status !== "ACTIVE" ||
     !connection.sellerId ||
@@ -97,22 +99,20 @@ export function createEnrichmentProvider(
   } catch {
     throw new ProviderError("UNAUTHORIZED");
   }
-  let accessToken: string | undefined;
-  let refreshAt = 0;
-  const config = {
-    clientId: process.env.SP_API_LWA_CLIENT_ID!,
-    clientSecret: process.env.SP_API_LWA_CLIENT_SECRET!,
-    endpoint: process.env.SP_API_ENDPOINT!,
-  };
+  let config: ReturnType<typeof readSpApiConfig>;
+  try {
+    config = readSpApiConfig();
+  } catch {
+    throw new ProviderError("INVALID_REQUEST");
+  }
+  const tokens = new LwaAccessTokenProvider(config, refreshToken);
   return {
-    provider: new AmazonSpApiProvider(config, async () => {
-      if (accessToken && Date.now() < refreshAt) return accessToken;
-      const exchanged = await exchangeRefreshToken(config, refreshToken);
-      accessToken = exchanged.accessToken;
-      refreshAt =
-        Date.now() + Math.max(0, exchanged.expiresInSeconds - 60) * 1_000;
-      return accessToken;
-    }),
+    provider: new AmazonSpApiProvider(
+      config,
+      Object.assign(() => tokens.getAccessToken(), {
+        invalidate: () => tokens.invalidate(),
+      }),
+    ),
     providerKind: "AMAZON_SP_API",
     marketplace: {
       marketplaceId: connection.marketplaceId,

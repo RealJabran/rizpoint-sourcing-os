@@ -20,6 +20,9 @@ test.describe("RizPoint application shell", () => {
         "No revenue, profit, or winner metrics are inferred here.",
       ),
     ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Amazon provider status" }),
+    ).toContainText("Mock");
     await expect(page.locator(".app-sidebar")).toHaveCSS("width", "256px");
   });
 

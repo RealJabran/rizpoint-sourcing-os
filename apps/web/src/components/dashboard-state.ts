@@ -9,6 +9,59 @@ export type DashboardSummary = {
   recentScans: ScanSummary[];
 };
 
+export type ProviderConnectionStatus =
+  | "MOCK"
+  | "CONNECTED"
+  | "MISCONFIGURED"
+  | "UNAUTHORIZED"
+  | "THROTTLED"
+  | "UNAVAILABLE";
+
+export function providerStatusPresentation(status: ProviderConnectionStatus): {
+  label: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+  detail: string;
+} {
+  switch (status) {
+    case "MOCK":
+      return {
+        label: "Mock",
+        tone: "neutral",
+        detail: "Deterministic fixture data is active.",
+      };
+    case "CONNECTED":
+      return {
+        label: "Connected",
+        tone: "success",
+        detail: "Server-side authorization was validated.",
+      };
+    case "MISCONFIGURED":
+      return {
+        label: "Misconfigured",
+        tone: "warning",
+        detail: "Live Amazon setup needs owner attention.",
+      };
+    case "UNAUTHORIZED":
+      return {
+        label: "Unauthorized",
+        tone: "danger",
+        detail: "Re-authorize the seller connection before live use.",
+      };
+    case "THROTTLED":
+      return {
+        label: "Throttled",
+        tone: "warning",
+        detail: "Amazon has asked the service to slow down.",
+      };
+    case "UNAVAILABLE":
+      return {
+        label: "Unavailable",
+        tone: "danger",
+        detail: "Provider status cannot be confirmed right now.",
+      };
+  }
+}
+
 type StatusPresentation = {
   label: string;
   tone: "neutral" | "info" | "success" | "warning" | "danger" | "blocked";

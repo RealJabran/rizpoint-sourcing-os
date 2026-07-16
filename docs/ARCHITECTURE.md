@@ -43,13 +43,21 @@ The matching worker calls the typed catalog interface, validates provider payloa
 
 Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Mock/recorded adapters are the default; the optional Amazon SP-API adapter is isolated in `packages/amazon-sp-api`, server-side only, and configuration-gated. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
 
-The worker selects the fixture adapter unless `PROVIDER_MODE=sp-api` and an
+The worker selects the fixture adapter unless `PROVIDER_MODE=sp_api` and an
 active organization-scoped Amazon connection has a valid encrypted refresh
 token. Decryption happens only in the worker using the connection's
 organization-and-connection authenticated context. Missing, revoked, or
 misconfigured connections fail as explicit provider data; they never fall back
 silently to mock data. Provider-attempt idempotency is scoped to one enrichment
 run so later scans cannot overwrite prior audit evidence.
+
+The Phase 7.6 connectivity boundary validates only official NA/EU/FE SP-API
+endpoints. It exchanges an encrypted long-lived refresh token for a short-lived
+LWA access token in worker memory, using a single-flight cache. The first
+server-only connection probe is a non-destructive Sellers
+`getMarketplaceParticipations` request; live catalog and pricing operations are
+not part of that connectivity slice. Public status DTOs expose only a normalized
+state and timestamp, never credentials or provider payloads.
 
 The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Redis, and the scanner are reachable.
 

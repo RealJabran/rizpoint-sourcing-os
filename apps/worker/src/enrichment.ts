@@ -33,7 +33,7 @@ function providerError(error: unknown) {
     status:
       error.code === "THROTTLED"
         ? ("THROTTLED" as const)
-        : ["TRANSIENT"].includes(error.code)
+        : ["TRANSIENT", "PROVIDER_OUTAGE"].includes(error.code)
           ? ("RETRYABLE_ERROR" as const)
           : ("PERMANENT_ERROR" as const),
     retryAt: error.options.retryAfterMs

@@ -23,7 +23,14 @@ import {
   type Restrictions,
   restrictionsSchema,
 } from "@rizpoint/provider-contracts";
-import { z } from "zod";
+import {
+  SpApiTransport,
+  testSpApiConnection,
+  type AccessTokenSupplier,
+  type SpApiConfig,
+} from "./connectivity.js";
+
+export * from "./connectivity.js";
 
 export type EncryptedSecret = {
   ciphertext: string;
@@ -82,59 +89,6 @@ export function vaultFromEnvironment(): CredentialVault | null {
   return key.length === 32 ? new CredentialVault(new Map([[1, key]]), 1) : null;
 }
 
-export type SpApiConfig = {
-  clientId: string;
-  clientSecret: string;
-  endpoint: string;
-};
-
-export function retryAfterMilliseconds(
-  value: string | null,
-  now = Date.now(),
-): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
-  const at = Date.parse(value);
-  return Number.isFinite(at) ? Math.max(0, at - now) : undefined;
-}
-
-const tokenSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().positive(),
-});
-
-export async function exchangeRefreshToken(
-  config: SpApiConfig,
-  refreshToken: string,
-): Promise<{ accessToken: string; expiresInSeconds: number }> {
-  const response = await fetch("https://api.amazon.com/auth/o2/token", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-    }),
-  });
-  if (!response.ok) {
-    throw new ProviderError(
-      response.status === 401 ? "UNAUTHORIZED" : "TRANSIENT",
-      {
-        httpStatus: response.status,
-      },
-    );
-  }
-  const token = tokenSchema.parse(await response.json());
-  return {
-    accessToken: token.access_token,
-    expiresInSeconds: token.expires_in,
-  };
-}
-
-type AccessTokenSupplier = () => Promise<string>;
-
 export class AmazonSpApiProvider
   implements
     CatalogProvider,
@@ -144,51 +98,20 @@ export class AmazonSpApiProvider
     MarketHistoryProvider,
     ProviderHealthProvider
 {
+  private readonly transport: SpApiTransport;
+
   constructor(
     private readonly config: SpApiConfig,
     private readonly accessToken: AccessTokenSupplier,
-  ) {}
+  ) {
+    this.transport = new SpApiTransport(config, accessToken);
+  }
 
   private async request(
     path: string,
     init: RequestInit = {},
   ): Promise<{ body: unknown; observedAt: string; requestId?: string }> {
-    const response = await fetch(`${this.config.endpoint}${path}`, {
-      ...init,
-      headers: {
-        accept: "application/json",
-        "x-amz-access-token": await this.accessToken(),
-        ...init.headers,
-      },
-    });
-    const requestId = response.headers.get("x-amzn-requestid") ?? undefined;
-    if (!response.ok) {
-      const retryAfter = retryAfterMilliseconds(
-        response.headers.get("retry-after"),
-      );
-      const code =
-        response.status === 429
-          ? "THROTTLED"
-          : response.status === 401
-            ? "UNAUTHORIZED"
-            : response.status === 403
-              ? "FORBIDDEN"
-              : response.status === 404
-                ? "NOT_FOUND"
-                : response.status >= 500
-                  ? "TRANSIENT"
-                  : "PERMANENT";
-      throw new ProviderError(code, {
-        httpStatus: response.status,
-        ...(requestId ? { providerRequestId: requestId } : {}),
-        ...(retryAfter !== undefined ? { retryAfterMs: retryAfter } : {}),
-      });
-    }
-    return {
-      body: await response.json(),
-      observedAt: new Date().toISOString(),
-      ...(requestId ? { requestId } : {}),
-    };
+    return this.transport.request(path, init);
   }
 
   async getItem(
@@ -428,32 +351,20 @@ export class AmazonSpApiProvider
   }
 
   async health(marketplace?: MarketplaceContext): Promise<ProviderHealth> {
-    if (!marketplace)
-      return {
-        provider: "amazon-sp-api",
-        status: "UNAVAILABLE",
-        checkedAt: new Date().toISOString(),
-        lastErrorCode: "MARKETPLACE_REQUIRED",
-      };
-    try {
-      await this.request(
-        `/catalog/2022-04-01/items?marketplaceIds=${encodeURIComponent(marketplace.marketplaceId)}&keywords=health`,
-      );
-      return {
-        provider: "amazon-sp-api",
-        status: "HEALTHY",
-        checkedAt: new Date().toISOString(),
-      };
-    } catch (error) {
-      return {
-        provider: "amazon-sp-api",
-        status:
-          error instanceof ProviderError && error.code === "UNAUTHORIZED"
+    void marketplace;
+    const health = await testSpApiConnection(this.transport);
+    return {
+      provider: health.provider,
+      status:
+        health.status === "CONNECTED"
+          ? "HEALTHY"
+          : health.status === "UNAUTHORIZED"
             ? "AUTH_REQUIRED"
-            : "DEGRADED",
-        checkedAt: new Date().toISOString(),
-        lastErrorCode: error instanceof ProviderError ? error.code : "UNKNOWN",
-      };
-    }
+            : health.status === "THROTTLED"
+              ? "DEGRADED"
+              : "UNAVAILABLE",
+      checkedAt: health.checkedAt,
+      ...(health.lastErrorCode ? { lastErrorCode: health.lastErrorCode } : {}),
+    };
   }
 }

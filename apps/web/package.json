@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@rizpoint/amazon-sp-api": "workspace:*",
     "@rizpoint/database": "workspace:*",
     "@rizpoint/domain": "workspace:*",
     "@rizpoint/mock-providers": "workspace:*",

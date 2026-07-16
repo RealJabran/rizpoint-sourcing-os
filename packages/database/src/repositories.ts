@@ -1359,6 +1359,22 @@ export async function ensureMockAmazonConnection(organizationId: string) {
   });
 }
 
+/** Credential-free projection for status UI. Tenant scope is mandatory. */
+export async function getAmazonProviderConnectionStatus(
+  organizationId: string,
+) {
+  return db.providerConnection.findFirst({
+    where: { organizationId, provider: "AMAZON_SP_API" },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      status: true,
+      lastValidatedAt: true,
+      lastSuccessAt: true,
+      lastErrorCode: true,
+    },
+  });
+}
+
 export async function queueEnrichment(
   organizationId: string,
   scanJobId: string,
@@ -1371,6 +1387,7 @@ export async function queueEnrichment(
     if (!scan || scan._count.supplierRows === 0) return null;
     if (!["COMPLETED", "PARTIAL_SUCCESS"].includes(scan.status)) return null;
     const connection =
+      process.env.PROVIDER_MODE === "sp_api" ||
       process.env.PROVIDER_MODE === "sp-api"
         ? await transaction.providerConnection.findFirst({
             where: {

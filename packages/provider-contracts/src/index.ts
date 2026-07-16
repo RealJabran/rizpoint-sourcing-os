@@ -40,6 +40,8 @@ export class ProviderError extends Error {
       | "FORBIDDEN"
       | "NOT_FOUND"
       | "TRANSIENT"
+      | "PROVIDER_OUTAGE"
+      | "INVALID_REQUEST"
       | "PERMANENT"
       | "INVALID_RESPONSE",
     readonly options: {

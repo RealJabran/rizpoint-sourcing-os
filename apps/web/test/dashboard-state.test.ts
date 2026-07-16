@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   relativeTimestamp,
+  providerStatusPresentation,
   scanDisplayName,
   scanStatusPresentation,
   type ScanSummary,
@@ -62,5 +63,24 @@ describe("dashboard presentation state", () => {
       "Updated recently",
     );
     vi.useRealTimers();
+  });
+
+  it("uses human-readable, non-secret provider connection states", () => {
+    expect(providerStatusPresentation("MOCK")).toMatchObject({
+      label: "Mock",
+      tone: "neutral",
+    });
+    expect(providerStatusPresentation("CONNECTED")).toMatchObject({
+      label: "Connected",
+      tone: "success",
+    });
+    expect(providerStatusPresentation("UNAUTHORIZED")).toMatchObject({
+      label: "Unauthorized",
+      tone: "danger",
+    });
+    expect(providerStatusPresentation("THROTTLED")).toMatchObject({
+      label: "Throttled",
+      tone: "warning",
+    });
   });
 });
