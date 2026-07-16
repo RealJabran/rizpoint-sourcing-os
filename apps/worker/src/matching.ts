@@ -136,8 +136,8 @@ async function cascade(
         candidates.set(product.asin, { product, source: "EXACT_IDENTIFIER" });
     }
   }
-  if (candidates.size === 0 && (input.mpn ?? input.itemNumber) && input.brand) {
-    const value = input.mpn ?? input.itemNumber!;
+  if (candidates.size === 0 && input.mpn && input.brand) {
+    const value = input.mpn;
     const products = await cachedLookup(
       organizationId,
       scanJobId,

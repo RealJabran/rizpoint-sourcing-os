@@ -44,4 +44,37 @@ describe("production configuration", () => {
     );
     expect(template).toMatch(/^S3_PUBLIC_ENDPOINT=/m);
   });
+
+  it("runs the Dockerized web image as an optimized production server", async () => {
+    const compose = await readFile(
+      new URL("../../../compose.yaml", import.meta.url),
+      "utf8",
+    );
+    const webService = compose.slice(compose.indexOf("  web:"));
+    expect(webService).toContain(
+      'command: ["node", "apps/web/.next/standalone/apps/web/server.js"]',
+    );
+    expect(webService).toContain("NODE_ENV: production");
+    expect(webService).toContain("HOSTNAME: 0.0.0.0");
+    expect(webService).not.toContain('"@rizpoint/web", "dev"');
+    expect(webService).toContain('"127.0.0.1:3000:3000"');
+    const webDockerfile = await readFile(
+      new URL("../Dockerfile", import.meta.url),
+      "utf8",
+    );
+    const workerDockerfile = await readFile(
+      new URL("../../worker/Dockerfile", import.meta.url),
+      "utf8",
+    );
+    expect(webDockerfile).toContain("@rizpoint/database build");
+    expect(workerDockerfile).toContain("@rizpoint/database build");
+  });
+
+  it("does not suppress application hydration warnings", async () => {
+    const layout = await readFile(
+      new URL("../app/layout.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(layout).not.toContain("suppressHydrationWarning");
+  });
 });

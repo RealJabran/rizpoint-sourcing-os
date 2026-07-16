@@ -14,7 +14,8 @@ export async function PUT(
 ) {
   if (!phaseZeroDemoEnabled())
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const parsed = mappingInputSchema.safeParse(await request.json());
+  const body = await request.json().catch(() => null);
+  const parsed = mappingInputSchema.safeParse(body);
   if (!parsed.success)
     return NextResponse.json({ error: "INVALID_MAPPING" }, { status: 400 });
   try {
@@ -26,14 +27,21 @@ export async function PUT(
     );
   }
   const organization = await ensurePhaseZeroOrganization();
-  const scan = await saveColumnMappings(
-    organization.id,
-    (await params).scanId,
-    parsed.data.uploadSheetId,
-    parsed.data.headerRow,
-    parsed.data.mappings,
-  );
-  return scan
-    ? NextResponse.json(scan)
-    : NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    const scan = await saveColumnMappings(
+      organization.id,
+      (await params).scanId,
+      parsed.data.uploadSheetId,
+      parsed.data.headerRow,
+      parsed.data.mappings,
+    );
+    return scan
+      ? NextResponse.json(scan)
+      : NextResponse.json({ error: "Not found" }, { status: 404 });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "INVALID_MAPPING";
+    if (["MAPPING_STALE_SELECTION", "MAPPING_NOT_READY"].includes(code))
+      return NextResponse.json({ error: code }, { status: 409 });
+    return NextResponse.json({ error: "INVALID_MAPPING" }, { status: 400 });
+  }
 }

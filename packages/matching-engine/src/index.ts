@@ -287,9 +287,12 @@ export function scoreCandidate(
 ): ScoredCandidate {
   const identifier = identifierEvidence(input, product);
   const brand = feature("BRAND", input.brand, product.brand, 15);
+  // ITEM_NUMBER is a supplier-owned SKU, not a manufacturer model. Treating it
+  // as model evidence creates false hard contradictions for otherwise exact
+  // ASIN/GTIN matches. An explicit MPN is already scored as identifier evidence.
   const model = input.mpn
     ? notApplicable("MODEL", "MODEL_DUPLICATES_MPN_IDENTIFIER")
-    : feature("MODEL", input.itemNumber, product.mpn ?? product.model, 15);
+    : feature("MODEL", null, product.mpn ?? product.model, 15);
   const pack = feature(
     "PACK",
     input.packCount ?? extractSupplierPackCount(input.description),

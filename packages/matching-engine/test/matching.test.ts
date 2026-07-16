@@ -126,6 +126,22 @@ describe("golden matching decisions", () => {
     expect(decideMatch([candidate]).status).toBe("REVIEW_REQUIRED");
   });
 
+  it("does not treat a supplier SKU as manufacturer model evidence", () => {
+    const candidate = scoreCandidate(
+      {
+        asin: "B000000001",
+        itemNumber: "VSI-SUPPLIER-SKU-001",
+        brand: "Acme",
+      },
+      products.B000000001!,
+      "SUPPLIED_ASIN",
+    );
+    expect(
+      candidate.evidence.find((item) => item.feature === "MODEL"),
+    ).toMatchObject({ outcome: "UNKNOWN" });
+    expect(decideMatch([candidate]).status).toBe("AUTO_ACCEPTED");
+  });
+
   it("requires review for brand, model, size, variation, and pack contradictions", () => {
     const candidate = scoreCandidate(
       {

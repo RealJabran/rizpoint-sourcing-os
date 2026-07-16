@@ -86,6 +86,59 @@ export async function ensurePhaseZeroOrganization() {
       orderingRulesObservedAt: new Date(),
     },
   });
+  await db.financialPolicy.upsert({
+    where: { organizationId: organization.id },
+    create: {
+      organizationId: organization.id,
+      currency: "USD",
+      engineVersion: "profit-engine/v2",
+      minNetProfit: "3.00",
+      minRoiPercent: "30.00",
+      minMarginPercent: "10.00",
+      maxStressLoss: "0.00",
+      stressDiscountPercent: "10.00",
+      minimumDemandScore: 1,
+    },
+    update: {},
+  });
+  await db.shippingRoute.upsert({
+    where: {
+      organizationId_name_effectiveFrom: {
+        organizationId: organization.id,
+        name: "Local demo route",
+        effectiveFrom: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    },
+    create: {
+      organizationId: organization.id,
+      name: "Local demo route",
+      currency: "USD",
+      effectiveFrom: new Date("2026-01-01T00:00:00.000Z"),
+      allocatedSupplierFreight: "0.50",
+      prepFee: "1.49",
+      labelingFee: "0.10",
+      polybagFee: "0.00",
+      bundleFee: "0.00",
+      bubblewrapFee: "0.00",
+      inboundShipping: "0.75",
+      dutyOrTax: "0.00",
+      storageAllowance: "0.20",
+      returnAllowance: "0.30",
+      otherCosts: "0.00",
+    },
+    update: {},
+  });
+  await db.brandPolicy.upsert({
+    where: {
+      organizationId_brand: { organizationId: organization.id, brand: "Acme" },
+    },
+    create: {
+      organizationId: organization.id,
+      brand: "Acme",
+      status: "UNRESTRICTED",
+    },
+    update: {},
+  });
   return organization;
 }
 
@@ -281,6 +334,7 @@ export async function getUploadForOrganization(
       sheets: { orderBy: { sheetIndex: "asc" } },
       scan: {
         include: {
+          checkpoints: { orderBy: { createdAt: "asc" } },
           columnMappings: true,
           supplierRows: {
             orderBy: { sourceRowNumber: "asc" },
@@ -463,29 +517,61 @@ export async function saveColumnMappings(
   }>,
 ) {
   return db.$transaction(async (transaction) => {
+    await transaction.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${scanJobId})::bigint)
+    `;
     const scan = await transaction.scanJob.findFirst({
       where: { id: scanJobId, organizationId },
-      include: { upload: true },
+      include: { upload: true, checkpoints: true },
     });
     if (!scan?.upload) return null;
     const sheet = await transaction.uploadSheet.findFirst({
       where: { id: uploadSheetId, uploadId: scan.upload.id },
     });
     if (!sheet) return null;
+    if (!["MAPPING_REQUIRED", "READY"].includes(scan.status))
+      throw new Error("MAPPING_NOT_READY");
+    const preview = Array.isArray(sheet.preview)
+      ? (sheet.preview as unknown[][])
+      : [];
+    const selectedHeader = preview[headerRow - 1];
     if (
-      !["MAPPING_REQUIRED", "READY"].includes(scan.status) ||
       headerRow < 1 ||
       headerRow > sheet.rowCount ||
-      mappings.some(
-        (mapping) =>
-          mapping.sourceIndex < 0 || mapping.sourceIndex >= sheet.columnCount,
-      )
-    ) {
-      return null;
-    }
+      !Array.isArray(selectedHeader) ||
+      mappings.some((mapping) => {
+        if (mapping.sourceIndex < 0 || mapping.sourceIndex >= sheet.columnCount)
+          return true;
+        const expected = String(
+          selectedHeader[mapping.sourceIndex] ??
+            `Column ${mapping.sourceIndex + 1}`,
+        );
+        return mapping.sourceColumn !== expected;
+      })
+    )
+      throw new Error("MAPPING_STALE_SELECTION");
+    const canonicalMappings = [...mappings].sort(
+      (left, right) => left.sourceIndex - right.sourceIndex,
+    );
+    const checkpointPayload = {
+      uploadSheetId,
+      headerRow,
+      mappings: canonicalMappings.map((mapping) => ({
+        sourceIndex: mapping.sourceIndex,
+        sourceColumn: mapping.sourceColumn,
+        target: mapping.target,
+        required: mapping.required,
+      })),
+    } satisfies Prisma.InputJsonObject;
+    const checksum = requestFingerprint(checkpointPayload);
+    const currentCheckpoint = scan.checkpoints.find(
+      (checkpoint) => checkpoint.stage === "MAPPING",
+    );
+    if (currentCheckpoint?.checksum === checksum)
+      return transaction.scanJob.findUnique({ where: { id: scanJobId } });
     await transaction.columnMapping.deleteMany({ where: { scanJobId } });
     await transaction.columnMapping.createMany({
-      data: mappings.map((mapping) => ({ scanJobId, ...mapping })),
+      data: canonicalMappings.map((mapping) => ({ scanJobId, ...mapping })),
     });
     await transaction.uploadSheet.updateMany({
       where: { uploadId: scan.upload.id },
@@ -499,11 +585,28 @@ export async function saveColumnMappings(
       where: { id: scan.upload.id },
       data: { status: "READY" },
     });
-    await transaction.scanJob.update({
+    const updated = await transaction.scanJob.update({
       where: { id: scanJobId },
       data: { status: "READY" },
     });
-    return scan;
+    await transaction.scanCheckpoint.upsert({
+      where: { scanJobId_stage: { scanJobId, stage: "MAPPING" } },
+      create: {
+        scanJobId,
+        stage: "MAPPING",
+        checksum,
+        payload: checkpointPayload,
+      },
+      update: { checksum, payload: checkpointPayload },
+    });
+    await transaction.scanEvent.create({
+      data: {
+        scanJobId,
+        eventType: "MAPPING_CONFIRMED",
+        payload: { uploadSheetId, headerRow, checksum },
+      },
+    });
+    return updated;
   });
 }
 
@@ -758,6 +861,77 @@ export async function queueMatching(organizationId: string, scanJobId: string) {
     });
     return updated;
   });
+}
+
+export type ScanWorkflowStage =
+  | "MAPPING_REQUIRED"
+  | "NORMALIZE"
+  | "MATCH"
+  | "ENRICH"
+  | "CALCULATE"
+  | "COMPLETE"
+  | "FAILED";
+
+export async function queueNextScanStage(
+  organizationId: string,
+  scanJobId: string,
+): Promise<{ stage: ScanWorkflowStage; status: ScanJobStatus } | null> {
+  let scan = await db.scanJob.findFirst({
+    where: { id: scanJobId, organizationId, jobType: "UPLOAD" },
+    include: {
+      upload: { select: { status: true } },
+      checkpoints: { select: { stage: true } },
+    },
+  });
+  if (!scan) return null;
+  if (scan.upload?.status === "REJECTED")
+    return { stage: "FAILED", status: scan.status };
+  const activeStage: Partial<Record<ScanJobStatus, ScanWorkflowStage>> = {
+    NORMALIZING: "NORMALIZE",
+    MATCHING: "MATCH",
+    ENRICHING: "ENRICH",
+    CALCULATING: "CALCULATE",
+  };
+  const active = activeStage[scan.status];
+  if (active) return { stage: active, status: scan.status };
+  const checkpoints = new Set(scan.checkpoints.map(({ stage }) => stage));
+  if (!checkpoints.has("MAPPING"))
+    return { stage: "MAPPING_REQUIRED", status: scan.status };
+  if (["FAILED_RETRYABLE", "FAILED_FINAL"].includes(scan.status)) {
+    const resumeStatus: ScanJobStatus = checkpoints.has("NORMALIZE")
+      ? "COMPLETED"
+      : "READY";
+    scan = await db.scanJob.update({
+      where: { id: scan.id },
+      data: { status: resumeStatus, completedAt: null },
+      include: {
+        upload: { select: { status: true } },
+        checkpoints: { select: { stage: true } },
+      },
+    });
+    if (!checkpoints.has("NORMALIZE") && scan.upload && scan.uploadId)
+      await db.upload.update({
+        where: { id: scan.uploadId },
+        data: { status: "READY", rejectionCode: null },
+      });
+  }
+  if (!checkpoints.has("NORMALIZE")) {
+    const queued = await queueNormalization(organizationId, scanJobId);
+    return queued ? { stage: "NORMALIZE", status: "NORMALIZING" } : null;
+  }
+  if (!checkpoints.has("MATCH")) {
+    const queued = await queueMatching(organizationId, scanJobId);
+    return queued ? { stage: "MATCH", status: "MATCHING" } : null;
+  }
+  if (!checkpoints.has("ENRICH")) {
+    const queued = await queueEnrichment(organizationId, scanJobId);
+    if (queued) return { stage: "ENRICH", status: "ENRICHING" };
+  }
+  if (!checkpoints.has("CALCULATE")) {
+    const queued = await queueProfitCalculation(organizationId, scanJobId);
+    return queued ? { stage: "CALCULATE", status: "CALCULATING" } : null;
+  }
+  return { stage: "COMPLETE", status: scan.status };
 }
 
 export async function getScanRowsForMatching(scanJobId: string) {
@@ -1225,6 +1399,21 @@ export async function queueEnrichment(
             update: {},
           });
     if (!connection) return null;
+    const selected = await transaction.matchDecision.findMany({
+      where: {
+        organizationId,
+        supplierRow: { scanJobId },
+        status: { in: ["AUTO_ACCEPTED", "USER_ACCEPTED"] },
+        selectedCandidateId: { not: null },
+      },
+      select: {
+        supplierRowId: true,
+        selectedCandidate: {
+          select: { catalogProduct: { select: { asin: true } } },
+        },
+      },
+    });
+    if (selected.length === 0) return null;
     const run = await transaction.enrichmentRun.upsert({
       where: {
         scanJobId_providerConnectionId: {
@@ -1245,21 +1434,6 @@ export async function queueEnrichment(
         attemptCount: { increment: 1 },
       },
     });
-    const selected = await transaction.matchDecision.findMany({
-      where: {
-        organizationId,
-        supplierRow: { scanJobId },
-        status: { in: ["AUTO_ACCEPTED", "USER_ACCEPTED"] },
-        selectedCandidateId: { not: null },
-      },
-      select: {
-        supplierRowId: true,
-        selectedCandidate: {
-          select: { catalogProduct: { select: { asin: true } } },
-        },
-      },
-    });
-    if (selected.length === 0) return null;
     await transaction.enrichmentItem.createMany({
       data: selected.flatMap((decision) =>
         decision.selectedCandidate?.catalogProduct.asin
@@ -1844,101 +2018,124 @@ export async function persistProfitCalculation(input: {
   }>;
   status: "COMPLETED" | "PARTIAL_SUCCESS";
 }) {
-  await db.$transaction(async (transaction) => {
-    const run = await transaction.profitCalculationRun.findFirst({
-      where: { id: input.runId, organizationId: input.organizationId },
-      select: { id: true, scanJobId: true, scope: true },
-    });
-    if (!run) return;
-    for (const result of input.results) {
-      const currentOverride = await transaction.profitCostOverride.findUnique({
-        where: {
-          organizationId_supplierRowId_shippingRouteId: {
-            organizationId: input.organizationId,
-            supplierRowId: result.supplierRowId,
-            shippingRouteId: result.shippingRouteId,
-          },
-        },
-        select: { revision: true, calculationRunId: true },
+  await db.$transaction(
+    async (transaction) => {
+      const run = await transaction.profitCalculationRun.findFirst({
+        where: { id: input.runId, organizationId: input.organizationId },
+        select: { id: true, scanJobId: true, scope: true },
       });
-      if (
-        !shouldPromoteProfitResult({
-          appliedOverrideRevision: result.appliedOverrideRevision,
-          currentOverride,
-          runId: input.runId,
-        })
-      )
-        continue;
-      await transaction.profitResult.updateMany({
+      if (!run) return;
+      const supplierRowIds = [
+        ...new Set(input.results.map((result) => result.supplierRowId)),
+      ];
+      const shippingRouteIds = [
+        ...new Set(input.results.map((result) => result.shippingRouteId)),
+      ];
+      const overrides = await transaction.profitCostOverride.findMany({
         where: {
           organizationId: input.organizationId,
-          scanJobId: run.scanJobId,
-          supplierRowId: result.supplierRowId,
-          shippingRouteId: result.shippingRouteId,
-          isCurrent: true,
+          supplierRowId: { in: supplierRowIds },
+          shippingRouteId: { in: shippingRouteIds },
         },
-        data: { isCurrent: false },
+        select: {
+          supplierRowId: true,
+          shippingRouteId: true,
+          revision: true,
+          calculationRunId: true,
+        },
       });
-      await transaction.profitResult.upsert({
-        where: {
-          profitCalculationRunId_supplierRowId_shippingRouteId: {
-            profitCalculationRunId: input.runId,
-            supplierRowId: result.supplierRowId,
-            shippingRouteId: result.shippingRouteId,
+      const overrideByPair = new Map(
+        overrides.map((override) => [
+          `${override.supplierRowId}:${override.shippingRouteId}`,
+          override,
+        ]),
+      );
+      const promotable = input.results.filter((result) =>
+        shouldPromoteProfitResult({
+          appliedOverrideRevision: result.appliedOverrideRevision,
+          currentOverride: overrideByPair.get(
+            `${result.supplierRowId}:${result.shippingRouteId}`,
+          ),
+          runId: input.runId,
+        }),
+      );
+      const rowsByRoute = new Map<string, string[]>();
+      for (const result of promotable) {
+        const rows = rowsByRoute.get(result.shippingRouteId) ?? [];
+        rows.push(result.supplierRowId);
+        rowsByRoute.set(result.shippingRouteId, rows);
+      }
+      for (const [shippingRouteId, rowIds] of rowsByRoute) {
+        await transaction.profitResult.updateMany({
+          where: {
+            organizationId: input.organizationId,
+            scanJobId: run.scanJobId,
+            supplierRowId: { in: rowIds },
+            shippingRouteId,
+            isCurrent: true,
           },
+          data: { isCurrent: false },
+        });
+      }
+      await transaction.profitResult.deleteMany({
+        where: { profitCalculationRunId: input.runId },
+      });
+      const resultRows = promotable.map((result) => ({
+        ...result,
+        organizationId: input.organizationId,
+        scanJobId: run.scanJobId,
+        profitCalculationRunId: input.runId,
+        isCurrent: true,
+      }));
+      for (let offset = 0; offset < resultRows.length; offset += 500) {
+        await transaction.profitResult.createMany({
+          data: resultRows.slice(offset, offset + 500),
+        });
+      }
+      await transaction.profitCalculationRun.update({
+        where: { id: input.runId },
+        data: { status: input.status, completedAt: new Date() },
+      });
+      if (run.scope === "FULL") {
+        await transaction.scanJob.update({
+          where: { id: run.scanJobId },
+          data: {
+            status:
+              input.status === "COMPLETED" ? "COMPLETED" : "PARTIAL_SUCCESS",
+            completedAt: new Date(),
+          },
+        });
+      }
+      await transaction.profitCostOverride.updateMany({
+        where: { calculationRunId: input.runId },
+        data: { status: "APPLIED" },
+      });
+      await transaction.scanCheckpoint.upsert({
+        where: {
+          scanJobId_stage: { scanJobId: run.scanJobId, stage: "CALCULATE" },
         },
         create: {
-          ...result,
-          organizationId: input.organizationId,
           scanJobId: run.scanJobId,
-          profitCalculationRunId: input.runId,
-          isCurrent: true,
+          stage: "CALCULATE",
+          checksum: `${input.runId}:${input.results.length}`,
+          payload: {
+            runId: input.runId,
+            status: input.status,
+            resultCount: input.results.length,
+          },
         },
-        update: { ...result, isCurrent: true, scanJobId: run.scanJobId },
-      });
-    }
-    await transaction.profitCalculationRun.update({
-      where: { id: input.runId },
-      data: { status: input.status, completedAt: new Date() },
-    });
-    if (run.scope === "FULL") {
-      await transaction.scanJob.update({
-        where: { id: run.scanJobId },
-        data: {
-          status:
-            input.status === "COMPLETED" ? "COMPLETED" : "PARTIAL_SUCCESS",
-          completedAt: new Date(),
+        update: {
+          checksum: `${input.runId}:${input.results.length}`,
+          payload: {
+            runId: input.runId,
+            status: input.status,
+            resultCount: input.results.length,
+          },
         },
       });
-    }
-    await transaction.profitCostOverride.updateMany({
-      where: { calculationRunId: input.runId },
-      data: { status: "APPLIED" },
-    });
-    await transaction.scanCheckpoint.upsert({
-      where: {
-        scanJobId_stage: { scanJobId: run.scanJobId, stage: "CALCULATE" },
-      },
-      create: {
-        scanJobId: run.scanJobId,
-        stage: "CALCULATE",
-        checksum: `${input.runId}:${input.results.length}`,
-        payload: {
-          runId: input.runId,
-          status: input.status,
-          resultCount: input.results.length,
-        },
-      },
-      update: {
-        checksum: `${input.runId}:${input.results.length}`,
-        payload: {
-          runId: input.runId,
-          status: input.status,
-          resultCount: input.results.length,
-        },
-      },
-    });
-  });
+    },
+    { timeout: 60_000 },
+  );
 }
 
 export async function listProfitResultsForScan(
@@ -2070,6 +2267,50 @@ export async function listAnalysisResults(input: {
   sort: AnalysisSort;
   direction: "asc" | "desc";
 }) {
+  const scan = await db.scanJob.findFirst({
+    where: { id: input.scanJobId, organizationId: input.organizationId },
+    select: {
+      id: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      completedAt: true,
+      supplier: { select: { code: true, name: true } },
+      upload: { select: { originalFilename: true, status: true } },
+      checkpoints: {
+        select: { stage: true, updatedAt: true },
+        orderBy: { createdAt: "asc" },
+      },
+      events: {
+        where: {
+          eventType: { in: ["FAILED_RETRYABLE", "FAILED_FINAL"] },
+        },
+        select: { eventType: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 3,
+      },
+      _count: { select: { supplierRows: true } },
+    },
+  });
+  if (!scan) return null;
+  const context = {
+    id: scan.id,
+    status: scan.status,
+    createdAt: scan.createdAt.toISOString(),
+    updatedAt: scan.updatedAt.toISOString(),
+    completedAt: scan.completedAt?.toISOString() ?? null,
+    supplier: scan.supplier,
+    upload: scan.upload,
+    rowCount: scan._count.supplierRows,
+    checkpoints: scan.checkpoints.map((checkpoint) => ({
+      stage: checkpoint.stage,
+      updatedAt: checkpoint.updatedAt.toISOString(),
+    })),
+    recoverableErrors: scan.events.map((event) => ({
+      status: event.eventType,
+      observedAt: event.createdAt.toISOString(),
+    })),
+  };
   let shippingRouteId: string | undefined;
   if (input.shippingRouteId) {
     const route = await db.shippingRoute.findFirst({
@@ -2092,15 +2333,38 @@ export async function listAnalysisResults(input: {
     });
     shippingRouteId = route?.shippingRouteId;
   }
-  if (!shippingRouteId) return { total: 0, rows: [], routes: [] };
+  if (!shippingRouteId) {
+    const currentResultCount = await db.profitResult.count({
+      where: {
+        organizationId: input.organizationId,
+        scanJobId: input.scanJobId,
+        isCurrent: true,
+      },
+    });
+    return {
+      total: 0,
+      unfilteredTotal: currentResultCount,
+      rows: [],
+      routes: [],
+      context,
+    };
+  }
   const where = analysisWhere(
     input.organizationId,
     input.scanJobId,
     shippingRouteId,
     input.filters,
   );
-  const [total, rows, routes] = await db.$transaction([
+  const [total, unfilteredTotal, rows, routes] = await db.$transaction([
     db.profitResult.count({ where }),
+    db.profitResult.count({
+      where: {
+        organizationId: input.organizationId,
+        scanJobId: input.scanJobId,
+        shippingRouteId,
+        isCurrent: true,
+      },
+    }),
     db.profitResult.findMany({
       where,
       skip: input.offset,
@@ -2114,6 +2378,7 @@ export async function listAnalysisResults(input: {
         conservativeNetProfit: true,
         stressNetProfit: true,
         effectiveCogs: true,
+        amazonFees: true,
         roiPercent: true,
         marginPercent: true,
         breakEvenPrice: true,
@@ -2127,6 +2392,11 @@ export async function listAnalysisResults(input: {
                 itemNumber: true,
                 description: true,
                 brand: true,
+                unitCost: true,
+                currency: true,
+                quantity: true,
+                caseCount: true,
+                packCount: true,
               },
             },
             warnings: { select: { code: true, severity: true } },
@@ -2137,9 +2407,33 @@ export async function listAnalysisResults(input: {
                 selectedCandidate: {
                   select: {
                     catalogProduct: {
-                      select: { asin: true, title: true, brand: true },
+                      select: {
+                        asin: true,
+                        title: true,
+                        brand: true,
+                        provider: true,
+                        observedAt: true,
+                        freshnessState: true,
+                        packCount: true,
+                      },
                     },
                     packGuard: { select: { status: true, reasonCode: true } },
+                  },
+                },
+              },
+            },
+            enrichmentItems: {
+              select: {
+                observations: {
+                  select: {
+                    metricType: true,
+                    provider: true,
+                    observedAt: true,
+                    freshUntil: true,
+                    freshnessState: true,
+                    primaryAmount: true,
+                    currency: true,
+                    payload: true,
                   },
                 },
               },
@@ -2168,7 +2462,54 @@ export async function listAnalysisResults(input: {
       orderBy: { name: "asc" },
     }),
   ]);
-  return { total, rows, routes, shippingRouteId };
+  const projectedRows = rows.map((row) => {
+    const observations = row.supplierRow.enrichmentItems.flatMap(
+      (item) => item.observations,
+    );
+    const external = (metricType: "PRICING" | "FEES" | "RESTRICTIONS") => {
+      const observation = observations
+        .filter((candidate) => candidate.metricType === metricType)
+        .sort(
+          (left, right) =>
+            right.observedAt.getTime() - left.observedAt.getTime(),
+        )[0];
+      if (!observation) return null;
+      const restrictionValue = (
+        observation.payload as { value?: { status?: unknown } }
+      ).value?.status;
+      return {
+        provider: observation.provider,
+        observedAt: observation.observedAt.toISOString(),
+        freshUntil: observation.freshUntil.toISOString(),
+        freshnessState: observation.freshnessState,
+        value: observation.primaryAmount?.toString() ?? null,
+        currency: observation.currency,
+        restrictionStatus:
+          metricType === "RESTRICTIONS" && typeof restrictionValue === "string"
+            ? restrictionValue
+            : null,
+      };
+    };
+    const { enrichmentItems, ...supplierRow } = row.supplierRow;
+    void enrichmentItems;
+    return {
+      ...row,
+      supplierRow,
+      externalEvidence: {
+        pricing: external("PRICING"),
+        fees: external("FEES"),
+        restrictions: external("RESTRICTIONS"),
+      },
+    };
+  });
+  return {
+    total,
+    unfilteredTotal,
+    rows: projectedRows,
+    routes,
+    shippingRouteId,
+    context,
+  };
 }
 
 export async function getAnalysisResult(

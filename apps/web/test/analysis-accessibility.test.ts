@@ -12,7 +12,7 @@ describe("analysis workspace accessibility contract", () => {
     expect(source).toContain("Skip to results");
     expect(source).toContain("Accessible table mode");
     expect(source).toContain('role="dialog"');
-    expect(source).toContain('role="alert"');
+    expect(source).toContain('<Alert tone="danger"');
     expect(source).toContain('role="gridcell"');
     expect(source).toContain("Candidate comparison and match features");
     expect(source).toContain("Audit history");

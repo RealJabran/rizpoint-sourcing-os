@@ -46,6 +46,24 @@ const uploadErrorMessages: Record<string, string> = {
     "Malware scanning is not configured correctly. The catalog was not processed.",
   SCANNER_REQUEST_FAILED:
     "Catalog inspection could not reach the scanner. Retry inspection when the service is available.",
+  INVALID_MAPPING:
+    "The mapping could not be saved. Review the required fields and try again.",
+  DUPLICATE_MAPPING:
+    "Each destination field can be mapped only once. Change or ignore the duplicate column.",
+  DESCRIPTION_REQUIRED:
+    "Map one title or description column before continuing.",
+  IDENTIFIER_MAPPING_REQUIRED:
+    "Map at least one ASIN, UPC, EAN, GTIN, MPN, or supplier SKU column before continuing.",
+  MAPPING_STALE_SELECTION:
+    "The selected sheet or header changed after this mapping was prepared. Review the preview and map the columns again.",
+  MAPPING_NOT_READY:
+    "This catalog is not ready to accept a mapping. Wait for inspection or resume the failed step first.",
+  SCAN_NOT_READY:
+    "The scan cannot start yet. Confirm the current sheet, header, and mapping first.",
+  SCAN_CONFIGURATION_OR_STATE_INVALID:
+    "Processing cannot continue because its saved configuration or checkpoint is incomplete. Confirm the mapping and retry.",
+  CATALOG_REJECTED_REUPLOAD_REQUIRED:
+    "This catalog was rejected by file safety validation. Correct the file and upload it again.",
 };
 
 export type InspectionRecoveryState =
@@ -74,6 +92,21 @@ export function normalizationWarningMessage(code: string): string {
   if (code === "FORMULA_LIKE_CELL")
     return "Formula-like cell detected. Review this value before using the catalog.";
   return code;
+}
+
+const uploadStatusLabels: Record<string, string> = {
+  PENDING_UPLOAD: "Waiting for upload",
+  QUARANTINED: "Stored privately",
+  INSPECTING: "Inspecting safely",
+  MAPPING_REQUIRED: "Mapping required",
+  READY: "Ready to start",
+  NORMALIZING: "Normalizing rows",
+  COMPLETED: "Upload processed",
+  REJECTED: "Catalog rejected",
+};
+
+export function uploadStatusLabel(status: string): string {
+  return uploadStatusLabels[status] ?? "Status unavailable";
 }
 
 export function validateUploadedObjectMetadata(
@@ -261,8 +294,12 @@ export function mappingSafetyIssues(
   mapping: Record<number, string>,
   rows: string[][],
 ): string[] {
-  const targets = Object.values(mapping);
+  const targets = Object.values(mapping).filter(Boolean);
   const issues: string[] = [];
+  if (new Set(targets).size !== targets.length)
+    issues.push(
+      "Each destination field can be mapped only once. Change or ignore the duplicate column.",
+    );
   if (!targets.includes("DESCRIPTION"))
     issues.push("Map a title or description field.");
   if (

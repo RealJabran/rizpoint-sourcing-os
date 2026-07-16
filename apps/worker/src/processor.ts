@@ -8,6 +8,7 @@ import {
   markScanJobRunning,
   persistNormalizedRows,
   persistUploadInspection,
+  queueNextScanStage,
 } from "@rizpoint/database";
 import { getObjectBytes } from "@rizpoint/object-storage";
 import { createHash } from "node:crypto";
@@ -136,14 +137,27 @@ export const mockScanWorker = new Worker<{
             warnings: row.warnings,
           })),
         );
+        await queueNextScanStage(scan.organizationId, job.data.scanJobId);
         return;
       }
       if (job.data.kind === "MATCH") {
         await processMatching(job.data.scanJobId);
+        const scan = await db.scanJob.findUnique({
+          where: { id: job.data.scanJobId },
+          select: { organizationId: true },
+        });
+        if (scan)
+          await queueNextScanStage(scan.organizationId, job.data.scanJobId);
         return;
       }
       if (job.data.kind === "ENRICH") {
         await processEnrichment(job.data.scanJobId);
+        const scan = await db.scanJob.findUnique({
+          where: { id: job.data.scanJobId },
+          select: { organizationId: true },
+        });
+        if (scan)
+          await queueNextScanStage(scan.organizationId, job.data.scanJobId);
         return;
       }
       if (job.data.kind === "CALCULATE") {

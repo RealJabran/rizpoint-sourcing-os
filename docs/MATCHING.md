@@ -12,8 +12,8 @@ profit and purchase-order engines until the contradiction is resolved.
 ## Phase 2 implementation
 
 The worker executes the cascade in priority order and only advances when the prior
-stage returns no candidates: supplied ASIN, exact UPC/EAN/GTIN, MPN plus normalized
-brand, then title search. Invalid ASIN, UPC, EAN, and GTIN values are never used
+stage returns no candidates: supplied ASIN, exact UPC/EAN/GTIN, explicit MPN plus normalized
+brand, then title search. A supplier SKU (`ITEM_NUMBER`) is retained as supplier identity and is never treated as manufacturer model/MPN evidence. Invalid ASIN, UPC, EAN, and GTIN values are never used
 for exact lookup. The Phase 2 provider is `MockCatalogProvider`; it is an
 explicit test boundary and does not call Amazon or scrape web pages.
 

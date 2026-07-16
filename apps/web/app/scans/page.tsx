@@ -5,7 +5,7 @@ import { PageHeader } from "@/src/components/page-header";
 import { ScanSummaryTable } from "@/src/components/scan-summary-table";
 import type { ScanSummary } from "@/src/components/dashboard-state";
 import { Alert, ButtonLink, Card, Skeleton } from "@/src/components/ui";
-import { requestWasAborted } from "@/src/abort";
+import { abortExpectedRequest, requestWasAborted } from "@/src/abort";
 
 type ScanListState =
   | { kind: "loading" }
@@ -32,7 +32,7 @@ export default function ScansPage() {
     })();
     return () => {
       active = false;
-      controller.abort();
+      abortExpectedRequest(controller);
     };
   }, []);
 

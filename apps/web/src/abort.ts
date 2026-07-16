@@ -7,3 +7,8 @@ export function requestWasAborted(
     (error instanceof DOMException && error.name === "AbortError")
   );
 }
+
+export function abortExpectedRequest(controller: AbortController): void {
+  if (controller.signal.aborted) return;
+  controller.abort(new DOMException("Component unmounted", "AbortError"));
+}

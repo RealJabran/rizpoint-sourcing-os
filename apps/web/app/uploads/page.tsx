@@ -18,7 +18,9 @@ import {
   safeDisplayFilename,
   suggestMapping,
   uploadErrorMessage,
+  uploadStatusLabel,
 } from "@/src/phase-one";
+import { scanStatusPresentation } from "@/src/components/dashboard-state";
 
 const targets = [
   "",
@@ -56,6 +58,7 @@ type Upload = {
   scan: {
     id: string;
     status: string;
+    checkpoints: Array<{ stage: string }>;
     supplierRows: Array<{
       sourceRowNumber: number;
       warnings: Array<{ code: string; field: string | null }>;
@@ -83,7 +86,16 @@ export default function UploadPage() {
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+  const [mappingSubmitting, setMappingSubmitting] = useState(false);
+  const [scanSubmitting, setScanSubmitting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const pollTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
+    },
+    [],
+  );
   useEffect(() => {
     void fetch("/api/suppliers").then(async (r) => {
       if (r.ok) {
@@ -115,6 +127,10 @@ export default function UploadPage() {
     upload?.scan?.status,
     upload?.rejectionCode ?? null,
   );
+  const calculationPersisted = Boolean(
+    upload?.scan?.checkpoints.some(({ stage }) => stage === "CALCULATE"),
+  );
+  const workflowStatus = scanStatusPresentation(upload?.scan?.status ?? "");
   const step = !upload
     ? file
       ? 1
@@ -147,8 +163,19 @@ export default function UploadPage() {
         next.scan?.status,
         next.rejectionCode,
       ) !== "MANUAL_RETRY";
-    if (shouldRefresh)
-      window.setTimeout(
+    const workflowActive = [
+      "NORMALIZING",
+      "MATCHING",
+      "ENRICHING",
+      "CALCULATING",
+    ].includes(next.scan?.status ?? "");
+    const awaitingNextStage =
+      next.status === "COMPLETED" &&
+      !next.scan?.checkpoints.some(({ stage }) => stage === "CALCULATE") &&
+      !["FAILED_RETRYABLE", "FAILED_FINAL"].includes(next.scan?.status ?? "");
+    if (shouldRefresh || workflowActive || awaitingNextStage) {
+      if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
+      pollTimer.current = window.setTimeout(
         () =>
           void refresh(id).catch(() =>
             setError(
@@ -157,6 +184,7 @@ export default function UploadPage() {
           ),
         700,
       );
+    }
   }
   function choose(next: File | null) {
     setFile(next);
@@ -213,38 +241,57 @@ export default function UploadPage() {
     setMapping(next);
   }
   async function saveMapping() {
-    if (!upload?.scan || !sheet || safety.length) return;
+    if (!upload?.scan || !sheet || safety.length || mappingSubmitting) return;
+    setError(null);
+    setMappingSubmitting(true);
     const mappings = Object.entries(mapping)
       .filter(([, target]) => target)
       .map(([sourceIndex, target]) => ({
         sourceIndex: Number(sourceIndex),
-        sourceColumn: columns[Number(sourceIndex)] || `Column ${sourceIndex}`,
+        sourceColumn:
+          columns[Number(sourceIndex)] || `Column ${Number(sourceIndex) + 1}`,
         target,
         required: ["DESCRIPTION", "UNIT_COST"].includes(target),
       }));
-    const response = await fetch(`/api/scans/${upload.scan.id}/mapping`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ uploadSheetId: sheet.id, headerRow, mappings }),
-    });
-    if (!response.ok) {
-      setError(uploadErrorMessage(await responseError(response)));
-      return;
+    try {
+      const response = await fetch(`/api/scans/${upload.scan.id}/mapping`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ uploadSheetId: sheet.id, headerRow, mappings }),
+      });
+      if (!response.ok) {
+        setError(uploadErrorMessage(await responseError(response)));
+        return;
+      }
+      await refresh(upload.id);
+    } catch {
+      setError(
+        "The mapping request could not reach RizPoint. Your selections are still here; retry confirmation.",
+      );
+    } finally {
+      setMappingSubmitting(false);
     }
-    await refresh(upload.id);
   }
   async function startScan() {
-    if (!upload?.scan) return;
-    const response = await fetch(`/api/scans/${upload.scan.id}/normalize`, {
-      method: "POST",
-    });
-    if (!response.ok) {
+    if (!upload?.scan || scanSubmitting) return;
+    setError(null);
+    setScanSubmitting(true);
+    try {
+      const response = await fetch(`/api/scans/${upload.scan.id}/start`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        setError(uploadErrorMessage(await responseError(response)));
+        return;
+      }
+      await refresh(upload.id);
+    } catch {
       setError(
-        "This scan is not ready to start. Review mapping and data-quality blockers, then retry.",
+        "RizPoint could not start or resume processing. The saved checkpoint is unchanged; retry this action.",
       );
-      return;
+    } finally {
+      setScanSubmitting(false);
     }
-    await refresh(upload.id);
   }
   async function retryInspection() {
     if (!upload) return;
@@ -388,7 +435,7 @@ export default function UploadPage() {
                       : "info"
                 }
               >
-                {upload.status}
+                {uploadStatusLabel(upload.status)}
               </Badge>
               {upload.rejectionCode ? (
                 <Alert
@@ -577,25 +624,72 @@ export default function UploadPage() {
               <h2>6. Confirm and start scan</h2>
               <p>
                 Saving mapping creates a resumable checkpoint. Starting
-                normalization is idempotent; retries do not duplicate rows or
-                provider calls.
+                processing advances through normalization, matching, fixture
+                enrichment, and deterministic calculation. Retries resume from
+                persisted checkpoints without duplicating rows or provider
+                calls.
               </p>
+              {upload.scan ? (
+                <div className="scan-run-status" aria-live="polite">
+                  <div>
+                    <strong>{workflowStatus.label}</strong>
+                    <span>
+                      {calculationPersisted
+                        ? "Analysis results are persisted."
+                        : "RizPoint will keep this workflow resumable at every completed stage."}
+                    </span>
+                  </div>
+                  <Progress
+                    value={workflowStatus.progress}
+                    label="Catalog processing progress"
+                  />
+                </div>
+              ) : null}
               <div className="page-actions">
                 <Button
                   type="button"
                   onClick={() => void saveMapping()}
-                  disabled={!Object.keys(mapping).length || safety.length > 0}
+                  disabled={
+                    mappingSubmitting ||
+                    !Object.values(mapping).some(Boolean) ||
+                    safety.length > 0
+                  }
+                  loading={mappingSubmitting}
                 >
-                  Confirm mapping
+                  {upload.status === "READY"
+                    ? "Mapping confirmed"
+                    : "Confirm mapping"}
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => void startScan()}
-                  disabled={upload.status !== "READY" || safety.length > 0}
+                  disabled={
+                    scanSubmitting ||
+                    upload.status !== "READY" ||
+                    safety.length > 0
+                  }
+                  loading={scanSubmitting}
                 >
                   Start scan
                 </Button>
+                {["FAILED_RETRYABLE", "FAILED_FINAL"].includes(
+                  upload.scan?.status ?? "",
+                ) && upload.status !== "REJECTED" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void startScan()}
+                    loading={scanSubmitting}
+                  >
+                    Retry processing
+                  </Button>
+                ) : null}
+                {calculationPersisted && upload.scan ? (
+                  <ButtonLink href={`/scans/${upload.scan.id}/analysis`}>
+                    Open analysis
+                  </ButtonLink>
+                ) : null}
               </div>
               {upload.scan?.supplierRows.some((row) => row.warnings.length) ? (
                 <Alert tone="warning" title="Normalization warnings">

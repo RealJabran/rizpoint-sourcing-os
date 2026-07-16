@@ -15,13 +15,15 @@ export async function proxy(request: NextRequest) {
   assertProductionConfiguration();
   const { pathname } = request.nextUrl;
   const privateMode = process.env.RIZPOINT_PRIVATE_MODE === "true";
-  if (process.env.NODE_ENV === "production" && !privateMode)
-    throw new Error("production_configuration_invalid:private_mode_required");
   const localDemo =
     !privateMode &&
-    process.env.NODE_ENV !== "production" &&
     process.env.PHASE_ZERO_DEMO_MODE === "true" &&
-    process.env.RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO === "true";
+    process.env.RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO === "true" &&
+    isLoopbackUrl(request.url) &&
+    isLoopbackUrl(process.env.NEXT_PUBLIC_APP_URL) &&
+    isLoopbackUrl(process.env.NEXTAUTH_URL);
+  if (process.env.NODE_ENV === "production" && !privateMode && !localDemo)
+    throw new Error("production_configuration_invalid:private_mode_required");
   if (!privateMode && !localDemo)
     throw new Error("local_configuration_invalid:demo_flags_required");
   if (localDemo) return NextResponse.next();
@@ -62,6 +64,20 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next({ request: { headers } });
   }
   return unauthorized(request, pathname);
+}
+
+function isLoopbackUrl(value: string | undefined): boolean {
+  try {
+    const hostname = new URL(value ?? "").hostname;
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "0.0.0.0"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function unauthorized(request: NextRequest, pathname: string): NextResponse {

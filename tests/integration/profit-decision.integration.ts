@@ -118,47 +118,27 @@ assert.equal(
 );
 assert.equal(
   (
-    await fetch(`${baseUrl}/api/scans/${upload.scanId}/normalize`, {
+    await fetch(`${baseUrl}/api/scans/${upload.scanId}/start`, {
       method: "POST",
     })
   ).status,
   202,
 );
-await poll(async () => {
+const automaticScan = await poll(async () => {
   const response = await fetch(`${baseUrl}/api/scans/${upload.scanId}`);
-  return ((await response.json()) as { status: string }).status === "COMPLETED"
-    ? true
+  const scan = (await response.json()) as {
+    status: string;
+    checkpoints: Array<{ stage: string; checksum: string }>;
+  };
+  return ["COMPLETED", "PARTIAL_SUCCESS"].includes(scan.status) &&
+    scan.checkpoints.some(({ stage }) => stage === "CALCULATE")
+    ? scan
     : null;
-}, "normalization");
-assert.equal(
-  (
-    await fetch(`${baseUrl}/api/scans/${upload.scanId}/match`, {
-      method: "POST",
-    })
-  ).status,
-  202,
-);
-await poll(async () => {
-  const response = await fetch(`${baseUrl}/api/scans/${upload.scanId}`);
-  return ((await response.json()) as { status: string }).status === "COMPLETED"
-    ? true
-    : null;
-}, "matching");
-assert.equal(
-  (
-    await fetch(`${baseUrl}/api/scans/${upload.scanId}/enrich`, {
-      method: "POST",
-    })
-  ).status,
-  202,
-);
-await poll(async () => {
-  const response = await fetch(
-    `${baseUrl}/api/scans/${upload.scanId}/enrichment`,
-  );
-  const runs = (await response.json()) as Array<{ status: string }>;
-  return runs[0]?.status === "COMPLETED" ? true : null;
-}, "enrichment");
+}, "automatic scan workflow");
+const automaticCalculationChecksum = automaticScan.checkpoints.find(
+  ({ stage }) => stage === "CALCULATE",
+)?.checksum;
+assert.ok(automaticCalculationChecksum);
 
 assert.equal(
   (
@@ -220,6 +200,20 @@ assert.equal(
   ).status,
   202,
 );
+await poll(async () => {
+  const response = await fetch(`${baseUrl}/api/scans/${upload.scanId}`);
+  const scan = (await response.json()) as {
+    status: string;
+    checkpoints: Array<{ stage: string; checksum: string }>;
+  };
+  const checksum = scan.checkpoints.find(
+    ({ stage }) => stage === "CALCULATE",
+  )?.checksum;
+  return ["COMPLETED", "PARTIAL_SUCCESS"].includes(scan.status) &&
+    checksum !== automaticCalculationChecksum
+    ? scan
+    : null;
+}, "explicit recalculation");
 const results = await poll(async () => {
   const response = await fetch(`${baseUrl}/api/scans/${upload.scanId}/profit`);
   const values = (await response.json()) as Array<{
@@ -227,11 +221,11 @@ const results = await poll(async () => {
     evidence: unknown;
     inputSnapshot: unknown;
   }>;
-  return values.length === 1 ? values : null;
+  return values.some((value) => value.recommendation === "BUY") ? values : null;
 }, "profit calculation");
-assert.equal(results[0]?.recommendation, "BUY");
-assert.ok(results[0]?.evidence);
-assert.ok(results[0]?.inputSnapshot);
+const buy = results.find((result) => result.recommendation === "BUY");
+assert.ok(buy?.evidence);
+assert.ok(buy?.inputSnapshot);
 
 const workspaceResponse = await fetch(
   `${baseUrl}/api/scans/${upload.scanId}/results?limit=100`,

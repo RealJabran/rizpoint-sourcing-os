@@ -12,21 +12,46 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ANALYSIS_PAGE_SIZE, pageOffsetForIndex } from "./window";
 import { observationFreshness, requiredNextActions } from "./evidence";
+import { PageHeader } from "@/src/components/page-header";
+import {
+  Alert,
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  Progress,
+  SelectControl,
+  Skeleton,
+  TextInput,
+} from "@/src/components/ui";
+import { scanStatusPresentation } from "@/src/components/dashboard-state";
 
 const PAGE_SIZE = ANALYSIS_PAGE_SIZE;
+const ROW_HEIGHT = 120;
 const GROUPS = ["identity", "decision", "economics", "risk"] as const;
 type Group = (typeof GROUPS)[number];
+type DecimalValue = string | { toString(): string };
+type ExternalEvidence = {
+  provider: string;
+  observedAt: string;
+  freshUntil: string;
+  freshnessState: string;
+  value: string | null;
+  currency: string | null;
+  restrictionStatus: string | null;
+} | null;
 type Row = {
   id: string;
   status: string;
   recommendation: string | null;
-  currentNetProfit: { toString(): string } | null;
-  conservativeNetProfit: { toString(): string } | null;
-  stressNetProfit: { toString(): string } | null;
-  effectiveCogs: { toString(): string } | null;
-  roiPercent: { toString(): string } | null;
-  marginPercent: { toString(): string } | null;
-  breakEvenPrice: { toString(): string } | null;
+  currentNetProfit: DecimalValue | null;
+  conservativeNetProfit: DecimalValue | null;
+  stressNetProfit: DecimalValue | null;
+  effectiveCogs: DecimalValue | null;
+  amazonFees: DecimalValue | null;
+  roiPercent: DecimalValue | null;
+  marginPercent: DecimalValue | null;
+  breakEvenPrice: DecimalValue | null;
   reasonCodes: string[];
   supplierRow: {
     sourceRowNumber: number;
@@ -35,6 +60,11 @@ type Row = {
       itemNumber: string | null;
       description: string | null;
       brand: string | null;
+      unitCost: DecimalValue | null;
+      currency: string | null;
+      quantity: number | null;
+      caseCount: number | null;
+      packCount: number | null;
     } | null;
     warnings: Array<{ code: string }>;
     matchDecision: {
@@ -45,6 +75,10 @@ type Row = {
           asin: string | null;
           title: string;
           brand: string | null;
+          provider: string;
+          observedAt: string;
+          freshnessState: string;
+          packCount?: number | null;
         };
         packGuard: { status: string; reasonCode: string } | null;
       } | null;
@@ -56,8 +90,25 @@ type Row = {
       values: Array<{ field: string; value: { toString(): string } }>;
     }>;
   };
+  externalEvidence: {
+    pricing: ExternalEvidence;
+    fees: ExternalEvidence;
+    restrictions: ExternalEvidence;
+  };
 };
 type Route = { id: string; name: string; currency: string };
+type ScanContext = {
+  id: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  supplier: { code: string; name: string } | null;
+  upload: { originalFilename: string; status: string } | null;
+  rowCount: number;
+  checkpoints: Array<{ stage: string; updatedAt: string }>;
+  recoverableErrors: Array<{ status: string; observedAt: string }>;
+};
 type Detail = Record<string, unknown> & {
   id: string;
   engineVersion: string;
@@ -67,8 +118,25 @@ type Detail = Record<string, unknown> & {
   supplierRow: Record<string, unknown>;
 };
 
-function decimal(value: { toString(): string } | null): string {
+function decimal(value: DecimalValue | null): string {
   return value?.toString() ?? "—";
+}
+
+function humanize(value: string | null | undefined): string {
+  if (!value) return "Not available";
+  return value
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function sourceLine(evidence: ExternalEvidence): string {
+  if (!evidence) return "Source not available";
+  const effectiveFreshness =
+    Date.parse(evidence.freshUntil) < Date.now()
+      ? "STALE"
+      : evidence.freshnessState;
+  return `${evidence.provider} · ${evidence.observedAt.replace("T", " ").slice(0, 19)} · ${humanize(effectiveFreshness)}`;
 }
 
 export function AnalysisWorkspace({ scanId }: { scanId: string }) {
@@ -76,6 +144,8 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const pagesRef = useRef(new Map<number, Row[]>());
   const [pages, setPages] = useState(new Map<number, Row[]>());
   const [total, setTotal] = useState(0);
+  const [unfilteredTotal, setUnfilteredTotal] = useState(0);
+  const [scanContext, setScanContext] = useState<ScanContext | null>(null);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [routeId, setRouteId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -140,15 +210,19 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       if (!response.ok) throw new Error("Unable to load analysis results.");
       const data = (await response.json()) as {
         total: number;
+        unfilteredTotal: number;
         rows: Row[];
         routes: Route[];
         shippingRouteId?: string;
+        context: ScanContext;
       };
       if (queryKeyRef.current !== requestedQueryKey) return;
       if (reset) pagesRef.current = new Map();
       pagesRef.current.set(offset, data.rows);
       setPages(new Map(pagesRef.current));
       setTotal(data.total);
+      setUnfilteredTotal(data.unfilteredTotal);
+      setScanContext(data.context);
       setRoutes(data.routes);
       if (!routeId && data.shippingRouteId) setRouteId(data.shippingRouteId);
     },
@@ -232,7 +306,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const virtualizer = useVirtualizer({
     count: total,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 48,
+    estimateSize: () => ROW_HEIGHT,
     overscan: 8,
     useFlushSync: false,
   });
@@ -257,6 +331,17 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const selectedRouteCurrency = routes.find(
     (route) => route.id === routeId,
   )?.currency;
+  const scanPresentation = scanStatusPresentation(scanContext?.status ?? "");
+  const checkpointStages = new Set(
+    scanContext?.checkpoints.map(({ stage }) => stage) ?? [],
+  );
+  const hasFilters = Boolean(
+    search.trim() ||
+    recommendation ||
+    status ||
+    minRoiPercent.trim() ||
+    maxRoiPercent.trim(),
+  );
 
   async function openDetail(resultId: string): Promise<void> {
     detailTriggerRef.current = document.activeElement as HTMLElement | null;
@@ -341,206 +426,306 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       <a className="skip-link" href="#analysis-grid">
         Skip to results
       </a>
-      <header className="analysis-header">
-        <div>
-          <h1>Analysis workspace</h1>
-          <p>
-            {total.toLocaleString()} current results · server-windowed for large
-            scans
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        title="Analysis workspace"
+        description={
+          scanContext
+            ? `${scanContext.supplier?.name ?? "Unknown supplier"} · ${scanContext.upload?.originalFilename ?? "Catalog scan"}`
+            : "Persisted matching, provider evidence, and deterministic calculations."
+        }
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Catalog scans", href: "/scans" },
+          { label: "Analysis" },
+        ]}
+        actions={
+          <ButtonLink href="/scans" variant="secondary">
+            Scan list
+          </ButtonLink>
+        }
+      />
+      {scanContext ? (
+        <Card className="analysis-scan-card" aria-label="Scan status">
+          <div className="analysis-scan-summary">
+            <div>
+              <Badge
+                tone={
+                  scanContext.status === "PARTIAL_SUCCESS"
+                    ? "warning"
+                    : scanContext.status === "COMPLETED"
+                      ? "success"
+                      : scanContext.status.startsWith("FAILED")
+                        ? "danger"
+                        : "info"
+                }
+              >
+                {scanPresentation.label}
+              </Badge>
+              <strong>
+                {scanContext.rowCount.toLocaleString()} supplier rows
+              </strong>
+              <span>
+                Started {scanContext.createdAt.replace("T", " ").slice(0, 19)}
+                {scanContext.completedAt
+                  ? ` · Last completed ${scanContext.completedAt.replace("T", " ").slice(0, 19)}`
+                  : " · Processing has not completed"}
+              </span>
+            </div>
+            <Progress
+              value={scanPresentation.progress}
+              label={`${scanPresentation.label} progress`}
+            />
+          </div>
+          <ol className="analysis-stage-list" aria-label="Processing stages">
+            {[
+              ["UPLOAD_INSPECT", "Parse"],
+              ["NORMALIZE", "Normalize"],
+              ["MATCH", "Match"],
+              ["ENRICH", "Enrich & restrict"],
+              ["CALCULATE", "Calculate"],
+            ].map(([stage, label]) => (
+              <li
+                key={stage}
+                className={checkpointStages.has(stage!) ? "is-complete" : ""}
+              >
+                <span aria-hidden="true">
+                  {checkpointStages.has(stage!) ? "✓" : "·"}
+                </span>
+                {label}
+              </li>
+            ))}
+          </ol>
+        </Card>
+      ) : null}
+      {scanContext?.status === "PARTIAL_SUCCESS" ? (
+        <Alert tone="warning" title="Analysis contains partial data">
+          Missing provider evidence or blocked inputs remain visible. No row is
+          presented as complete unless its persisted calculation is complete.
+        </Alert>
+      ) : null}
+      {scanContext?.recoverableErrors.length ? (
+        <Alert tone="warning" title="This scan recovered from a failed attempt">
+          The audit trail retains {scanContext.recoverableErrors.length} failed
+          attempt(s). Current results come from the latest persisted
+          checkpoints.
+        </Alert>
+      ) : null}
       <section className="analysis-toolbar" aria-label="Result filters">
-        <label>
-          Route{" "}
-          <select
-            value={routeId ?? ""}
-            onChange={(event) => setRouteId(event.target.value || undefined)}
-          >
-            {routes.map((route) => (
-              <option key={route.id} value={route.id}>
-                {route.name} ({route.currency})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Search{" "}
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="ASIN, brand, title"
-          />
-        </label>
-        <label>
-          Recommendation{" "}
-          <select
-            value={recommendation}
-            onChange={(event) => setRecommendation(event.target.value)}
-          >
-            <option value="">All</option>
-            {[
-              "BUY",
-              "WATCH",
-              "REVIEW_MATCH",
-              "REVIEW_APPROVAL",
-              "REVIEW_COST",
-              "AVOID",
-              "INSUFFICIENT_DATA",
-            ].map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Calculation status{" "}
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="">All</option>
-            <option value="COMPLETED">COMPLETED</option>
-            <option value="PARTIAL_SUCCESS">PARTIAL_SUCCESS</option>
-          </select>
-        </label>
-        <label>
-          Min ROI %{" "}
-          <input
-            inputMode="decimal"
-            value={minRoiPercent}
-            onChange={(event) => setMinRoiPercent(event.target.value)}
-          />
-        </label>
-        <label>
-          Max ROI %{" "}
-          <input
-            inputMode="decimal"
-            value={maxRoiPercent}
-            onChange={(event) => setMaxRoiPercent(event.target.value)}
-          />
-        </label>
-        <fieldset>
-          <legend>Presets</legend>
-          <button
-            type="button"
-            onClick={() => {
-              setRecommendation("BUY");
-              setStatus("COMPLETED");
-            }}
-          >
-            Buy candidates
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRecommendation("");
-              setStatus("PARTIAL_SUCCESS");
-            }}
-          >
-            Missing data
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRecommendation("REVIEW_MATCH");
-              setStatus("");
-            }}
-          >
-            Review matches
-          </button>
-        </fieldset>
-        <label>
-          Sort{" "}
-          <select
-            value={sort}
-            onChange={(event) => setSort(event.target.value)}
-          >
-            {[
-              "sourceRowNumber",
-              "conservativeNetProfit",
-              "roiPercent",
-              "marginPercent",
-              "breakEvenPrice",
-            ].map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={() =>
-            setDirection((value) => (value === "asc" ? "desc" : "asc"))
-          }
-        >
-          Order: {direction}
-        </button>
-        <fieldset>
-          <legend>Columns</legend>
-          {GROUPS.filter((group) => group !== "identity").map((group) => (
-            <label key={group}>
+        <div className="analysis-filter-group">
+          <strong>Scope</strong>
+          <label>
+            Route
+            <SelectControl
+              value={routeId ?? ""}
+              onChange={(event) => setRouteId(event.target.value || undefined)}
+            >
+              {routes.map((route) => (
+                <option key={route.id} value={route.id}>
+                  {route.name} ({route.currency})
+                </option>
+              ))}
+            </SelectControl>
+          </label>
+        </div>
+        <div className="analysis-filter-group analysis-filter-group--wide">
+          <strong>Find and decide</strong>
+          <label>
+            Search
+            <TextInput
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="ASIN, brand, title"
+            />
+          </label>
+          <label>
+            Recommendation
+            <SelectControl
+              value={recommendation}
+              onChange={(event) => setRecommendation(event.target.value)}
+            >
+              <option value="">All</option>
+              {[
+                "BUY",
+                "WATCH",
+                "REVIEW_MATCH",
+                "REVIEW_APPROVAL",
+                "REVIEW_COST",
+                "AVOID",
+                "INSUFFICIENT_DATA",
+              ].map((value) => (
+                <option key={value}>{value}</option>
+              ))}
+            </SelectControl>
+          </label>
+          <label>
+            Calculation status
+            <SelectControl
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              <option value="">All</option>
+              <option value="COMPLETED">COMPLETED</option>
+              <option value="PARTIAL_SUCCESS">PARTIAL_SUCCESS</option>
+            </SelectControl>
+          </label>
+        </div>
+        <div className="analysis-filter-group">
+          <strong>Economics</strong>
+          <label>
+            Min ROI %
+            <TextInput
+              inputMode="decimal"
+              value={minRoiPercent}
+              onChange={(event) => setMinRoiPercent(event.target.value)}
+            />
+          </label>
+          <label>
+            Max ROI %
+            <TextInput
+              inputMode="decimal"
+              value={maxRoiPercent}
+              onChange={(event) => setMaxRoiPercent(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="analysis-filter-group analysis-filter-presets">
+          <strong>Quick filters</strong>
+          <fieldset>
+            <legend>Presets</legend>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setRecommendation("BUY");
+                setStatus("COMPLETED");
+              }}
+            >
+              Buy candidates
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setRecommendation("");
+                setStatus("PARTIAL_SUCCESS");
+              }}
+            >
+              Missing data
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setRecommendation("REVIEW_MATCH");
+                setStatus("");
+              }}
+            >
+              Review matches
+            </Button>
+          </fieldset>
+        </div>
+        <details className="analysis-more-filters">
+          <summary>Columns, sorting, and saved views</summary>
+          <div>
+            <label>
+              Sort
+              <SelectControl
+                value={sort}
+                onChange={(event) => setSort(event.target.value)}
+              >
+                {[
+                  "sourceRowNumber",
+                  "conservativeNetProfit",
+                  "roiPercent",
+                  "marginPercent",
+                  "breakEvenPrice",
+                ].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </SelectControl>
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setDirection((value) => (value === "asc" ? "desc" : "asc"))
+              }
+            >
+              Order: {direction}
+            </Button>
+            <fieldset>
+              <legend>Columns</legend>
+              {GROUPS.filter((group) => group !== "identity").map((group) => (
+                <label key={group}>
+                  <input
+                    type="checkbox"
+                    checked={groups.has(group)}
+                    onChange={() =>
+                      setGroups((current) => {
+                        const next = new Set(current);
+                        if (next.has(group)) next.delete(group);
+                        else next.add(group);
+                        return next.size ? next : current;
+                      })
+                    }
+                  />{" "}
+                  {group}
+                </label>
+              ))}
+            </fieldset>
+            <label>
               <input
                 type="checkbox"
-                checked={groups.has(group)}
-                onChange={() =>
-                  setGroups((current) => {
-                    const next = new Set(current);
-                    if (next.has(group)) next.delete(group);
-                    else next.add(group);
-                    return next.size ? next : current;
-                  })
-                }
+                checked={accessibleMode}
+                onChange={(event) => setAccessibleMode(event.target.checked)}
               />{" "}
-              {group}
+              Accessible table mode
             </label>
-          ))}
-        </fieldset>
-        <label>
-          <input
-            type="checkbox"
-            checked={accessibleMode}
-            onChange={(event) => setAccessibleMode(event.target.checked)}
-          />{" "}
-          Accessible table mode
-        </label>
-        <label>
-          View name{" "}
-          <input
-            value={viewName}
-            onChange={(event) => setViewName(event.target.value)}
-          />
-        </label>
-        <button type="button" onClick={() => void saveView()}>
-          Save view
-        </button>
-        <label>
-          Saved view{" "}
-          <select
-            defaultValue=""
-            onChange={(event) => {
-              const view = views.find(
-                (candidate) => candidate.id === event.target.value,
-              );
-              if (!view) return;
-              setRouteId(view.queryState.routeId);
-              setRecommendation(view.queryState.recommendation ?? "");
-              setStatus(view.queryState.status ?? "");
-              setSearch(view.queryState.search ?? "");
-              setMinRoiPercent(view.queryState.minRoiPercent ?? "");
-              setMaxRoiPercent(view.queryState.maxRoiPercent ?? "");
-              setSort(view.queryState.sort ?? "sourceRowNumber");
-              setDirection(view.queryState.direction ?? "asc");
-              if (view.queryState.visibleGroups?.length)
-                setGroups(new Set(view.queryState.visibleGroups));
-            }}
-          >
-            <option value="">Select…</option>
-            {views.map((view) => (
-              <option key={view.id} value={view.id}>
-                {view.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            <label>
+              View name
+              <TextInput
+                value={viewName}
+                onChange={(event) => setViewName(event.target.value)}
+              />
+            </label>
+            <Button type="button" size="sm" onClick={() => void saveView()}>
+              Save view
+            </Button>
+            <label>
+              Saved view
+              <SelectControl
+                defaultValue=""
+                onChange={(event) => {
+                  const view = views.find(
+                    (candidate) => candidate.id === event.target.value,
+                  );
+                  if (!view) return;
+                  setRouteId(view.queryState.routeId);
+                  setRecommendation(view.queryState.recommendation ?? "");
+                  setStatus(view.queryState.status ?? "");
+                  setSearch(view.queryState.search ?? "");
+                  setMinRoiPercent(view.queryState.minRoiPercent ?? "");
+                  setMaxRoiPercent(view.queryState.maxRoiPercent ?? "");
+                  setSort(view.queryState.sort ?? "sourceRowNumber");
+                  setDirection(view.queryState.direction ?? "asc");
+                  if (view.queryState.visibleGroups?.length)
+                    setGroups(new Set(view.queryState.visibleGroups));
+                }}
+              >
+                <option value="">Select…</option>
+                {views.map((view) => (
+                  <option key={view.id} value={view.id}>
+                    {view.name}
+                  </option>
+                ))}
+              </SelectControl>
+            </label>
+          </div>
+        </details>
       </section>
       {selected.size ? (
         <section className="bulk-bar" aria-live="polite">
@@ -559,13 +744,57 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
           </button>
         </section>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
-      {loading ? <p role="status">Loading analysis results…</p> : null}
+      {error ? (
+        <Alert tone="danger" title="Analysis results could not be loaded">
+          {error} Refresh this scan to retry; persisted data is unchanged.
+        </Alert>
+      ) : null}
+      {loading ? (
+        <Card
+          className="analysis-loading"
+          aria-label="Loading analysis results"
+        >
+          <Skeleton className="table-skeleton" />
+        </Card>
+      ) : null}
       {!loading && total === 0 ? (
-        <p>
-          No current results match these filters. Calculate a scan or adjust the
-          filters.
-        </p>
+        <Card className="empty-state analysis-empty-state">
+          <span className="empty-state__eyebrow">No visible results</span>
+          <h2>
+            {scanContext?.rowCount === 0
+              ? "This scan contains no normalized supplier rows."
+              : unfilteredTotal > 0 && hasFilters
+                ? "The current filters exclude every result."
+                : !checkpointStages.has("CALCULATE")
+                  ? "Processing has not reached persisted calculations yet."
+                  : "Calculation completed without a current result projection."}
+          </h2>
+          <p>
+            {unfilteredTotal > 0 && hasFilters
+              ? "Clear or broaden the filters to restore the persisted rows."
+              : !checkpointStages.has("CALCULATE")
+                ? "Return to the scan list or New Scan workflow to monitor or resume the saved checkpoint."
+                : "This is not reported as a successful zero-result scan. Review the scan audit state before retrying."}
+          </p>
+          {unfilteredTotal > 0 && hasFilters ? (
+            <Button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setRecommendation("");
+                setStatus("");
+                setMinRoiPercent("");
+                setMaxRoiPercent("");
+              }}
+            >
+              Clear filters
+            </Button>
+          ) : (
+            <ButtonLink href="/scans" variant="secondary">
+              View scan status
+            </ButtonLink>
+          )}
+        </Card>
       ) : null}
       {accessibleMode ? (
         <AccessibleTable
@@ -664,7 +893,7 @@ function GridRow({
     return (
       <div
         className="analysis-grid-row loading-row"
-        style={{ transform: `translateY(${index * 48}px)` }}
+        style={{ transform: `translateY(${index * ROW_HEIGHT}px)` }}
         role="row"
       >
         Loading row…
@@ -672,10 +901,16 @@ function GridRow({
     );
   const offer = row.supplierRow.normalizedOffer;
   const override = row.supplierRow.profitCostOverrides[0];
+  const match = row.supplierRow.matchDecision;
+  const catalog = match?.selectedCandidate?.catalogProduct;
+  const packGuard = match?.selectedCandidate?.packGuard;
+  const pricing = row.externalEvidence.pricing;
+  const fees = row.externalEvidence.fees;
+  const restrictions = row.externalEvidence.restrictions;
   return (
     <div
       className="analysis-grid-row"
-      style={{ transform: `translateY(${index * 48}px)` }}
+      style={{ transform: `translateY(${index * ROW_HEIGHT}px)` }}
       role="row"
       aria-rowindex={index + 1}
     >
@@ -699,47 +934,77 @@ function GridRow({
           onClick={() => void onOpen(row.id)}
         >
           #{row.supplierRow.sourceRowNumber} ·{" "}
-          {offer?.asin ?? offer?.itemNumber ?? "Unidentified"}
+          {offer?.itemNumber ?? offer?.asin ?? "Unidentified supplier row"}
           <small>
             {offer?.brand ?? "Unknown brand"} ·{" "}
             {offer?.description ?? "No title"}
+          </small>
+          <small>
+            {catalog?.asin
+              ? `Matched ${catalog.asin} · ${catalog.title}`
+              : "No accepted catalog match"}
           </small>
         </button>
       </span>
       {groups.has("decision") ? (
         <span role="gridcell">
-          <strong>
-            {row.status} · {row.recommendation ?? "NO_RECOMMENDATION"}
-          </strong>
+          <strong>{humanize(row.recommendation ?? row.status)}</strong>
           <small>
-            {row.supplierRow.matchDecision?.status ?? "UNMATCHED"} ·{" "}
-            {row.supplierRow.matchDecision?.confidence ?? 0}%
+            Match: {humanize(match?.status ?? "UNMATCHED")} · confidence{" "}
+            {match?.confidence ?? 0}%
             {override
               ? ` · Override ${override.revision}: ${override.status}`
               : ""}
+          </small>
+          <small>
+            Eligibility: {humanize(restrictions?.restrictionStatus)}
           </small>
         </span>
       ) : null}
       {groups.has("economics") ? (
         <span role="gridcell">
-          Current net {currency} {decimal(row.currentNetProfit)} · Conservative
-          net {currency} {decimal(row.conservativeNetProfit)} · Current ROI{" "}
-          {decimal(row.roiPercent)}%
+          <strong>
+            Net {currency} {decimal(row.currentNetProfit)} · ROI{" "}
+            {decimal(row.roiPercent)}% · margin {decimal(row.marginPercent)}%
+          </strong>
           <small>
-            COGS {currency} {decimal(row.effectiveCogs)} · Break-even {currency}{" "}
-            {decimal(row.breakEvenPrice)}
+            Supplier unit cost {offer?.currency ?? currency}{" "}
+            {decimal(offer?.unitCost ?? null)} · market price{" "}
+            {pricing?.currency ?? currency} {pricing?.value ?? "—"} · fees{" "}
+            {fees?.currency ?? currency} {decimal(row.amazonFees)}
+          </small>
+          <small>
+            Landed COGS {currency} {decimal(row.effectiveCogs)} · conservative
+            net {currency} {decimal(row.conservativeNetProfit)} · break-even{" "}
+            {currency} {decimal(row.breakEvenPrice)}
           </small>
         </span>
       ) : null}
       {groups.has("risk") ? (
         <span role="gridcell">
-          {row.supplierRow.matchDecision?.selectedCandidate?.packGuard
-            ?.status ?? "PACK UNKNOWN"}
+          <strong>{humanize(packGuard?.status ?? "PACK_UNKNOWN")}</strong>
           <small>
-            {override
-              ? `Override ${override.revision}: ${override.status}`
-              : row.reasonCodes.join(", ") || "No warnings"}
+            Case {offer?.caseCount ?? "?"} · consumer pack{" "}
+            {offer?.packCount ?? catalog?.packCount ?? "?"} · available{" "}
+            {offer?.quantity ?? "?"}
           </small>
+          <small>
+            {row.reasonCodes.map(humanize).join(" · ") || "No stored warning"}
+          </small>
+          <small>{sourceLine(pricing)}</small>
+          <small>{sourceLine(restrictions)}</small>
+          {catalog ? (
+            <small>
+              {catalog.provider} ·{" "}
+              {String(catalog.observedAt).replace("T", " ").slice(0, 19)} ·{" "}
+              {humanize(catalog.freshnessState)}
+            </small>
+          ) : null}
+          {!pricing || !fees || !restrictions ? (
+            <small className="missing-evidence">
+              Missing provider evidence
+            </small>
+          ) : null}
         </span>
       ) : null}
       <InlineEditor key={row.id} row={row} onQueued={onQueued} />

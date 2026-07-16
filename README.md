@@ -20,9 +20,11 @@ Open `http://localhost:3000/uploads`. The seeded `VSI` supplier lets you exercis
 
 See [local catalog import testing](docs/LOCAL_TESTING.md) for the API and browser verification flow.
 
-After normalization, submit `POST /api/scans/{scanId}/match` in demo mode and review results at `/scans/{scanId}/matches`. Local mode uses deterministic mock fixtures; the server-only SP-API adapter is configuration-gated and has no real credentials in this repository.
+After a mapping is confirmed, **Start scan** advances the checkpointed local workflow through normalization, matching, fixture enrichment, restrictions, and deterministic calculation. The completed or partial result opens at `/scans/{scanId}/analysis`. Local mode uses deterministic mock fixtures; the server-only SP-API adapter is configuration-gated and has no real credentials in this repository.
 
 `PHASE_ZERO_DEMO_MODE=true` is set only by local Compose to enable this mock route. Do not expose it as a production authorization mechanism.
+
+Compose runs the built Next.js image with `next start` and `NODE_ENV=production`; its explicit unauthenticated demo exception is accepted only with both local-demo flags, loopback application URLs, and loopback-bound host ports. Direct `pnpm dev` remains the development-tooling path.
 
 Useful commands:
 

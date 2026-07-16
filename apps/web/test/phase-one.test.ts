@@ -7,6 +7,7 @@ import {
   inspectionRecoveryState,
   suggestMapping,
   uploadErrorMessage,
+  uploadStatusLabel,
   validateDeclaredMediaType,
   validateUploadedObjectMetadata,
   validateFilename,
@@ -62,6 +63,14 @@ describe("Phase 1 upload validation", () => {
     expect(
       inspectionRecoveryState("REJECTED", "FAILED_FINAL", "INVALID_XLSX"),
     ).toBe("TERMINAL");
+  });
+
+  it("presents persisted upload states without internal enum labels", () => {
+    expect(uploadStatusLabel("MAPPING_REQUIRED")).toBe("Mapping required");
+    expect(uploadStatusLabel("READY")).toBe("Ready to start");
+    expect(uploadStatusLabel("UNKNOWN_INTERNAL_STATE")).toBe(
+      "Status unavailable",
+    );
   });
 
   it("requires a description and one matching identifier without duplicates", () => {
@@ -197,5 +206,16 @@ describe("Phase 1 upload validation", () => {
         [["Pet treats", "012345678905", "10", "6"]],
       ),
     ).toContainEqual(expect.stringMatching(/whole sellable units/i));
+  });
+
+  it("explains duplicate target mappings before confirmation", () => {
+    expect(
+      mappingSafetyIssues({ 0: "DESCRIPTION", 1: "UPC", 2: "UPC" }, [
+        ["Acme soda", "012345678905", "012345678905"],
+      ]),
+    ).toContainEqual(expect.stringMatching(/only once/i));
+    expect(uploadErrorMessage("MAPPING_STALE_SELECTION")).toMatch(
+      /sheet or header changed/i,
+    );
   });
 });

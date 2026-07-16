@@ -23,18 +23,19 @@ export async function GET(
       { status: 400 },
     );
   const organization = await ensurePhaseZeroOrganization();
-  return NextResponse.json(
-    await listAnalysisResults({
-      organizationId: organization.id,
-      scanJobId: (await params).scanId,
-      ...parsed.data,
-      filters: {
-        recommendation: parsed.data.recommendation,
-        status: parsed.data.status,
-        search: parsed.data.search,
-        minRoiPercent: parsed.data.minRoiPercent,
-        maxRoiPercent: parsed.data.maxRoiPercent,
-      },
-    }),
-  );
+  const results = await listAnalysisResults({
+    organizationId: organization.id,
+    scanJobId: (await params).scanId,
+    ...parsed.data,
+    filters: {
+      recommendation: parsed.data.recommendation,
+      status: parsed.data.status,
+      search: parsed.data.search,
+      minRoiPercent: parsed.data.minRoiPercent,
+      maxRoiPercent: parsed.data.maxRoiPercent,
+    },
+  });
+  return results
+    ? NextResponse.json(results)
+    : NextResponse.json({ error: "Not found" }, { status: 404 });
 }

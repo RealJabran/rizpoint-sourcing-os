@@ -77,13 +77,15 @@ function conservativePriceEvidence(
 }
 
 function historyObservationCount(observation: Observation | null): number {
-  const values = (observation?.payload as { value?: unknown[] }).value;
+  if (!observation) return 0;
+  const values = (observation.payload as { value?: unknown[] }).value;
   return values?.length ?? 0;
 }
 
 function feeQuote(observation: Observation | null): FeeQuote | null {
+  if (!observation) return null;
   const value = (
-    observation?.payload as {
+    observation.payload as {
       value?: {
         totalFee?: string;
         quotedPrice?: string;
@@ -97,7 +99,6 @@ function feeQuote(observation: Observation | null): FeeQuote | null {
     }
   ).value;
   if (
-    !observation ||
     !value?.totalFee ||
     !value.quotedPrice ||
     !value.currency ||
@@ -129,7 +130,8 @@ function feeQuote(observation: Observation | null): FeeQuote | null {
 }
 
 function restrictionStatus(observation: Observation | null) {
-  const status = (observation?.payload as { value?: { status?: string } }).value
+  if (!observation) return "UNKNOWN";
+  const status = (observation.payload as { value?: { status?: string } }).value
     ?.status;
   return status === "ALLOWED" ||
     status === "REQUIRES_APPROVAL" ||

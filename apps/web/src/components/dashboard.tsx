@@ -5,7 +5,7 @@ import { PageHeader } from "./page-header";
 import { type DashboardSummary } from "./dashboard-state";
 import { ScanSummaryTable } from "./scan-summary-table";
 import { Alert, Badge, ButtonLink, Card, Skeleton } from "./ui";
-import { requestWasAborted } from "../abort";
+import { abortExpectedRequest, requestWasAborted } from "../abort";
 
 type DashboardState =
   | { kind: "loading" }
@@ -67,7 +67,7 @@ export function Dashboard() {
     })();
     return () => {
       active = false;
-      controller.abort();
+      abortExpectedRequest(controller);
     };
   }, []);
 

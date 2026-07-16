@@ -33,7 +33,7 @@ The initial and upload migrations are additive and include reviewed manual `roll
 
 ## State model
 
-The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → COMPLETED → MATCHING → COMPLETED → ENRICHING → CALCULATING → COMPLETED|PARTIAL_SUCCESS`. Unsafe or malformed inspection/normalization input sets the upload to `REJECTED` and scan to `FAILED_FINAL`. Transient scanner failures retain the private object and in-progress upload state; BullMQ retries automatically, and an operator can requeue a completed retry budget using a new deterministic run-attempt job ID without uploading a duplicate. A duplicate request is represented by one outbox event per stage and idempotent persistence. Exactly one upload sheet may be selected for normalization.
+The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → MATCHING → ENRICHING → CALCULATING → COMPLETED|PARTIAL_SUCCESS`. Mapping confirmation stores a checksum checkpoint and is serialized per scan, so repeat submissions return the same persisted state. After each successful worker checkpoint, the workflow queues only the next missing stage; a restart or explicit resume consults those checkpoints rather than repeating completed work. Unsafe or malformed inspection/normalization input sets the upload to `REJECTED` and scan to `FAILED_FINAL`. Transient scanner failures retain the private object and in-progress upload state; BullMQ retries automatically, and an operator can requeue a completed retry budget using a new deterministic run-attempt job ID without uploading a duplicate. A duplicate request is represented by one outbox event per stage and idempotent persistence. Exactly one upload sheet may be selected for normalization.
 
 ## Matching flow
 
@@ -62,6 +62,8 @@ Private production uses an authenticated owner session whose membership and sess
 The analysis API queries a tenant-scoped current-result projection in 100-row windows with allowlisted filters and sorting. Grid DTOs explicitly select lightweight fields; heavy evidence is fetched only for the drawer. An inline override transaction records typed Decimal values and audit metadata, creates a targeted calculation run, target, and run-ID outbox event together. Targeted processing fetches only target rows. Promotion verifies that the active override still points to the same run and revision, so an older worker cannot replace a newer result; targeted completion does not reset the scan ingestion state.
 
 ## Runtime baselines
+
+Local Compose executes the optimized Next.js production server. Its unauthenticated fixture mode is not the private-production mode: it requires both explicit demo flags, loopback application/auth URLs, and host ports bound to loopback. Private production continues to reject demo mode and requires authenticated membership.
 
 ## Phase 6 workflow and exports
 

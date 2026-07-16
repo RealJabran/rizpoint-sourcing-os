@@ -39,8 +39,8 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
 
   minio-init:
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
@@ -151,9 +151,10 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT}
-    command: ["pnpm", "--filter", "@rizpoint/web", "dev"]
+    command: ["node", "apps/web/.next/standalone/apps/web/server.js"]
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       SCANNER_BASE_URL: http://scanner:8000
@@ -180,7 +181,7 @@ services:
       PHASE_ZERO_DEMO_MODE: "true"
       RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO: "true"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       migrate:
         condition: service_completed_successfully

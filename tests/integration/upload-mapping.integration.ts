@@ -133,6 +133,7 @@ type UploadState = {
   scan: {
     id: string;
     status: string;
+    checkpoints: Array<{ stage: string }>;
     supplierRows: Array<{ id: string; rawData: Record<string, string> }>;
   } | null;
   sheets: Array<{ id: string; headerCandidates: Array<{ row: number }> }>;
@@ -153,6 +154,21 @@ const inspected = await waitFor("MAPPING_REQUIRED");
 assert.equal(inspected.sheets.length, 1);
 const sheet = inspected.sheets[0]!;
 const headerRow = sheet.headerCandidates[0]?.row ?? 1;
+const mappings = [
+  { sourceIndex: 0, sourceColumn: "UPC", target: "UPC", required: true },
+  {
+    sourceIndex: 1,
+    sourceColumn: "Description",
+    target: "DESCRIPTION",
+    required: true,
+  },
+  {
+    sourceIndex: 2,
+    sourceColumn: "Unit Cost",
+    target: "UNIT_COST",
+    required: true,
+  },
+];
 
 const mappingResponse = await fetch(
   `${baseUrl}/api/scans/${created.scanId}/mapping`,
@@ -162,25 +178,77 @@ const mappingResponse = await fetch(
     body: JSON.stringify({
       uploadSheetId: sheet.id,
       headerRow,
-      mappings: [
-        { sourceIndex: 0, sourceColumn: "UPC", target: "UPC", required: true },
-        {
-          sourceIndex: 1,
-          sourceColumn: "Description",
-          target: "DESCRIPTION",
-          required: true,
-        },
-        {
-          sourceIndex: 2,
-          sourceColumn: "Unit Cost",
-          target: "UNIT_COST",
-          required: true,
-        },
-      ],
+      mappings,
     }),
   },
 );
 assert.equal(mappingResponse.status, 200);
+assert.equal(
+  ((await mappingResponse.json()) as { status: string }).status,
+  "READY",
+);
+
+const duplicateMappingSubmission = await fetch(
+  `${baseUrl}/api/scans/${created.scanId}/mapping`,
+  {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ uploadSheetId: sheet.id, headerRow, mappings }),
+  },
+);
+assert.equal(duplicateMappingSubmission.status, 200);
+
+const duplicateTargetResponse = await fetch(
+  `${baseUrl}/api/scans/${created.scanId}/mapping`,
+  {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      uploadSheetId: sheet.id,
+      headerRow,
+      mappings: [mappings[0], { ...mappings[1], target: "UPC" }],
+    }),
+  },
+);
+assert.equal(duplicateTargetResponse.status, 400);
+assert.equal(
+  ((await duplicateTargetResponse.json()) as { error: string }).error,
+  "DUPLICATE_MAPPING",
+);
+
+const staleHeaderResponse = await fetch(
+  `${baseUrl}/api/scans/${created.scanId}/mapping`,
+  {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      uploadSheetId: sheet.id,
+      headerRow: headerRow + 1,
+      mappings,
+    }),
+  },
+);
+assert.equal(staleHeaderResponse.status, 409);
+assert.equal(
+  ((await staleHeaderResponse.json()) as { error: string }).error,
+  "MAPPING_STALE_SELECTION",
+);
+
+const mappedScan = (await (
+  await fetch(`${baseUrl}/api/scans/${created.scanId}`)
+).json()) as {
+  checkpoints: Array<{ stage: string }>;
+  events: Array<{ eventType: string }>;
+};
+assert.equal(
+  mappedScan.checkpoints.filter(({ stage }) => stage === "MAPPING").length,
+  1,
+);
+assert.equal(
+  mappedScan.events.filter(({ eventType }) => eventType === "MAPPING_CONFIRMED")
+    .length,
+  1,
+);
 
 const profileResponse = await fetch(
   `${baseUrl}/api/scans/${created.scanId}/mapping/save-profile`,
@@ -211,35 +279,35 @@ const profileResponse = await fetch(
 assert.equal(profileResponse.status, 200);
 
 const normalizationResponse = await fetch(
-  `${baseUrl}/api/scans/${created.scanId}/normalize`,
+  `${baseUrl}/api/scans/${created.scanId}/start`,
   { method: "POST" },
 );
 assert.equal(normalizationResponse.status, 202);
-const complete = await waitFor("COMPLETED");
-assert.equal(complete.scan?.status, "COMPLETED");
-assert.equal(complete.scan?.supplierRows.length, 4_969);
-assert.equal(complete.scan?.supplierRows[0]?.rawData["0"], "012345678905");
-
-const matchingResponse = await fetch(
-  `${baseUrl}/api/scans/${created.scanId}/match`,
-  { method: "POST" },
-);
-assert.equal(matchingResponse.status, 202);
 
 async function waitForMatching(): Promise<void> {
-  // The 4,969-row fixture deliberately exercises the persisted matching path.
-  // Leave a bounded budget for a clean local worker to complete it.
-  for (let attempt = 0; attempt < 360; attempt += 1) {
+  // The 4,969-row fixture deliberately exercises the full persisted path.
+  // Leave a bounded budget for a clean local worker to calculate every row.
+  for (let attempt = 0; attempt < 480; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const response = await fetch(`${baseUrl}/api/scans/${created.scanId}`);
     assert.equal(response.status, 200);
-    if (((await response.json()) as { status: string }).status === "COMPLETED")
+    const state = (await response.json()) as {
+      status: string;
+      checkpoints: Array<{ stage: string }>;
+    };
+    if (
+      ["COMPLETED", "PARTIAL_SUCCESS"].includes(state.status) &&
+      state.checkpoints.some(({ stage }) => stage === "CALCULATE")
+    )
       return;
   }
-  throw new Error("matching did not reach COMPLETED");
+  throw new Error("full scan did not persist CALCULATE");
 }
 
 await waitForMatching();
+const complete = await waitFor("COMPLETED");
+assert.equal(complete.scan?.supplierRows.length, 4_969);
+assert.equal(complete.scan?.supplierRows[0]?.rawData["0"], "012345678905");
 const matchesResponse = await fetch(
   `${baseUrl}/api/scans/${created.scanId}/matches`,
 );

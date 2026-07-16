@@ -50,20 +50,38 @@ describe("private production proxy", () => {
     vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
     vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
     vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "true");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://public.example");
+    vi.stubEnv("NEXTAUTH_URL", "https://public.example");
     const { proxy } = await import("../proxy.js");
     await expect(
       proxy(new NextRequest("http://localhost:3000/api/ready")),
     ).rejects.toThrow("production_configuration_invalid:private_mode_required");
   });
 
-  it("permits the demo bypass only with both explicit local flags", async () => {
-    vi.stubEnv("NODE_ENV", "development");
+  it("permits the production-built local demo only with explicit flags and loopback URLs", async () => {
+    vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
     vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
     vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "true");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
+    vi.stubEnv("NEXTAUTH_URL", "http://localhost:3000");
     const { proxy } = await import("../proxy.js");
     const response = await proxy(
       new NextRequest("http://localhost:3000/api/ready"),
+    );
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("permits the local standalone bind address when public URLs remain loopback-only", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
+    vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "true");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
+    vi.stubEnv("NEXTAUTH_URL", "http://localhost:3000");
+    const { proxy } = await import("../proxy.js");
+    const response = await proxy(
+      new NextRequest("http://0.0.0.0:3000/api/ready"),
     );
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
@@ -73,10 +91,25 @@ describe("private production proxy", () => {
     vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
     vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
     vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "false");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
+    vi.stubEnv("NEXTAUTH_URL", "http://localhost:3000");
     const { proxy } = await import("../proxy.js");
     await expect(
       proxy(new NextRequest("http://localhost:3000/api/ready")),
     ).rejects.toThrow("local_configuration_invalid:demo_flags_required");
+  });
+
+  it("rejects demo flags on a non-loopback origin", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "false");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
+    vi.stubEnv("RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO", "true");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://demo.example");
+    vi.stubEnv("NEXTAUTH_URL", "https://demo.example");
+    const { proxy } = await import("../proxy.js");
+    await expect(
+      proxy(new NextRequest("https://demo.example/api/ready")),
+    ).rejects.toThrow("production_configuration_invalid:private_mode_required");
   });
 
   it("rejects a revoked or missing membership session", async () => {
