@@ -82,6 +82,23 @@ function restrictionResult(
 describe("competitive-pricing enrichment", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("honors an explicit Retry-After and jitters only a missing deadline", async () => {
+    const { providerRetryDeadline } = await import("../src/enrichment.js");
+    const now = Date.parse("2026-07-18T12:00:00.000Z");
+    expect(providerRetryDeadline(0, now, () => 0.99).toISOString()).toBe(
+      "2026-07-18T12:00:00.000Z",
+    );
+    expect(providerRetryDeadline(2_000, now, () => 0).toISOString()).toBe(
+      "2026-07-18T12:00:02.000Z",
+    );
+    expect(providerRetryDeadline(undefined, now, () => 0).getTime()).toBe(
+      now + 30_000,
+    );
+    expect(providerRetryDeadline(undefined, now, () => 0.999).getTime()).toBe(
+      now + 37_492,
+    );
+  });
+
   it("batches duplicate ASIN rows once and persists typed pricing on each checkpoint", async () => {
     const getCompetitivePricingBatch = vi.fn().mockResolvedValue([
       {

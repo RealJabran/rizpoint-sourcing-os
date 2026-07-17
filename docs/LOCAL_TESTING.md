@@ -24,6 +24,11 @@ Run it only after the Compose images have been built from the current worktree.
 
 `test:browser` uses the installed Chrome channel by default. Set `PLAYWRIGHT_BROWSER_CHANNEL=chromium` only when a managed Playwright Chromium binary has been installed. The tests generate in-memory synthetic catalogs and never print signed URLs.
 
+For release-scale database evidence, start Compose and run `pnpm test:scale`.
+It creates and removes isolated synthetic 5,000-, 20,000-, and 50,000-row
+analysis scans, then verifies a bounded filtered 100-row server window at each
+size. Record its timings with the browser-scale evidence for the release gate.
+
 Compose intentionally runs `next start` with `NODE_ENV=production`, so its CSP does not include `unsafe-eval`. Direct `pnpm dev` receives the development-only CSP exception required by React debugging. Browser-extension attributes such as `bis_skin_checked`, `bis_register`, and `cz-shortcut-listen` are not application output; verify hydration behavior in the clean Playwright context rather than suppressing warnings.
 
 If inspection exhausts its transient scanner retry budget, the upload page shows

@@ -12,6 +12,25 @@ import { providerCalls } from "./observability.js";
 
 const FRESH_FOR_MS = 15 * 60_000;
 const TRANSIENT_RETRY_DELAY_MS = 30_000;
+const TRANSIENT_RETRY_JITTER_MS = 7_500;
+
+/**
+ * Provider Retry-After is authoritative. When a retryable provider response
+ * omits it, spread restart traffic over a small bounded window instead of
+ * synchronizing all resumed runs on the same second.
+ */
+export function providerRetryDeadline(
+  retryAfterMs: number | undefined,
+  now = Date.now(),
+  random = Math.random,
+): Date {
+  if (retryAfterMs !== undefined) return new Date(now + retryAfterMs);
+  return new Date(
+    now +
+      TRANSIENT_RETRY_DELAY_MS +
+      Math.floor(random() * TRANSIENT_RETRY_JITTER_MS),
+  );
+}
 
 type Metric = "CATALOG" | "PRICING" | "FEES" | "RESTRICTIONS" | "HISTORY";
 type CachedResult = {
@@ -160,9 +179,10 @@ function providerError(error: unknown) {
         : ["TRANSIENT", "PROVIDER_OUTAGE"].includes(error.code)
           ? ("RETRYABLE_ERROR" as const)
           : ("PERMANENT_ERROR" as const),
-    retryAt: error.options.retryAfterMs
-      ? new Date(Date.now() + error.options.retryAfterMs)
-      : undefined,
+    retryAt:
+      error.options.retryAfterMs === undefined
+        ? undefined
+        : providerRetryDeadline(error.options.retryAfterMs),
     httpStatus: error.options.httpStatus,
     providerRequestId: error.options.providerRequestId,
   };
@@ -1067,8 +1087,7 @@ export async function processEnrichment(scanJobId: string) {
           detail.status === "THROTTLED" ||
           detail.status === "RETRYABLE_ERROR"
         ) {
-          const candidate =
-            detail.retryAt ?? new Date(Date.now() + TRANSIENT_RETRY_DELAY_MS);
+          const candidate = detail.retryAt ?? providerRetryDeadline(undefined);
           if (!retryAt || candidate > retryAt) retryAt = candidate;
         }
       }

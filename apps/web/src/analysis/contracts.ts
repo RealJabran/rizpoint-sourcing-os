@@ -43,11 +43,7 @@ export const analysisQuerySchema = z.object({
     .optional(),
   minMatchConfidence: z.coerce.number().int().min(0).max(100).optional(),
   packGuardStatus: z
-    .enum([
-      "VERIFIED",
-      "BLOCKED_PACK_UNCERTAIN",
-      "BLOCKED_PACK_CONTRADICTION",
-    ])
+    .enum(["VERIFIED", "BLOCKED_PACK_UNCERTAIN", "BLOCKED_PACK_CONTRADICTION"])
     .optional(),
   featuredOfferState: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]).optional(),
   amazonRetailPresence: z.enum(["PRESENT", "ABSENT", "UNKNOWN"]).optional(),
@@ -74,7 +70,10 @@ export const analysisQuerySchema = z.object({
   maxFbmOfferCount: z.coerce.number().int().nonnegative().optional(),
   minVisibleOfferCount: z.coerce.number().int().nonnegative().optional(),
   maxVisibleOfferCount: z.coerce.number().int().nonnegative().optional(),
-  partialData: z.enum(["true"]).transform(() => true).optional(),
+  partialData: z
+    .enum(["true"])
+    .transform(() => true)
+    .optional(),
   supplierCode: z.string().trim().min(1).max(80).optional(),
   brand: z.string().trim().min(1).max(120).optional(),
   category: z.string().trim().min(1).max(120).optional(),

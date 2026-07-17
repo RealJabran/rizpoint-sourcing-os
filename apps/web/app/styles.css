@@ -1065,6 +1065,9 @@ a:focus-visible,
   background: var(--rp-surface);
   box-shadow: var(--rp-shadow-sm);
 }
+.analysis-toolbar > * {
+  min-width: 0;
+}
 .analysis-toolbar label,
 .inline-editor label {
   display: grid;
@@ -1372,12 +1375,17 @@ pre {
   }
   .analysis-toolbar,
   .analysis-scan-summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .analysis-filter-group {
     border-right: 0;
     border-bottom: 1px solid var(--rp-border);
     padding: 0 0 0.75rem;
+  }
+  .analysis-toolbar fieldset {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
   }
   .analysis-stage-list {
     grid-template-columns: 1fr;

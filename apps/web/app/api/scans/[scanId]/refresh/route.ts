@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensurePhaseZeroOrganization, queueEnrichment } from "@rizpoint/database";
+import {
+  ensurePhaseZeroOrganization,
+  queueEnrichment,
+} from "@rizpoint/database";
 import { z } from "zod";
 import { phaseZeroDemoEnabled } from "@/src/phase-zero";
 
@@ -17,9 +20,14 @@ export async function POST(
 ) {
   if (!phaseZeroDemoEnabled())
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const parsed = refreshSchema.safeParse(await request.json().catch(() => null));
+  const parsed = refreshSchema.safeParse(
+    await request.json().catch(() => null),
+  );
   if (!parsed.success)
-    return NextResponse.json({ error: "INVALID_REFRESH_REQUEST" }, { status: 400 });
+    return NextResponse.json(
+      { error: "INVALID_REFRESH_REQUEST" },
+      { status: 400 },
+    );
   const organization = await ensurePhaseZeroOrganization();
   const run = await queueEnrichment(
     organization.id,

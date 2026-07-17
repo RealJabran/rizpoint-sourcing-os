@@ -51,7 +51,10 @@ describe("outbox dispatch recovery", () => {
     expect(add).toHaveBeenCalledWith(
       "mock-scan",
       expect.any(Object),
-      expect.objectContaining({ delay: expect.any(Number) }),
+      expect.objectContaining({
+        delay: expect.any(Number),
+        backoff: { type: "exponential", delay: 1_000, jitter: 0.25 },
+      }),
     );
   });
 });

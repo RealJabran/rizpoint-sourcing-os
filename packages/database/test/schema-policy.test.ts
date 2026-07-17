@@ -129,6 +129,38 @@ describe("database policy", () => {
       expect(schema).toContain(field);
   });
 
+  it("permits exactly one source and reserves scan sources for active-view exports", async () => {
+    const migration = await readFile(
+      new URL(
+        "../prisma/migrations/20260718180000_analysis_view_export_source_constraint/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(migration).toContain('DROP CONSTRAINT "export_jobs_source"');
+    expect(migration).toContain('"scan_job_id" IS NOT NULL)::int');
+    expect(migration).toContain("= 1");
+    expect(migration).toContain("'ANALYSIS_VIEW'");
+  });
+
+  it("indexes large supplier-row child relations used by cleanup and lifecycle cascades", async () => {
+    const migration = await readFile(
+      new URL(
+        "../prisma/migrations/20260718190000_supplier_row_foreign_key_indexes/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    for (const index of [
+      "enrichment_items_supplier_row_id_idx",
+      "profit_results_supplier_row_id_idx",
+      "profit_cost_overrides_supplier_row_id_idx",
+      "profit_calculation_targets_supplier_row_id_idx",
+      "purchase_order_lines_supplier_row_id_idx",
+    ])
+      expect(migration).toContain(index);
+  });
+
   it("stores account fee components as NUMERIC and restriction outcomes as explicit states", async () => {
     const schema = await readFile(
       new URL("../prisma/schema.prisma", import.meta.url),

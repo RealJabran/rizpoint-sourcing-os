@@ -67,7 +67,12 @@ describe("production configuration", () => {
       "utf8",
     );
     expect(webDockerfile).toContain("@rizpoint/database build");
-    expect(workerDockerfile).toContain("@rizpoint/database build");
+    // The worker imports mock providers transitively. Build its complete
+    // workspace dependency graph so image builds cannot retain stale fixture
+    // artifacts from an earlier layer.
+    expect(workerDockerfile).toContain(
+      "pnpm turbo run build --filter=@rizpoint/worker",
+    );
   });
 
   it("does not suppress application hydration warnings", async () => {

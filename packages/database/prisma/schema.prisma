@@ -874,6 +874,7 @@ model EnrichmentItem {
 
   @@unique([enrichmentRunId, supplierRowId])
   @@index([enrichmentRunId, status])
+  @@index([supplierRowId])
   @@map("enrichment_items")
 }
 
@@ -1096,6 +1097,7 @@ model ProfitResult {
   @@unique([profitCalculationRunId, supplierRowId, shippingRouteId])
   @@index([organizationId, scanJobId, shippingRouteId, isCurrent, updatedAt])
   @@index([organizationId, scanJobId, recommendation, isCurrent])
+  @@index([supplierRowId])
   @@map("profit_results")
 }
 
@@ -1143,6 +1145,7 @@ model ProfitCostOverride {
 
   @@unique([organizationId, supplierRowId, shippingRouteId])
   @@index([organizationId, scanJobId, status])
+  @@index([supplierRowId])
   @@map("profit_cost_overrides")
 }
 
@@ -1188,6 +1191,7 @@ model ProfitCalculationTarget {
   shippingRoute        ShippingRoute        @relation(fields: [shippingRouteId], references: [id], onDelete: Restrict)
 
   @@unique([profitCalculationRunId, supplierRowId, shippingRouteId])
+  @@index([supplierRowId])
   @@map("profit_calculation_targets")
 }
 
@@ -1397,6 +1401,7 @@ model PurchaseOrderLine {
 
   @@unique([purchaseOrderId, shortlistItemId])
   @@index([organizationId, purchaseOrderId])
+  @@index([supplierRowId])
   @@map("purchase_order_lines")
 }
 

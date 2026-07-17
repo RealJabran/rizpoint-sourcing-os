@@ -2892,14 +2892,14 @@ export async function listAnalysisResults(input: {
         supplierRow: {
           select: {
             sourceRowNumber: true,
-                normalizedOffer: {
-                  select: {
-                    asin: true,
-                    upc: true,
-                    ean: true,
-                    gtin: true,
-                    itemNumber: true,
-                    mpn: true,
+            normalizedOffer: {
+              select: {
+                asin: true,
+                upc: true,
+                ean: true,
+                gtin: true,
+                itemNumber: true,
+                mpn: true,
                 description: true,
                 brand: true,
                 unitCost: true,
@@ -3066,7 +3066,8 @@ export async function listAnalysisResults(input: {
         (left, right) => right.observedAt.getTime() - left.observedAt.getTime(),
       )[0];
     const { enrichmentItems, ...supplierRow } = row.supplierRow;
-    const selectedCatalog = supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
+    const selectedCatalog =
+      supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
     const identityProjection = selectedCatalog?.identityProjection;
     const identity =
       identityProjection && typeof identityProjection === "object"
@@ -4739,8 +4740,10 @@ export async function queueExport(input: {
   idempotencyKey: string;
 }) {
   return db.$transaction(async (transaction) => {
-    const sourceId = input.purchaseOrderId ?? input.shortlistId ?? input.scanJobId;
+    const sourceId =
+      input.purchaseOrderId ?? input.shortlistId ?? input.scanJobId;
     if (!sourceId) throw new Error("EXPORT_SOURCE_REQUIRED");
+    let sourceRevision = input.sourceRevision;
     if (input.kind === "ANALYSIS_VIEW") {
       if (!input.scanJobId || !input.queryState)
         throw new Error("ANALYSIS_EXPORT_SOURCE_REQUIRED");
@@ -4749,15 +4752,15 @@ export async function queueExport(input: {
         select: { attemptCount: true },
       });
       if (!scan) throw new Error("ANALYSIS_EXPORT_SCAN_NOT_FOUND");
-      input = { ...input, sourceRevision: scan.attemptCount };
+      sourceRevision = scan.attemptCount;
     }
-    if (input.sourceRevision === undefined)
+    if (sourceRevision === undefined)
       throw new Error("EXPORT_SOURCE_REVISION_REQUIRED");
     const fingerprint = requestFingerprint({
       kind: input.kind,
       format: input.format,
       sourceId,
-      sourceRevision: input.sourceRevision,
+      sourceRevision,
       queryState: input.queryState ?? null,
     });
     const existing = await transaction.exportJob.findUnique({
@@ -4786,7 +4789,25 @@ export async function queueExport(input: {
       });
       return existing;
     }
-    const job = await transaction.exportJob.create({ data: { ...input } });
+    // Do not spread the request object here. With exact optional properties,
+    // that leaves a required persisted revision typed as optional even after
+    // the validation above. The explicit shape also prevents undefined JSON
+    // or foreign-source fields from reaching Prisma.
+    const job = await transaction.exportJob.create({
+      data: {
+        organizationId: input.organizationId,
+        kind: input.kind,
+        format: input.format,
+        sourceRevision,
+        idempotencyKey: input.idempotencyKey,
+        ...(input.shortlistId ? { shortlistId: input.shortlistId } : {}),
+        ...(input.purchaseOrderId
+          ? { purchaseOrderId: input.purchaseOrderId }
+          : {}),
+        ...(input.scanJobId ? { scanJobId: input.scanJobId } : {}),
+        ...(input.queryState ? { queryState: input.queryState } : {}),
+      },
+    });
     await transaction.outboxEvent.create({
       data: {
         organizationId: input.organizationId,
@@ -4807,7 +4828,7 @@ export async function queueExport(input: {
           kind: input.kind,
           format: input.format,
           sourceId,
-          sourceRevision: input.sourceRevision,
+          sourceRevision,
         },
       },
     });

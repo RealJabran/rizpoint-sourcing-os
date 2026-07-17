@@ -13,10 +13,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import Image from "next/image";
 import { ANALYSIS_PAGE_SIZE, pageOffsetForIndex } from "./window";
 import { observationFreshness, requiredNextActions } from "./evidence";
-import {
-  ANALYSIS_PRESETS,
-  LOW_VISIBLE_COMPETITION_LABEL,
-} from "./presets";
+import { ANALYSIS_PRESETS, LOW_VISIBLE_COMPETITION_LABEL } from "./presets";
 import { PageHeader } from "@/src/components/page-header";
 import {
   Alert,
@@ -663,7 +660,10 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       setError("Evidence refresh could not be queued. Check the scan status.");
       return;
     }
-    const result = (await response.json()) as { status: string; duplicate?: boolean };
+    const result = (await response.json()) as {
+      status: string;
+      duplicate?: boolean;
+    };
     setRefreshState(
       result.status === "PARTIAL_SUCCESS"
         ? "partial"
@@ -735,27 +735,38 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     });
     if (!response.ok) {
       setExportState("failed");
-      setError("The active view export could not be queued. No file was created.");
+      setError(
+        "The active view export could not be queued. No file was created.",
+      );
       return;
     }
     const job = (await response.json()) as { id: string; status: string };
     setExportJob({ id: job.id, status: job.status });
     setExportState("queued");
-    notify("Private active-view export queued. Identifiers remain text and unsafe spreadsheet formulas are escaped.", "info");
+    notify(
+      "Private active-view export queued. Identifiers remain text and unsafe spreadsheet formulas are escaped.",
+      "info",
+    );
   }
 
+  const exportJobId = exportJob?.id;
+  const exportJobStatus = exportJob?.status;
   useEffect(() => {
-    if (!exportJob || !["PENDING", "RUNNING", "FAILED_RETRYABLE"].includes(exportJob.status))
+    if (
+      !exportJobId ||
+      !exportJobStatus ||
+      !["PENDING", "RUNNING", "FAILED_RETRYABLE"].includes(exportJobStatus)
+    )
       return;
     let cancelled = false;
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const response = await fetch(`/api/exports/${exportJob.id}`, {
+        const response = await fetch(`/api/exports/${exportJobId}`, {
           cache: "no-store",
         });
         if (!response.ok) throw new Error("Export status is unavailable.");
-        const next = (await response.json()) as typeof exportJob;
+        const next = (await response.json()) as NonNullable<typeof exportJob>;
         if (cancelled) return;
         setExportJob(next);
         setExportState(next.status.toLowerCase());
@@ -770,7 +781,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [exportJob?.id, exportJob?.status]);
+  }, [exportJobId, exportJobStatus]);
 
   return (
     <main className="analysis-workspace">
@@ -905,7 +916,11 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       ) : null}
       {exportState ? (
         <Alert
-          tone={exportState === "failed" || exportJob?.status === "FAILED_FINAL" ? "danger" : "info"}
+          tone={
+            exportState === "failed" || exportJob?.status === "FAILED_FINAL"
+              ? "danger"
+              : "info"
+          }
           title="Active-view export"
         >
           {exportJob?.downloadState === "READY" ? (
@@ -914,7 +929,8 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
             </a>
           ) : exportJob?.downloadState === "EXPIRED" ? (
             "This private export expired. Queue a new export from the current view."
-          ) : exportState === "failed" || exportJob?.status === "FAILED_FINAL" ? (
+          ) : exportState === "failed" ||
+            exportJob?.status === "FAILED_FINAL" ? (
             "The export did not complete. Existing private objects were not exposed; queue a new export to retry."
           ) : (
             "The worker is building a private snapshot of the active server-side view."
@@ -1201,8 +1217,12 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               >
                 <option value="">All pack states</option>
                 <option value="VERIFIED">Verified</option>
-                <option value="BLOCKED_PACK_UNCERTAIN">Blocked: uncertain</option>
-                <option value="BLOCKED_PACK_CONTRADICTION">Blocked: contradiction</option>
+                <option value="BLOCKED_PACK_UNCERTAIN">
+                  Blocked: uncertain
+                </option>
+                <option value="BLOCKED_PACK_CONTRADICTION">
+                  Blocked: contradiction
+                </option>
               </SelectControl>
             </label>
             <label>
@@ -1221,7 +1241,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               Amazon Retail
               <SelectControl
                 value={amazonRetailPresence}
-                onChange={(event) => setAmazonRetailPresence(event.target.value)}
+                onChange={(event) =>
+                  setAmazonRetailPresence(event.target.value)
+                }
               >
                 <option value="">All states</option>
                 <option value="PRESENT">Present</option>
@@ -1247,7 +1269,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               <TextInput
                 inputMode="numeric"
                 value={maxVisibleOfferCount}
-                onChange={(event) => setMaxVisibleOfferCount(event.target.value)}
+                onChange={(event) =>
+                  setMaxVisibleOfferCount(event.target.value)
+                }
                 aria-describedby="competition-threshold"
               />
             </label>
@@ -1272,11 +1296,17 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
             </label>
             <label>
               Brand
-              <TextInput value={brand} onChange={(event) => setBrand(event.target.value)} />
+              <TextInput
+                value={brand}
+                onChange={(event) => setBrand(event.target.value)}
+              />
             </label>
             <label>
               Category / product type
-              <TextInput value={category} onChange={(event) => setCategory(event.target.value)} />
+              <TextInput
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+              />
             </label>
             <label>
               <input
@@ -1286,11 +1316,17 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               />{" "}
               Missing, partial, or stale data
             </label>
-            <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={clearFilters}
+            >
               Clear filters
             </Button>
             <span className="analysis-history-unavailable" role="status">
-              Historical stability unavailable — no licensed history provider is connected.
+              Historical stability unavailable — no licensed history provider is
+              connected.
             </span>
             <fieldset>
               <legend>Columns</legend>
@@ -1451,10 +1487,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
                 : "This is not reported as a successful zero-result scan. Review the scan audit state before retrying."}
           </p>
           {unfilteredTotal > 0 && hasFilters ? (
-            <Button
-              type="button"
-              onClick={clearFilters}
-            >
+            <Button type="button" onClick={clearFilters}>
               Clear filters
             </Button>
           ) : (
@@ -1599,9 +1632,9 @@ function GridRow({
       </span>
       <span className="pin identity" role="gridcell" aria-colindex={2}>
         <button
-        className="row-link"
+          className="row-link"
           type="button"
-        onClick={() => void onOpen(row.id)}
+          onClick={() => void onOpen(row.id)}
         >
           {image ? (
             <Image
@@ -1675,9 +1708,11 @@ function GridRow({
           <small>
             Supplier unit cost {offer?.currency ?? currency}{" "}
             {decimal(offer?.unitCost ?? null)} · market price{" "}
-            {offerIntelligence?.featuredOffer.currency ?? pricing?.currency ?? currency}{" "}
-            {offerIntelligence?.featuredOffer.price ?? pricing?.value ?? "—"} · fees{" "}
-            {fees?.currency ?? currency} {decimal(row.amazonFees)}
+            {offerIntelligence?.featuredOffer.currency ??
+              pricing?.currency ??
+              currency}{" "}
+            {offerIntelligence?.featuredOffer.price ?? pricing?.value ?? "—"} ·
+            fees {fees?.currency ?? currency} {decimal(row.amazonFees)}
           </small>
           <small>
             Fee estimate: {humanize(row.feeEstimate?.completeness)} · scenario{" "}
@@ -1715,8 +1750,9 @@ function GridRow({
           <small>{sourceLine(restrictions)}</small>
           <small>
             Amazon Retail: {humanize(offerIntelligence?.amazonRetailPresence)} ·
-            visible sellers {offerIntelligence?.counts.total.value ?? "unknown"} ({humanize(offerIntelligence?.counts.total.completeness)}) ·
-            FBA {offerIntelligence?.counts.fba.value ?? "unknown"} · FBM{" "}
+            visible sellers {offerIntelligence?.counts.total.value ?? "unknown"}{" "}
+            ({humanize(offerIntelligence?.counts.total.completeness)}) · FBA{" "}
+            {offerIntelligence?.counts.fba.value ?? "unknown"} · FBM{" "}
             {offerIntelligence?.counts.fbm.value ?? "unknown"}
           </small>
           <small>

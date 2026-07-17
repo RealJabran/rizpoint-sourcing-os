@@ -22,6 +22,11 @@ function record(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
 export function isExportAttemptRunnable(
   status:
     "PENDING" | "RUNNING" | "COMPLETED" | "FAILED_RETRYABLE" | "FAILED_FINAL",
@@ -286,14 +291,19 @@ function shortlistTable(
   };
 }
 
-function analysisFilters(queryState: unknown): AnalysisFilters {
+/** Reconstruct only validated, persisted active-view filters for export. */
+export function analysisFiltersFromViewState(
+  queryState: unknown,
+): AnalysisFilters {
   const query = record(queryState);
   const textValue = (key: string) =>
     typeof query[key] === "string" ? query[key] : undefined;
   const numberValue = (key: string) =>
     typeof query[key] === "number" ? query[key] : undefined;
   return {
-    recommendation: textValue("recommendation") as AnalysisFilters["recommendation"],
+    recommendation: textValue(
+      "recommendation",
+    ) as AnalysisFilters["recommendation"],
     status: textValue("status") as AnalysisFilters["status"],
     search: textValue("search"),
     minRoiPercent: textValue("minRoiPercent"),
@@ -304,18 +314,36 @@ function analysisFilters(queryState: unknown): AnalysisFilters {
     maxMarginPercent: textValue("maxMarginPercent"),
     matchStatus: textValue("matchStatus") as AnalysisFilters["matchStatus"],
     minMatchConfidence: numberValue("minMatchConfidence"),
-    packGuardStatus: textValue("packGuardStatus") as AnalysisFilters["packGuardStatus"],
-    featuredOfferState: textValue("featuredOfferState") as AnalysisFilters["featuredOfferState"],
-    amazonRetailPresence: textValue("amazonRetailPresence") as AnalysisFilters["amazonRetailPresence"],
-    pricingCompleteness: textValue("pricingCompleteness") as AnalysisFilters["pricingCompleteness"],
-    pricingFreshness: textValue("pricingFreshness") as AnalysisFilters["pricingFreshness"],
-    feeCompleteness: textValue("feeCompleteness") as AnalysisFilters["feeCompleteness"],
-    restrictionState: textValue("restrictionState") as AnalysisFilters["restrictionState"],
-    restrictionReasonCode: textValue("restrictionReasonCode") as AnalysisFilters["restrictionReasonCode"],
+    packGuardStatus: textValue(
+      "packGuardStatus",
+    ) as AnalysisFilters["packGuardStatus"],
+    featuredOfferState: textValue(
+      "featuredOfferState",
+    ) as AnalysisFilters["featuredOfferState"],
+    amazonRetailPresence: textValue(
+      "amazonRetailPresence",
+    ) as AnalysisFilters["amazonRetailPresence"],
+    pricingCompleteness: textValue(
+      "pricingCompleteness",
+    ) as AnalysisFilters["pricingCompleteness"],
+    pricingFreshness: textValue(
+      "pricingFreshness",
+    ) as AnalysisFilters["pricingFreshness"],
+    feeCompleteness: textValue(
+      "feeCompleteness",
+    ) as AnalysisFilters["feeCompleteness"],
+    restrictionState: textValue(
+      "restrictionState",
+    ) as AnalysisFilters["restrictionState"],
+    restrictionReasonCode: textValue(
+      "restrictionReasonCode",
+    ) as AnalysisFilters["restrictionReasonCode"],
     minVisibleOfferCount: numberValue("minVisibleOfferCount"),
     maxVisibleOfferCount: numberValue("maxVisibleOfferCount"),
     minFbaOfferCount: numberValue("minFbaOfferCount"),
+    maxFbaOfferCount: numberValue("maxFbaOfferCount"),
     minFbmOfferCount: numberValue("minFbmOfferCount"),
+    maxFbmOfferCount: numberValue("maxFbmOfferCount"),
     partialData: query.partialData === true ? true : undefined,
     supplierCode: textValue("supplierCode"),
     brand: textValue("brand"),
@@ -323,9 +351,12 @@ function analysisFilters(queryState: unknown): AnalysisFilters {
   };
 }
 
-async function analysisTable(
-  job: { organizationId: string; scanJobId: string | null; queryState: unknown; sourceRevision: number },
-): Promise<ExportTable> {
+async function analysisTable(job: {
+  organizationId: string;
+  scanJobId: string | null;
+  queryState: unknown;
+  sourceRevision: number;
+}): Promise<ExportTable> {
   if (!job.scanJobId) throw new Error("ANALYSIS_EXPORT_SOURCE_NOT_FOUND");
   const scan = await db.scanJob.findFirst({
     where: { id: job.scanJobId, organizationId: job.organizationId },
@@ -337,9 +368,11 @@ async function analysisTable(
   const query = record(job.queryState);
   const routeId = typeof query.routeId === "string" ? query.routeId : undefined;
   const sort =
-    typeof query.sort === "string" ? (query.sort as AnalysisSort) : "sourceRowNumber";
+    typeof query.sort === "string"
+      ? (query.sort as AnalysisSort)
+      : "sourceRowNumber";
   const direction = query.direction === "desc" ? "desc" : "asc";
-  const filters = analysisFilters(job.queryState);
+  const filters = analysisFiltersFromViewState(job.queryState);
   const columns = [
     "Supplier SKU",
     "Supplied ASIN",
@@ -393,7 +426,8 @@ async function analysisTable(
     if (!page) throw new Error("ANALYSIS_EXPORT_SOURCE_NOT_FOUND");
     for (const result of page.rows) {
       const offer = result.supplierRow.normalizedOffer;
-      const catalog = result.supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
+      const catalog =
+        result.supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
       const intelligence = result.offerIntelligence;
       rows.push([
         text(offer?.itemNumber),
@@ -408,7 +442,10 @@ async function analysisTable(
         catalog?.identity.productTypes.join(" | ") ?? "",
         text(result.supplierRow.matchDecision?.status),
         result.supplierRow.matchDecision?.confidence ?? null,
-        text(result.supplierRow.matchDecision?.selectedCandidate?.packGuard?.status),
+        text(
+          result.supplierRow.matchDecision?.selectedCandidate?.packGuard
+            ?.status,
+        ),
         text(intelligence?.featuredOffer.state),
         text(intelligence?.featuredOffer.price),
         text(intelligence?.amazonRetailPresence),
@@ -421,14 +458,17 @@ async function analysisTable(
         text(result.feeEstimate?.completeness),
         text(result.feeEstimate?.scenarioSource),
         result.feeEstimate?.components
-          .map((component) => `${component.type}:${component.finalFee} ${component.currency}`)
+          .map(
+            (component) =>
+              `${component.type}:${component.finalFee} ${component.currency}`,
+          )
           .join(" | ") ?? "",
         text(result.effectiveCogs),
         text(result.currentNetProfit),
         text(result.roiPercent),
         text(result.marginPercent),
         text(result.recommendation),
-        result.reasonCodes.join(" | "),
+        stringList(result.reasonCodes).join(" | "),
         text(result.listingRestriction?.state),
         result.listingRestriction?.reasonCodes.join(" | ") ?? "",
         text(intelligence?.provider),
@@ -465,32 +505,35 @@ export async function processExport(exportJobId: string): Promise<void> {
   });
   if (!claimed.count) return;
   try {
-    const analysis = job.kind === "ANALYSIS_VIEW" ? await analysisTable(job) : null;
-    const source = job.purchaseOrderId
+    const analysis =
+      job.kind === "ANALYSIS_VIEW" ? await analysisTable(job) : null;
+    const order = job.purchaseOrderId
       ? await loadOrder(job.purchaseOrderId)
-      : job.shortlistId
-        ? await loadShortlist(job.shortlistId)
-        : null;
-    if (!analysis && (!source || source.organizationId !== job.organizationId))
+      : null;
+    const shortlist =
+      !order && job.shortlistId ? await loadShortlist(job.shortlistId) : null;
+    if (!analysis && !order && !shortlist)
       throw new Error("EXPORT_SOURCE_NOT_FOUND");
-    if (source && source.revision !== job.sourceRevision)
-      throw new Error("EXPORT_SOURCE_STALE");
-    const isOrder = Boolean(source && "lines" in source);
     if (
-      isOrder &&
-      source &&
-      source.status !== "VALIDATED" &&
-      source.status !== "EXPORTED"
+      (order && order.organizationId !== job.organizationId) ||
+      (shortlist && shortlist.organizationId !== job.organizationId)
     )
+      throw new Error("EXPORT_SOURCE_NOT_FOUND");
+    if (
+      (order && order.revision !== job.sourceRevision) ||
+      (shortlist && shortlist.revision !== job.sourceRevision)
+    )
+      throw new Error("EXPORT_SOURCE_STALE");
+    if (order && order.status !== "VALIDATED" && order.status !== "EXPORTED")
       throw new Error("PURCHASE_ORDER_NOT_VALIDATED");
     const table = analysis
       ? analysis
-      : isOrder && source
-        ? poTable(source, job.kind === "AUDIT_REPORT")
-        : shortlistTable(source!);
+      : order
+        ? poTable(order, job.kind === "AUDIT_REPORT")
+        : shortlistTable(shortlist!);
     const tables =
-      isOrder && source && job.kind === "PURCHASE_ORDER"
-        ? [poSummaryTable(source), table, poTable(source, true)]
+      order && job.kind === "PURCHASE_ORDER"
+        ? [poSummaryTable(order), table, poTable(order, true)]
         : [table];
     const bytes =
       job.format === "CSV"
@@ -498,7 +541,7 @@ export async function processExport(exportJobId: string): Promise<void> {
         : await createXlsxExport(xlsxPayload(tables));
     const checksumSha256 = createHash("sha256").update(bytes).digest("hex");
     const extension = job.format.toLowerCase();
-    const filename = `rizpoint-${job.kind.toLowerCase()}-${job.scanJobId ?? source?.id}.${extension}`;
+    const filename = `rizpoint-${job.kind.toLowerCase()}-${job.scanJobId ?? order?.id ?? shortlist?.id}.${extension}`;
     const objectKey = `exports/${job.organizationId}/${job.id}/${checksumSha256}.${extension}`;
     const contentType =
       job.format === "CSV"
@@ -525,9 +568,9 @@ export async function processExport(exportJobId: string): Promise<void> {
           expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60_000),
         },
       });
-      if (isOrder && source && job.kind === "PURCHASE_ORDER")
+      if (order && job.kind === "PURCHASE_ORDER")
         await transaction.purchaseOrder.update({
-          where: { id: source.id },
+          where: { id: order.id },
           data: { status: "EXPORTED" },
         });
       await transaction.workflowAuditEvent.create({

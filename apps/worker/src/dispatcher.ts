@@ -38,7 +38,7 @@ export async function dispatchOutboxOnce(): Promise<number> {
                 payload.runId,
               ),
         attempts: 3,
-        backoff: { type: "exponential", delay: 1_000 },
+        backoff: { type: "exponential", delay: 1_000, jitter: 0.25 },
         ...(Number.isFinite(notBefore) && notBefore > Date.now()
           ? { delay: notBefore - Date.now() }
           : {}),

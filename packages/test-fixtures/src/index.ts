@@ -21,7 +21,10 @@ export const mockCatalogProducts = [
     packageHierarchy: [{ type: "VARIATION", asin: "B000000002" }],
     images: [
       {
-        url: "https://images-na.ssl-images-amazon.com/images/I/mock-lemon-soda.jpg",
+        // A self-contained image keeps mock-mode browser tests offline and
+        // deterministic. Live Catalog Items observations may still provide
+        // allowlisted Amazon image hotlinks.
+        url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d4f47'/%3E%3Cpath d='M20 18h24v28H20z' fill='%23f5d54a'/%3E%3Cpath d='M20 30h24' stroke='%230d4f47' stroke-width='4'/%3E%3C/svg%3E",
         variant: "MAIN",
       },
     ],

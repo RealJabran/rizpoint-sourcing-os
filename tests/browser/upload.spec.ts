@@ -17,7 +17,12 @@ function captureUnexpectedBrowserFailures(
   const failedResponses: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+    if (message.type() === "error") {
+      const location = message.location().url;
+      consoleErrors.push(
+        location ? `${message.text()} (${location})` : message.text(),
+      );
+    }
   });
   page.on("response", (response) => {
     if (response.status() >= 400)
@@ -149,6 +154,59 @@ test.describe("catalog upload", () => {
       "Blocked pack contradiction",
     );
     await expect(page.getByText(/MOCK_AMAZON/).first()).toBeVisible();
+
+    await page.getByRole("button", { name: /DEMO-001/ }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("dialog")).toContainText(
+      "Sources, timestamps, and freshness",
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    const lowCompetitionResults = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/scans/${created.scanId}/results?`) &&
+        new URL(response.url()).searchParams.get("maxVisibleOfferCount") ===
+          "3",
+    );
+    await page.getByRole("button", { name: "Low competition" }).click();
+    await lowCompetitionResults;
+
+    const exportQueued = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/scans/${created.scanId}/analysis-exports`) &&
+        response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    const exportResponse = await exportQueued;
+    expect(exportResponse.status()).toBe(202);
+    const exportJob = (await exportResponse.json()) as { id: string };
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(
+            `/api/exports/${exportJob.id}`,
+          );
+          expect(response.status()).toBe(200);
+          return (await response.json()) as { status: string };
+        },
+        { timeout: 30_000 },
+      )
+      .toMatchObject({ status: "COMPLETED" });
+    const exportAlert = page
+      .getByRole("status")
+      .filter({ hasText: "Active-view export" });
+    await expect(exportAlert).toContainText("Download");
+    await expect(
+      exportAlert.getByRole("link", { name: /Download/ }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Refresh evidence" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: /Evidence refresh status/i }),
+    ).toBeVisible();
 
     for (const width of [1440, 1024, 390]) {
       await page.setViewportSize({ width, height: 900 });

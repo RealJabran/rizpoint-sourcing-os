@@ -36,9 +36,13 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
-    const code = error instanceof Error ? error.message : "ANALYSIS_EXPORT_FAILED";
+    const code =
+      error instanceof Error ? error.message : "ANALYSIS_EXPORT_FAILED";
     if (code === "ANALYSIS_EXPORT_SCAN_NOT_FOUND")
       return NextResponse.json({ error: "SCAN_NOT_FOUND" }, { status: 404 });
-    return NextResponse.json({ error: "ANALYSIS_EXPORT_UNAVAILABLE" }, { status: 409 });
+    return NextResponse.json(
+      { error: "ANALYSIS_EXPORT_UNAVAILABLE" },
+      { status: 409 },
+    );
   }
 }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { poSummaryTable, poTable } from "../src/export.js";
+import {
+  analysisFiltersFromViewState,
+  poSummaryTable,
+  poTable,
+} from "../src/export.js";
 
 const order = {
   id: "po_123",
@@ -82,5 +86,25 @@ describe("purchase-order export tables", () => {
     expect(audit.rows[0]).toContain("history-provider");
     expect(audit.rows[0]).toContain("fee-provider");
     expect(audit.rows[0]).not.toContain("wrong-provider");
+  });
+
+  it("replays every persisted active-view offer-count bound", () => {
+    expect(
+      analysisFiltersFromViewState({
+        minVisibleOfferCount: 1,
+        maxVisibleOfferCount: 5,
+        minFbaOfferCount: 1,
+        maxFbaOfferCount: 3,
+        minFbmOfferCount: 0,
+        maxFbmOfferCount: 2,
+      }),
+    ).toMatchObject({
+      minVisibleOfferCount: 1,
+      maxVisibleOfferCount: 5,
+      minFbaOfferCount: 1,
+      maxFbaOfferCount: 3,
+      minFbmOfferCount: 0,
+      maxFbmOfferCount: 2,
+    });
   });
 });

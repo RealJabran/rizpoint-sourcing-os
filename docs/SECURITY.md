@@ -31,6 +31,12 @@ The browser is untrusted. Web routes enforce an organization context before quer
 
 Phase 7.6 keeps `PROVIDER_MODE=mock` as the default. Live SP-API connectivity and enrichment are worker-only, explicitly opted-in boundaries.
 
+Catalog images remain provider hotlinks rather than copied public objects. The
+production CSP permits only the documented Amazon catalog image origins
+(`images-na.ssl-images-amazon.com` and `m.media-amazon.com`), self-hosted
+images, and `data:` placeholders; a provider observation cannot broaden that
+browser allowlist.
+
 1. Register a **private** application in the Amazon Solution Provider Portal and request only the roles needed for the intended use. The initial read-only connection probe uses `getMarketplaceParticipations` from the Sellers API. Catalog, fees, and restriction enrichment require the applicable `Product Listing` role; Amazon's ASIN fee-estimate guide also requires `Pricing`. Confirm the complete role matrix in Amazon's current official documentation before authorization. Do not request restricted-data roles for this product workflow.
 2. As the Seller Central primary user, open **Develop Apps**, choose the private application, and choose **Authorize app** for the seller account. Amazon displays a refresh token for each authorization. Treat it as a password: it is long-lived, must not enter a URL, browser, terminal history, log, test snapshot, or Git.
 3. View the application's LWA client ID and client secret in the Solution Provider Portal. Amazon requires runtime token exchange at `https://api.amazon.com/auth/o2/token` with `grant_type=refresh_token`, client ID, client secret, and refresh token. The application keeps only the resulting short-lived access token in worker memory.

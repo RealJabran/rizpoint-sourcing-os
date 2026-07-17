@@ -23,4 +23,16 @@ describe("upload content security policy", () => {
       contentSecurityPolicy("https://storage.example", "production"),
     ).not.toContain("unsafe-eval");
   });
+
+  it("allows only documented Amazon catalog image origins in production", () => {
+    const policy = contentSecurityPolicy(
+      "https://storage.example",
+      "production",
+    );
+    expect(policy).toContain(
+      "img-src 'self' data: https://images-na.ssl-images-amazon.com https://m.media-amazon.com",
+    );
+    expect(policy).not.toContain("img-src *");
+    expect(policy).not.toContain("unsafe-eval");
+  });
 });

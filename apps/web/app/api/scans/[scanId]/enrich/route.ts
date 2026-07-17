@@ -19,7 +19,10 @@ export async function POST(
     .object({ idempotencyKey: z.string().uuid().optional() })
     .safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: "INVALID_REFRESH_REQUEST" }, { status: 400 });
+    return NextResponse.json(
+      { error: "INVALID_REFRESH_REQUEST" },
+      { status: 400 },
+    );
   const organization = await ensurePhaseZeroOrganization();
   const run = await queueEnrichment(
     organization.id,

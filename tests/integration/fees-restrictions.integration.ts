@@ -7,6 +7,7 @@ import {
   db,
   listAnalysisResults,
   persistEnrichmentItem,
+  queueExport,
 } from "../../packages/database/src/index.js";
 
 const suffix = randomUUID();
@@ -320,6 +321,59 @@ try {
   });
   assert.equal(excluded?.total, 0);
 
+  const activeViewExport = await queueExport({
+    organizationId: organization.id,
+    kind: "ANALYSIS_VIEW",
+    format: "CSV",
+    scanJobId: scan.id,
+    queryState: {
+      schemaVersion: 1,
+      maxFbaOfferCount: 3,
+      maxFbmOfferCount: 2,
+      sort: "sourceRowNumber",
+      direction: "asc",
+      visibleGroups: ["identity"],
+    },
+    idempotencyKey: `slice-six-analysis-export-${suffix}`,
+  });
+  const duplicateActiveViewExport = await queueExport({
+    organizationId: organization.id,
+    kind: "ANALYSIS_VIEW",
+    format: "CSV",
+    scanJobId: scan.id,
+    queryState: {
+      schemaVersion: 1,
+      maxFbaOfferCount: 3,
+      maxFbmOfferCount: 2,
+      sort: "sourceRowNumber",
+      direction: "asc",
+      visibleGroups: ["identity"],
+    },
+    idempotencyKey: `slice-six-analysis-export-${suffix}`,
+  });
+  assert.equal(duplicateActiveViewExport.id, activeViewExport.id);
+  assert.equal(activeViewExport.scanJobId, scan.id);
+  assert.equal(activeViewExport.sourceRevision, 0);
+  assert.deepEqual(activeViewExport.queryState, {
+    schemaVersion: 1,
+    maxFbaOfferCount: 3,
+    maxFbmOfferCount: 2,
+    sort: "sourceRowNumber",
+    direction: "asc",
+    visibleGroups: ["identity"],
+  });
+  await assert.rejects(
+    queueExport({
+      organizationId: "another-organization",
+      kind: "ANALYSIS_VIEW",
+      format: "CSV",
+      scanJobId: scan.id,
+      queryState: { schemaVersion: 1, visibleGroups: ["identity"] },
+      idempotencyKey: `cross-tenant-analysis-export-${suffix}`,
+    }),
+    /ANALYSIS_EXPORT_SCAN_NOT_FOUND/,
+  );
+
   const otherTenantCount = await db.providerObservation.count({
     where: {
       enrichmentItemId: item.id,
@@ -331,6 +385,13 @@ try {
   assert.equal(otherTenantCount, 0);
   console.log("integration fee/restriction persistence completed");
 } finally {
+  await db.outboxEvent.deleteMany({
+    where: { organizationId: organization.id },
+  });
+  await db.exportJob.deleteMany({ where: { organizationId: organization.id } });
+  await db.workflowAuditEvent.deleteMany({
+    where: { organizationId: organization.id },
+  });
   await db.scanJob.deleteMany({ where: { organizationId: organization.id } });
   await db.upload.deleteMany({ where: { organizationId: organization.id } });
   await db.supplier.deleteMany({ where: { organizationId: organization.id } });

@@ -108,6 +108,15 @@ Private production uses an authenticated owner session whose membership and sess
 
 The analysis API queries a tenant-scoped current-result projection in 100-row windows with allowlisted filters and sorting. Grid DTOs explicitly select lightweight fields; heavy evidence is fetched only for the drawer. An inline override transaction records typed Decimal values and audit metadata, creates a targeted calculation run, target, and run-ID outbox event together. Targeted processing fetches only target rows. Promotion verifies that the active override still points to the same run and revision, so an older worker cannot replace a newer result; targeted completion does not reset the scan ingestion state.
 
+An active-view export persists the versioned filter/sort/route state and the
+current scan attempt revision before publishing one idempotent export outbox
+event. The worker repeats the same tenant-scoped query in bounded 200-row
+windows, refuses a superseded source revision, and writes the CSV/XLSX artifact
+only to private storage. Evidence refresh is a named, idempotency-keyed request
+that reuses the existing enrichment run/checkpoints. `Retry-After` is honored
+exactly; retryable provider responses without a deadline use bounded jitter so
+concurrent workers do not resume in lockstep.
+
 ## Runtime baselines
 
 Local Compose executes the optimized Next.js production server. Its unauthenticated fixture mode is not the private-production mode: it requires both explicit demo flags, loopback application/auth URLs, and host ports bound to loopback. Private production continues to reject demo mode and requires authenticated membership.

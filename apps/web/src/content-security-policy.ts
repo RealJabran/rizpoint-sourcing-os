@@ -7,6 +7,14 @@ function storageOrigin(value: string | undefined): string | null {
   }
 }
 
+// Catalog Items image links are rendered as hotlinks. Keep this list narrow:
+// provider observations never grant arbitrary third-party image origins access
+// to the browser.
+const AMAZON_CATALOG_IMAGE_SOURCES = [
+  "https://images-na.ssl-images-amazon.com",
+  "https://m.media-amazon.com",
+];
+
 export function contentSecurityPolicy(
   publicStorageEndpoint = process.env.S3_PUBLIC_ENDPOINT,
   environment = process.env.NODE_ENV,
@@ -27,6 +35,7 @@ export function contentSecurityPolicy(
     "frame-ancestors 'none'",
     "form-action 'self'",
     "object-src 'none'",
+    `img-src 'self' data: ${AMAZON_CATALOG_IMAGE_SOURCES.join(" ")}`,
     `script-src ${scriptSources}`,
     "style-src 'self' 'unsafe-inline'",
     `connect-src ${connectSources}`,
