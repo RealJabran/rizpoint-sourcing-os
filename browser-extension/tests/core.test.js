@@ -11,8 +11,14 @@ test("detects all supported marketplaces including subdomains", () => {
 });
 
 test("extracts ASIN only from valid product identifiers", () => {
-  assert.equal(Core.parseAsin("https://www.amazon.com/dp/B00RDFSQPQ?th=1"), "B00RDFSQPQ");
-  assert.equal(Core.parseAsin("https://amazon.ae/gp/product/B012345678/"), "B012345678");
+  assert.equal(
+    Core.parseAsin("https://www.amazon.com/dp/B00RDFSQPQ?th=1"),
+    "B00RDFSQPQ",
+  );
+  assert.equal(
+    Core.parseAsin("https://amazon.ae/gp/product/B012345678/"),
+    "B012345678",
+  );
   assert.equal(Core.parseAsin("B00RDFSQPQ"), "B00RDFSQPQ");
   assert.equal(Core.parseAsin("not-an-asin"), null);
 });
@@ -24,7 +30,15 @@ test("normalizes common marketplace number formats", () => {
 });
 
 test("calculates deterministic profit, margin and ROI", () => {
-  const result = Core.calculateProfit({ salePrice: 30, productCost: 10, prepFee: 1.5, inboundShipping: 1, otherCost: 0.5, feeComponents: { referralFee: 4.5, fulfillmentFee: 5, storageFee: 0.2 }, includeStorageFee: false });
+  const result = Core.calculateProfit({
+    salePrice: 30,
+    productCost: 10,
+    prepFee: 1.5,
+    inboundShipping: 1,
+    otherCost: 0.5,
+    feeComponents: { referralFee: 4.5, fulfillmentFee: 5, storageFee: 0.2 },
+    includeStorageFee: false,
+  });
   assert.equal(result.amazonFees, "9.50");
   assert.equal(result.landedCost, "13.00");
   assert.equal(result.profit, "7.50");
@@ -33,8 +47,20 @@ test("calculates deterministic profit, margin and ROI", () => {
 });
 
 test("uses VAT reserve only when explicitly enabled", () => {
-  const off = Core.calculateProfit({ salePrice: 120, productCost: 50, feeComponents: {}, includeTaxReserve: false, taxRate: 20 });
-  const on = Core.calculateProfit({ salePrice: 120, productCost: 50, feeComponents: {}, includeTaxReserve: true, taxRate: 20 });
+  const off = Core.calculateProfit({
+    salePrice: 120,
+    productCost: 50,
+    feeComponents: {},
+    includeTaxReserve: false,
+    taxRate: 20,
+  });
+  const on = Core.calculateProfit({
+    salePrice: 120,
+    productCost: 50,
+    feeComponents: {},
+    includeTaxReserve: true,
+    taxRate: 20,
+  });
   assert.equal(off.taxReserve, "0.00");
   assert.equal(on.taxReserve, "20.00");
   assert.equal(on.profit, "50.00");
@@ -42,8 +68,12 @@ test("uses VAT reserve only when explicitly enabled", () => {
 
 test("money arithmetic does not inherit binary floating-point errors", () => {
   const result = Core.calculateProfit({
-    salePrice: "0.30", productCost: "0.10", prepFee: "0.10", inboundShipping: "0.00",
-    otherCost: "0.00", feeComponents: { referralFee: "0.10" }
+    salePrice: "0.30",
+    productCost: "0.10",
+    prepFee: "0.10",
+    inboundShipping: "0.00",
+    otherCost: "0.00",
+    feeComponents: { referralFee: "0.10" },
   });
   assert.equal(result.profit, "0.00");
   assert.equal(result.amazonFees, "0.10");

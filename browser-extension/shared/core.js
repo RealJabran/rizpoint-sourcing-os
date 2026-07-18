@@ -7,21 +7,53 @@
 
   const MARKETPLACES = Object.freeze({
     "amazon.com": {
-      id: "US", label: "Amazon USA", flag: "🇺🇸", currency: "USD", symbol: "$",
-      sellerCentral: "sellercentral.amazon.com", countryCode: "US", locale: "en-US", lang: "en_US", vatRate: 0
+      id: "US",
+      label: "Amazon USA",
+      flag: "🇺🇸",
+      currency: "USD",
+      symbol: "$",
+      sellerCentral: "sellercentral.amazon.com",
+      countryCode: "US",
+      locale: "en-US",
+      lang: "en_US",
+      vatRate: 0,
     },
     "amazon.co.uk": {
-      id: "UK", label: "Amazon UK", flag: "🇬🇧", currency: "GBP", symbol: "£",
-      sellerCentral: "sellercentral.amazon.co.uk", countryCode: "GB", locale: "en-GB", lang: "en_GB", vatRate: 20
+      id: "UK",
+      label: "Amazon UK",
+      flag: "🇬🇧",
+      currency: "GBP",
+      symbol: "£",
+      sellerCentral: "sellercentral.amazon.co.uk",
+      countryCode: "GB",
+      locale: "en-GB",
+      lang: "en_GB",
+      vatRate: 20,
     },
     "amazon.ae": {
-      id: "AE", label: "Amazon UAE", flag: "🇦🇪", currency: "AED", symbol: "AED ",
-      sellerCentral: "sellercentral.amazon.ae", countryCode: "AE", locale: "en-AE", lang: "en_AE", vatRate: 5
+      id: "AE",
+      label: "Amazon UAE",
+      flag: "🇦🇪",
+      currency: "AED",
+      symbol: "AED ",
+      sellerCentral: "sellercentral.amazon.ae",
+      countryCode: "AE",
+      locale: "en-AE",
+      lang: "en_AE",
+      vatRate: 5,
     },
     "amazon.sa": {
-      id: "SA", label: "Amazon Saudi Arabia", flag: "🇸🇦", currency: "SAR", symbol: "SAR ",
-      sellerCentral: "sellercentral.amazon.sa", countryCode: "SA", locale: "en-SA", lang: "en_SA", vatRate: 15
-    }
+      id: "SA",
+      label: "Amazon Saudi Arabia",
+      flag: "🇸🇦",
+      currency: "SAR",
+      symbol: "SAR ",
+      sellerCentral: "sellercentral.amazon.sa",
+      countryCode: "SA",
+      locale: "en-SA",
+      lang: "en_SA",
+      vatRate: 15,
+    },
   });
 
   const DEFAULT_SETTINGS = Object.freeze({
@@ -36,19 +68,35 @@
     defaultInboundShipping: "",
     defaultOtherCost: "",
     visible: {
-      asin: true, category: true, bsr: true, buyBox: true, offers: true,
-      dimensions: true, fees: true, profit: true, roi: true, margin: true
-    }
+      asin: true,
+      category: true,
+      bsr: true,
+      buyBox: true,
+      offers: true,
+      dimensions: true,
+      fees: true,
+      profit: true,
+      roi: true,
+      margin: true,
+    },
   });
 
   function marketplaceFromHost(hostname) {
-    const host = String(hostname || "").toLowerCase().replace(/^www\./, "");
-    return Object.entries(MARKETPLACES).find(([domain]) => host === domain || host.endsWith(`.${domain}`))?.[1] || null;
+    const host = String(hostname || "")
+      .toLowerCase()
+      .replace(/^www\./, "");
+    return (
+      Object.entries(MARKETPLACES).find(
+        ([domain]) => host === domain || host.endsWith(`.${domain}`),
+      )?.[1] || null
+    );
   }
 
   function parseAsin(value) {
     const text = String(value || "");
-    const urlMatch = text.match(/\/(?:dp|gp\/product|gp\/aw\/d|product)\/([A-Z0-9]{10})(?:[/?]|$)/i);
+    const urlMatch = text.match(
+      /\/(?:dp|gp\/product|gp\/aw\/d|product)\/([A-Z0-9]{10})(?:[/?]|$)/i,
+    );
     if (urlMatch) return urlMatch[1].toUpperCase();
     const exact = text.trim().match(/^[A-Z0-9]{10}$/i);
     return exact ? exact[0].toUpperCase() : null;
@@ -56,7 +104,9 @@
 
   function normalizeNumber(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    let text = String(value ?? "").replace(/[^0-9,.'\-]/g, "").replace(/'/g, "");
+    let text = String(value ?? "")
+      .replace(/[^0-9,.'\-]/g, "")
+      .replace(/'/g, "");
     if (!text) return null;
     const comma = text.lastIndexOf(",");
     const dot = text.lastIndexOf(".");
@@ -68,7 +118,10 @@
 
   function normalizeDecimal(value) {
     if (value === null || value === undefined || value === "") return null;
-    let text = String(value).trim().replace(/[^0-9,.'\-]/g, "").replace(/'/g, "");
+    let text = String(value)
+      .trim()
+      .replace(/[^0-9,.'\-]/g, "")
+      .replace(/'/g, "");
     if (!text || text === "-") return null;
     const comma = text.lastIndexOf(",");
     const dot = text.lastIndexOf(".");
@@ -94,7 +147,7 @@
 
   function divideHalfUp(numerator, denominator) {
     if (denominator === 0n) return null;
-    const negative = (numerator < 0n) !== (denominator < 0n);
+    const negative = numerator < 0n !== denominator < 0n;
     const a = numerator < 0n ? -numerator : numerator;
     const b = denominator < 0n ? -denominator : denominator;
     const quotient = (a + b / 2n) / b;
@@ -113,7 +166,10 @@
   }
 
   function sumDecimals(values, decimals = 4) {
-    return scaledString(values.reduce((sum, value) => sum + toScaled(value), 0n), decimals);
+    return scaledString(
+      values.reduce((sum, value) => sum + toScaled(value), 0n),
+      decimals,
+    );
   }
 
   function money(value, marketplace) {
@@ -121,8 +177,10 @@
     if (amount === null) return "—";
     try {
       return new Intl.NumberFormat(marketplace?.locale || "en-US", {
-        style: "currency", currency: marketplace?.currency || "USD",
-        minimumFractionDigits: 2, maximumFractionDigits: 2
+        style: "currency",
+        currency: marketplace?.currency || "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       }).format(amount);
     } catch (_) {
       return `${marketplace?.symbol || "$"}${amount.toFixed(2)}`;
@@ -141,23 +199,46 @@
     const closingFee = toScaled(feeComponents.closingFee);
     const digitalServicesFee = toScaled(feeComponents.digitalServicesFee);
     const otherAmazonFee = toScaled(feeComponents.otherAmazonFee);
-    const storageFee = input.includeStorageFee ? toScaled(feeComponents.storageFee) : 0n;
+    const storageFee = input.includeStorageFee
+      ? toScaled(feeComponents.storageFee)
+      : 0n;
     const taxRate = input.includeTaxReserve ? toScaled(input.taxRate) : 0n;
-    const taxNet = taxRate > 0n ? divideHalfUp(salePrice * 100n * SCALE, 100n * SCALE + taxRate) : salePrice;
+    const taxNet =
+      taxRate > 0n
+        ? divideHalfUp(salePrice * 100n * SCALE, 100n * SCALE + taxRate)
+        : salePrice;
     const taxReserve = salePrice - taxNet;
-    const amazonFees = referralFee + fulfillmentFee + closingFee + digitalServicesFee + otherAmazonFee + storageFee;
+    const amazonFees =
+      referralFee +
+      fulfillmentFee +
+      closingFee +
+      digitalServicesFee +
+      otherAmazonFee +
+      storageFee;
     const landedCost = productCost + prepFee + inboundShipping + otherCost;
     const profit = salePrice - amazonFees - landedCost - taxReserve;
-    const ratio = (numerator, denominator) => denominator > 0n ? scaledString(divideHalfUp(numerator * 100n * SCALE, denominator), 2) : null;
+    const ratio = (numerator, denominator) =>
+      denominator > 0n
+        ? scaledString(divideHalfUp(numerator * 100n * SCALE, denominator), 2)
+        : null;
     return {
-      salePrice: scaledString(salePrice), amazonFees: scaledString(amazonFees), landedCost: scaledString(landedCost),
-      taxReserve: scaledString(taxReserve), profit: scaledString(profit), profitSign: profit > 0n ? 1 : profit < 0n ? -1 : 0,
-      margin: ratio(profit, salePrice), roi: ratio(profit, landedCost),
+      salePrice: scaledString(salePrice),
+      amazonFees: scaledString(amazonFees),
+      landedCost: scaledString(landedCost),
+      taxReserve: scaledString(taxReserve),
+      profit: scaledString(profit),
+      profitSign: profit > 0n ? 1 : profit < 0n ? -1 : 0,
+      margin: ratio(profit, salePrice),
+      roi: ratio(profit, landedCost),
       netPayout: scaledString(salePrice - amazonFees - taxReserve),
       components: {
-        referralFee: scaledString(referralFee), fulfillmentFee: scaledString(fulfillmentFee), closingFee: scaledString(closingFee),
-        digitalServicesFee: scaledString(digitalServicesFee), otherAmazonFee: scaledString(otherAmazonFee), storageFee: scaledString(storageFee)
-      }
+        referralFee: scaledString(referralFee),
+        fulfillmentFee: scaledString(fulfillmentFee),
+        closingFee: scaledString(closingFee),
+        digitalServicesFee: scaledString(digitalServicesFee),
+        otherAmazonFee: scaledString(otherAmazonFee),
+        storageFee: scaledString(storageFee),
+      },
     };
   }
 
@@ -169,9 +250,21 @@
     return {
       ...DEFAULT_SETTINGS,
       ...(stored || {}),
-      visible: { ...DEFAULT_SETTINGS.visible, ...(stored?.visible || {}) }
+      visible: { ...DEFAULT_SETTINGS.visible, ...(stored?.visible || {}) },
     };
   }
 
-  return { MARKETPLACES, DEFAULT_SETTINGS, marketplaceFromHost, parseAsin, normalizeNumber, normalizeDecimal, money, sumDecimals, calculateProfit, calculatorUrl, mergeSettings };
+  return {
+    MARKETPLACES,
+    DEFAULT_SETTINGS,
+    marketplaceFromHost,
+    parseAsin,
+    normalizeNumber,
+    normalizeDecimal,
+    money,
+    sumDecimals,
+    calculateProfit,
+    calculatorUrl,
+    mergeSettings,
+  };
 });

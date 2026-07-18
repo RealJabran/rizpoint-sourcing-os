@@ -50,9 +50,9 @@ npm run check
 
 ## Marketplace mapping
 
-| Store | Marketplace | Currency | Official calculator host |
-|---|---|---:|---|
-| amazon.com | USA | USD | sellercentral.amazon.com |
-| amazon.co.uk | UK | GBP | sellercentral.amazon.co.uk |
-| amazon.ae | UAE | AED | sellercentral.amazon.ae |
-| amazon.sa | Saudi Arabia | SAR | sellercentral.amazon.sa |
+| Store        | Marketplace  | Currency | Official calculator host   |
+| ------------ | ------------ | -------: | -------------------------- |
+| amazon.com   | USA          |      USD | sellercentral.amazon.com   |
+| amazon.co.uk | UK           |      GBP | sellercentral.amazon.co.uk |
+| amazon.ae    | UAE          |      AED | sellercentral.amazon.ae    |
+| amazon.sa    | Saudi Arabia |      SAR | sellercentral.amazon.sa    |
