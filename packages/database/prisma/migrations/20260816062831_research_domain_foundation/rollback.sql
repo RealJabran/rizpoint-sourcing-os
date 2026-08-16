@@ -1,0 +1,41 @@
+-- Destructive rollback for the additive Prompt 02 research foundation.
+-- Back up any research data before running. Wholesale tables are untouched.
+DROP TABLE IF EXISTS "alert_events";
+DROP TABLE IF EXISTS "alert_rules";
+DROP TABLE IF EXISTS "opportunity_reasons";
+DROP TABLE IF EXISTS "opportunity_assessments";
+DROP TABLE IF EXISTS "historical_metric_points";
+DROP TABLE IF EXISTS "historical_metric_series";
+DROP TABLE IF EXISTS "seller_observations";
+DROP TABLE IF EXISTS "brand_observations";
+DROP TABLE IF EXISTS "category_observations";
+DROP TABLE IF EXISTS "market_observations";
+DROP TABLE IF EXISTS "product_market_observations";
+DROP TABLE IF EXISTS "product_keyword_observations";
+DROP TABLE IF EXISTS "keyword_observations";
+DROP TABLE IF EXISTS "research_observations";
+DROP TABLE IF EXISTS "research_notes";
+DROP TABLE IF EXISTS "research_project_items";
+DROP TABLE IF EXISTS "research_project_tags";
+DROP TABLE IF EXISTS "product_watches";
+DROP TABLE IF EXISTS "market_members";
+DROP TABLE IF EXISTS "market_definitions";
+DROP TABLE IF EXISTS "keywords";
+DROP TABLE IF EXISTS "research_tags";
+DROP TABLE IF EXISTS "research_projects";
+
+DROP TYPE IF EXISTS "AlertEventStatus";
+DROP TYPE IF EXISTS "AlertOperator";
+DROP TYPE IF EXISTS "AlertRuleStatus";
+DROP TYPE IF EXISTS "OpportunityReasonKind";
+DROP TYPE IF EXISTS "OpportunityRecommendation";
+DROP TYPE IF EXISTS "OpportunityAssessmentStatus";
+DROP TYPE IF EXISTS "HistoricalSubjectType";
+DROP TYPE IF EXISTS "ResearchObservationCompleteness";
+DROP TYPE IF EXISTS "ResearchObservationType";
+DROP TYPE IF EXISTS "MarketMemberSource";
+DROP TYPE IF EXISTS "MarketMembershipMode";
+DROP TYPE IF EXISTS "ResearchWatchStatus";
+DROP TYPE IF EXISTS "ResearchItemKind";
+DROP TYPE IF EXISTS "ResearchProjectStatus";
+DROP TYPE IF EXISTS "ResearchProjectMode";

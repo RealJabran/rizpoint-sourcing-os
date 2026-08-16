@@ -1,6 +1,16 @@
 # Product
 
-RizPoint Sourcing OS helps an Amazon wholesale operator turn supplier catalogs into an auditable purchase-ready shortlist.
+RizPoint Sourcing OS is an evidence-first Amazon sourcing and market-research
+platform. It supports two bounded workflows on one auditable catalog identity:
+
+- **Wholesale sourcing** turns supplier catalogs into purchase-ready decisions.
+- **Amazon market research** organizes private-label and manual/wholesale ASIN
+  research into projects, explicit markets, observations, assessments, and
+  watches.
+
+Research does not manufacture supplier rows and never replaces the wholesale
+workflow. Both modes share catalog identity, tenant boundaries, provenance,
+freshness, private evidence, and deterministic calculation rules.
 
 ## Product principles
 
@@ -8,6 +18,8 @@ RizPoint Sourcing OS helps an Amazon wholesale operator turn supplier catalogs i
 - AI may suggest column mappings, candidates, and explanations; it cannot calculate financial outputs.
 - Every product decision must expose source evidence, timestamps, assumptions, and unresolved risks.
 - A case, pack, or unit contradiction blocks automatic acceptance.
+- Raw provider observations and derived research assessments are separate
+  records. A score always cites its input observations and calculation version.
 
 ## Phase 1 scope
 
@@ -59,3 +71,17 @@ Its active-view CSV/XLSX exports are private, formula-safe snapshots of the same
 typed server filters used by the grid. Evidence refreshes are checkpointed,
 organization-scoped jobs and preserve explicit queued, partial, and failed
 states. Licensed historical enrichment remains intentionally deferred.
+
+## Research foundation scope
+
+The research foundation adds organization-scoped projects for private-label,
+wholesale, and manual-ASIN work. Projects may contain existing catalog products,
+keywords, versioned market definitions, tags, notes, watches, opportunity
+assessments, and alert foundations. Marketplace- and time-specific research
+observations use a shared provenance envelope with typed keyword, product-market,
+category, brand, and seller projections.
+
+This foundation does not add a research UI, claim live keyword/history coverage,
+or infer unavailable metrics. Licensed provider selection, entitlement checks,
+research jobs, calculation engines, and user-facing research workflows are later
+prompts.

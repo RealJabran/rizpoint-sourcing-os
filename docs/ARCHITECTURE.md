@@ -151,6 +151,46 @@ These are source-only boundaries. They do not change routes, database schema,
 tenant predicates, provider meanings, PackGuard gates, matching rules, or
 Decimal financial behavior.
 
+## Research bounded context
+
+Research is additive to wholesale and shares the existing global
+`CatalogProduct`/`ProductIdentifier` identity. A research project references that
+identity directly; it never creates a second product truth table or a synthetic
+supplier row. `PRIVATE_LABEL`, `WHOLESALE`, and `MANUAL_ASIN` are explicit project
+modes, while all project, market, keyword, watch, note, assessment, and alert
+records remain organization-scoped.
+
+Research evidence uses a normalized two-level structure:
+
+1. `ResearchObservation` is the immutable provenance envelope: organization,
+   marketplace, provider key, operation, source key/reference, observation and
+   expiry times, freshness, completeness, status, request lineage, and private
+   raw-evidence reference.
+2. A one-to-one typed projection (`KeywordObservation`,
+   `ProductKeywordObservation`, `ProductMarketObservation`,
+   `MarketObservation`, `CategoryObservation`, `BrandObservation`, or
+   `SellerObservation`) stores queryable facts. Missing facts remain null.
+
+The envelope is separate from scan-bound `ProviderObservation`, whose ownership
+through `EnrichmentItem → SupplierRow` remains correct for wholesale. Provider
+adapters will write the research envelope through later capability-specific job
+handlers; Prompt 02 adds no live provider behavior.
+
+Sparse history is stored as `HistoricalMetricSeries` plus append-only points.
+Each point has exactly one typed value and references the observation that
+retrieved it. A btree supports tenant/series/time reads and a BRIN index supports
+time-based retention scans. Series default to 730 days; provider rights may
+require a shorter period. Retention deletes expired points in bounded batches,
+never invents interpolation, and keeps PostgreSQL partition-ready. A separate
+time-series database or partitioning is deferred until scale measurements prove
+the need.
+
+`OpportunityAssessment` and its ordered reasons are immutable derived records.
+They store a calculation version, `calculated_at`, and explicit input observation
+references. They cannot update or replace the raw observation envelope. The
+database repository boundary is `packages/database/src/repositories/research.ts`;
+commands validate typed subjects and all reads/writes carry `organization_id`.
+
 ## Phase 6 workflow and exports
 
 Shortlist and purchase-order aggregates are organization-scoped PostgreSQL records. PO lines snapshot the selected current immutable profit scenario, route, supplier-owned ordering-rule provenance, quantities, pack conversion, MOQ, order-multiple rounding, and Decimal totals. Validation rebuilds line/header totals before transition. The worker owns export generation through the transactional outbox; export jobs are persisted before Redis publication, recover expired running leases, and write checksummed allowlisted CSV/XLSX artifacts to private object storage. Download routes verify the organization and redirect only on an explicit download request, never exposing object keys.

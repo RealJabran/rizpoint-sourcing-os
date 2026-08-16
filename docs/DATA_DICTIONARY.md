@@ -83,6 +83,40 @@ retained for audit; browser DTOs expose only its checksum reference.
 
 Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal libraries and explicit rounding policies. Binary floats are prohibited. Ratios are represented as Decimal values, not percentages stored as floats.
 
+## Research foundation entities
+
+| Entity                                                | Purpose                                                                                                                                                                | Tenant/time boundary                                                      |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `ResearchProject` / `ResearchProjectItem`             | Private-label, wholesale, or manual-ASIN research container and typed product/market/keyword/category/brand/seller subjects. Product items reference `CatalogProduct`. | `organization_id`; project marketplace                                    |
+| `ResearchTag` / `ResearchProjectTag` / `ResearchNote` | Organization-owned labels and evidence-linked notes.                                                                                                                   | Composite tenant foreign keys                                             |
+| `ProductWatch`                                        | Marketplace-specific watch cadence for an existing catalog product.                                                                                                    | Unique organization + marketplace + product                               |
+| `MarketDefinition` / `MarketMember`                   | Versioned frozen or dynamic universe and time-bounded product membership.                                                                                              | `organization_id`, marketplace, joined/left time                          |
+| `Keyword`                                             | Original phrase plus normalized identity and locale.                                                                                                                   | Unique organization + marketplace + locale + normalized phrase            |
+| `ResearchObservation`                                 | Common external-evidence envelope.                                                                                                                                     | Organization + marketplace + provider + operation + observed/expiry time  |
+| Typed research observations                           | Queryable keyword, product-keyword, product-market, market, category, brand, and seller facts.                                                                         | Composite foreign key to the tenant observation envelope                  |
+| `HistoricalMetricSeries` / `HistoricalMetricPoint`    | Sparse, typed history whose points cite the retrieval observation.                                                                                                     | Organization + marketplace + subject + metric + provider; point timestamp |
+| `OpportunityAssessment` / `OpportunityReason`         | Immutable derived recommendation and decomposed evidence-bearing reasons.                                                                                              | `organization_id`, project, marketplace, `calculated_at`                  |
+| `AlertRule` / `AlertEvent`                            | Monitoring and deduplicated event foundations; scheduling/evaluation comes later.                                                                                      | `organization_id`, marketplace, observation references                    |
+
+`ResearchObservation` requires provider key, operation, marketplace,
+`observed_at`, freshness, completeness, provider status, an idempotent observation
+key, and optional sanitized request hash/inputs and private raw-evidence reference.
+Its typed projection never reads business truth from raw JSON. Scan-bound
+`ProviderObservation` remains unchanged for wholesale enrichment.
+
+History values are mutually exclusive `NUMERIC(30,10)`, `BIGINT`, Boolean, or
+text columns. Money and money-derived ratios use the decimal column; identifier
+values remain strings. Points are append-only per series, source observation,
+and metric timestamp. The default retention is 730 days, with a btree on
+organization/series/time and a BRIN index on time. Provider license/rights may
+shorten retention. Partitioning is deferred until measured volume justifies it.
+
+Opportunity scores and reason weights are `NUMERIC(12,4)`. Every assessment
+stores `calculation_version`, `input_observation_references`, and
+`calculated_at`. Assessments are separate rows and cannot overwrite provider
+observations. `INSUFFICIENT_DATA` may deliberately have no input observation;
+all other assessment states require repository-validated inputs.
+
 ## Phase 6 workflow entities
 
 `Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Supplier ordering rules retain a source and observed timestamp; PO creation blocks without them. Export jobs retain the source revision, checksum, byte size, generator version, private object key, and expiry; raw provider payloads are not exported by default.
