@@ -426,6 +426,12 @@ enum ResearchObservationCompleteness {
   UNKNOWN
 }
 
+enum HistoryAnalyticsStatus {
+  COMPLETE
+  PARTIAL
+  INSUFFICIENT_DATA
+}
+
 enum HistoricalSubjectType {
   PRODUCT
   KEYWORD
@@ -591,6 +597,7 @@ model Organization {
   historicalMetricSeries      HistoricalMetricSeries[]
   historicalMetricPoints      HistoricalMetricPoint[]
   historyRefreshRuns          HistoryRefreshRun[]
+  historyAnalyticsAssessments HistoryAnalyticsAssessment[]
   opportunityAssessments      OpportunityAssessment[]
   opportunityReasons          OpportunityReason[]
   alertRules                  AlertRule[]
@@ -882,6 +889,7 @@ model CatalogProduct {
   productMarketObservations  ProductMarketObservation[]
   historicalMetricSeries     HistoricalMetricSeries[]
   historyRefreshItems        HistoryRefreshItem[]
+  historyAnalyticsAssessments HistoryAnalyticsAssessment[]
   opportunityAssessments     OpportunityAssessment[]
 
   @@unique([provider, providerReference])
@@ -2364,6 +2372,38 @@ model HistoricalMetricPoint {
   @@index([organizationId, seriesId, metricAt])
   @@index([sourceObservationId])
   @@map("historical_metric_points")
+}
+
+/**
+ * A versioned deterministic projection of normalized history. It is distinct
+ * from raw provider observations and can be recalculated without mutation.
+ */
+model HistoryAnalyticsAssessment {
+  id                     String                 @id @default(cuid())
+  organizationId         String                 @map("organization_id")
+  catalogProductId       String                 @map("catalog_product_id")
+  marketplaceId          String                 @map("marketplace_id")
+  providerKey            String                 @map("provider_key")
+  calculationVersion     String                 @map("calculation_version")
+  inputFingerprint       String                 @map("input_fingerprint")
+  status                 HistoryAnalyticsStatus
+  windowStart            DateTime?              @map("window_start")
+  windowEnd              DateTime               @map("window_end")
+  coveragePercent        Decimal?               @map("coverage_percent") @db.Decimal(9, 4)
+  metrics                Json
+  warnings               String[]               @default([])
+  inputPointReferences   Json                   @map("input_point_references")
+  calculatedAt           DateTime               @map("calculated_at")
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, catalogProductId, marketplaceId, providerKey, calculationVersion, inputFingerprint], map: "history_analytics_assessments_input_key")
+  @@index([organizationId, catalogProductId, marketplaceId, calculatedAt], map: "history_analytics_assessments_org_product_calculated_idx")
+  @@index([catalogProductId])
+  @@map("history_analytics_assessments")
 }
 
 model OpportunityAssessment {

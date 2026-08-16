@@ -1261,6 +1261,99 @@ a:focus-visible,
   white-space: pre-wrap;
   word-break: break-word;
 }
+.evidence-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 1rem 0;
+  border-bottom: 1px solid var(--rp-border);
+}
+.evidence-tabs button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 0.55rem 0.7rem;
+  background: transparent;
+  color: var(--rp-ink-muted);
+  font: inherit;
+  font-weight: 700;
+}
+.evidence-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--rp-brand);
+  color: var(--rp-brand-strong);
+}
+.history-panel > p,
+.history-derived > p,
+.history-raw-series > p,
+.history-coverage {
+  color: var(--rp-ink-muted);
+  line-height: 1.5;
+}
+.history-derived,
+.history-raw-series {
+  margin: 1.25rem 0;
+  border: 1px solid var(--rp-border);
+  border-radius: var(--rp-radius-card);
+  padding: 1rem;
+  background: var(--rp-surface-subtle);
+}
+.history-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+.history-metric-card {
+  min-width: 0;
+  border: 1px solid var(--rp-border);
+  border-radius: var(--rp-radius-control);
+  padding: 0.8rem;
+  background: var(--rp-surface);
+}
+.history-metric-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.history-metric-heading h3,
+.history-metric-heading h4 {
+  margin: 0;
+}
+.history-metric-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.75rem 0 0;
+}
+.history-metric-values div {
+  min-width: 0;
+}
+.history-metric-values dt {
+  color: var(--rp-ink-muted);
+  font-size: 0.8rem;
+}
+.history-metric-values dd {
+  margin: 0.18rem 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+.history-points-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--rp-border);
+  border-radius: var(--rp-radius-control);
+}
+.history-points-scroll table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+.history-points-scroll th,
+.history-points-scroll td {
+  padding: 0.55rem;
+  border-bottom: 1px solid var(--rp-border);
+  text-align: left;
+}
+.history-points-scroll th {
+  background: var(--rp-surface-subtle);
+}
 pre {
   overflow: auto;
   padding: 1rem;
@@ -1372,6 +1465,10 @@ pre {
   }
   .analysis-grid {
     height: 65vh;
+  }
+  .history-metric-grid,
+  .history-metric-values {
+    grid-template-columns: 1fr;
   }
   .analysis-toolbar,
   .analysis-scan-summary {

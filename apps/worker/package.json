@@ -15,6 +15,7 @@
     "@rizpoint/amazon-sp-api": "workspace:*",
     "@rizpoint/database": "workspace:*",
     "@rizpoint/export-engine": "workspace:*",
+    "@rizpoint/history-analytics": "workspace:*",
     "@rizpoint/keepa-api": "workspace:*",
     "@rizpoint/matching-engine": "workspace:*",
     "@rizpoint/mock-providers": "workspace:*",

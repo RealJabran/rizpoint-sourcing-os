@@ -24,6 +24,7 @@ import {
 } from "@rizpoint/provider-contracts";
 import { DEFAULT_PROVIDER_FRESHNESS_POLICIES } from "@rizpoint/provider-contracts/runtime-policy";
 import { createMarketHistoryProvider } from "./market-history-provider.js";
+import { calculateHistoryAnalytics } from "./history-analytics.js";
 import { providerError, providerRetryDeadline } from "./enrichment-policy.js";
 
 const policy = DEFAULT_PROVIDER_FRESHNESS_POLICIES.MARKET_HISTORY;
@@ -512,6 +513,14 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
       freshUntil,
       ...(rawEvidenceReference ? { rawEvidenceReference } : {}),
     });
+    if (item.catalogProductId)
+      await calculateHistoryAnalytics({
+        organizationId: run.organizationId,
+        catalogProductId: item.catalogProductId,
+        marketplaceId: run.marketplaceId,
+        providerKey: bundle.providerKey,
+        calculatedAt: new Date(history.provenance.observedAt),
+      });
   }
   await completeHistoryRefreshRun({ runId: run.id });
 }

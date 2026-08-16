@@ -117,6 +117,13 @@ try {
   assert.ok(series.some((item) => item.metricKey === "AMAZON_PRICE"));
   assert.ok(series.some((item) => item.metricKey === "SALES_RANK"));
   assert.ok(series.every((item) => item.points.length > 0));
+  const assessments = await db.historyAnalyticsAssessment.findMany({
+    where: { organizationId: organization.id, catalogProductId: product.id },
+  });
+  assert.equal(assessments.length, 1);
+  assert.equal(assessments[0]?.calculationVersion, "history-analytics/v1");
+  assert.equal(assessments[0]?.status, "INSUFFICIENT_DATA");
+  assert.ok(Array.isArray(assessments[0]?.inputPointReferences));
   // The exact duplicate returns the original run and cannot enqueue a second
   // provider request or a second historical point.
   const duplicate = await queueHistoryRefresh({
@@ -137,6 +144,7 @@ try {
   console.log(
     JSON.stringify({
       historyRefresh: "PASS",
+      analytics: "PASS",
       sparseSafe: "PASS",
       idempotent: "PASS",
     }),
@@ -161,6 +169,9 @@ try {
     ),
   );
   await db.historyRefreshItem.deleteMany({
+    where: { organizationId: organization.id },
+  });
+  await db.historyAnalyticsAssessment.deleteMany({
     where: { organizationId: organization.id },
   });
   await db.historyRefreshRun.deleteMany({

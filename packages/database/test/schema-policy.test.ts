@@ -255,4 +255,29 @@ describe("database policy", () => {
       'FOREIGN KEY ("history_refresh_run_id", "organization_id")',
     );
   });
+
+  it("persists versioned derived history analytics separately from raw observations", async () => {
+    const [schema, migration] = await Promise.all([
+      readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8"),
+      readFile(
+        new URL(
+          "../prisma/migrations/20260816160000_history_analytics_assessments/migration.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ]);
+    expect(schema).toContain("model HistoryAnalyticsAssessment");
+    for (const field of [
+      "calculationVersion",
+      "inputFingerprint",
+      "inputPointReferences",
+      "calculatedAt",
+      "coveragePercent",
+    ])
+      expect(schema).toContain(field);
+    expect(migration).toContain('CREATE TYPE "HistoryAnalyticsStatus"');
+    expect(migration).toContain('FOREIGN KEY ("organization_id")');
+    expect(migration).not.toContain("DROP COLUMN");
+  });
 });

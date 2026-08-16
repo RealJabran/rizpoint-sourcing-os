@@ -119,6 +119,7 @@ Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal
 | `ResearchObservation`                                 | Common external-evidence envelope.                                                                                                                                     | Organization + marketplace + provider + operation + observed/expiry time  |
 | Typed research observations                           | Queryable keyword, product-keyword, product-market, market, category, brand, and seller facts.                                                                         | Composite foreign key to the tenant observation envelope                  |
 | `HistoricalMetricSeries` / `HistoricalMetricPoint`    | Sparse, typed history whose points cite the retrieval observation.                                                                                                     | Organization + marketplace + subject + metric + provider; point timestamp |
+| `HistoryAnalyticsAssessment`                          | Versioned deterministic descriptive metrics, coverage, warnings, and input point references.                                                                           | Organization + product + marketplace + provider + calculation time        |
 | `OpportunityAssessment` / `OpportunityReason`         | Immutable derived recommendation and decomposed evidence-bearing reasons.                                                                                              | `organization_id`, project, marketplace, `calculated_at`                  |
 | `AlertRule` / `AlertEvent`                            | Monitoring and deduplicated event foundations; scheduling/evaluation comes later.                                                                                      | `organization_id`, marketplace, observation references                    |
 
@@ -140,6 +141,13 @@ stores `calculation_version`, `input_observation_references`, and
 `calculated_at`. Assessments are separate rows and cannot overwrite provider
 observations. `INSUFFICIENT_DATA` may deliberately have no input observation;
 all other assessment states require repository-validated inputs.
+
+`HistoryAnalyticsAssessment` stores a JSON projection only after the pure
+history engine has calculated it from typed points. It retains its calculation
+version, input fingerprint, exact point references, calculated time, bounded
+window, Decimal coverage percentage, and warnings. It is provider-scoped and
+cannot overwrite the raw history that produced it; null/insufficient outputs
+mean coverage was not adequate, never that a missing month had a zero value.
 
 ## Phase 6 workflow entities
 

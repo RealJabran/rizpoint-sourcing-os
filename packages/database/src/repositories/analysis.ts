@@ -1052,11 +1052,30 @@ export async function getAnalysisResult(
               },
             },
             orderBy: { metricAt: "desc" },
-            take: 24,
+            take: 365,
           },
         },
         orderBy: { metricKey: "asc" },
       })
     : [];
-  return { ...result, auditEvents, historyEvidence };
+  const historyAnalytics = catalogProductId
+    ? await db.historyAnalyticsAssessment.findMany({
+        where: { organizationId, catalogProductId },
+        select: {
+          providerKey: true,
+          calculationVersion: true,
+          status: true,
+          windowStart: true,
+          windowEnd: true,
+          coveragePercent: true,
+          metrics: true,
+          warnings: true,
+          inputPointReferences: true,
+          calculatedAt: true,
+        },
+        orderBy: { calculatedAt: "desc" },
+        take: 3,
+      })
+    : [];
+  return { ...result, auditEvents, historyEvidence, historyAnalytics };
 }

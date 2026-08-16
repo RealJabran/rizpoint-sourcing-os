@@ -86,6 +86,15 @@ redacted, stored in the private bucket, referenced from the cache and typed
 observation, and removed with the shorter cache retention deadline; normalized
 series retain their configured historical window.
 
+History analytics runs immediately after a history item persists its normalized
+points. `@rizpoint/history-analytics` is a pure Decimal-based package: it
+accepts only typed series and returns versioned descriptive metrics, coverage,
+and warnings. The worker persists immutable-input snapshots in
+`HistoryAnalyticsAssessment`; it does not mutate raw observations or wholesale
+profit results. Analysis detail reads both raw series and the latest
+organization-scoped assessment, keeping the detailed history payload outside
+the windowed results-grid query.
+
 The Phase 7.6 connectivity boundary validates only official NA/EU/FE SP-API
 endpoints. It exchanges an encrypted long-lived refresh token for a short-lived
 LWA access token in worker memory, using a single-flight cache. The first

@@ -99,6 +99,16 @@ Missing fields remain absent, not zero. Historical evidence is optional for
 wholesale calculations and is shown with provider, observation time, freshness,
 and completeness.
 
+## History analytics
+
+Prompt 05 derives versioned, deterministic research metrics from normalized,
+provider-scoped history only. The product evidence History tab keeps raw points
+separate from descriptive 30/90/180/365-day price, rank, offer, availability,
+review, listing-age, and seasonality analysis. Every derived snapshot names its
+calculation version, input points, provider, window, coverage, and confidence.
+Missing dates are never filled, BSR never becomes a sales estimate, and sparse
+history remains partial or insufficient rather than becoming a clean score.
+
 ## Provider runtime foundation
 
 Every provider capability now has an organization/marketplace-scoped runtime
