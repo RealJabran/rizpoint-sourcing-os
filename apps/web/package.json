@@ -19,6 +19,7 @@
     "@rizpoint/object-storage": "workspace:*",
     "@rizpoint/order-engine": "workspace:*",
     "@rizpoint/profit-engine": "workspace:*",
+    "@rizpoint/provider-contracts": "workspace:*",
     "@tanstack/react-table": "8.21.3",
     "@tanstack/react-virtual": "3.14.6",
     "decimal.js": "10.6.0",

@@ -56,6 +56,25 @@ misconfigured connections fail as explicit provider data; they never fall back
 silently to mock data. Provider-attempt idempotency is scoped to one enrichment
 run so later scans cannot overwrite prior audit evidence.
 
+The provider runtime control plane is shared by wholesale and research. A
+`ProviderEntitlement` records one provider/marketplace/capability state and
+explicit `MOCK` or `LIVE` origin. `ProviderRateBudget` uses NUMERIC windows and
+idempotent reservations; row locking prevents concurrent over-reservation.
+`ProviderCacheEntry` stores only a normalized private projection and evidence
+reference with fresh, stale-while-revalidate, and retention deadlines.
+`ProviderRequestLease` deduplicates concurrent calls, while
+`ProviderRequestAttempt` stores sanitized hashes, state, timing, retry, cache
+outcome, and optional NUMERIC credit/cost estimates—never request/response
+payloads or credentials. Existing scan-bound `ProviderObservation` remains the
+wholesale evidence record, and `ResearchObservation` remains the research
+evidence envelope.
+
+SP-API call attempts are dual-recorded into the legacy scan audit and the
+normalized runtime telemetry. The worker bundle declares provider key, mode,
+and capabilities. Live mode fails closed when an authorized live connection is
+absent; it cannot fall back to mock. Capability status routes return only the
+credential-free reason matrix.
+
 The Phase 7.6 connectivity boundary validates only official NA/EU/FE SP-API
 endpoints. It exchanges an encrypted long-lived refresh token for a short-lived
 LWA access token in worker memory, using a single-flight cache. The first

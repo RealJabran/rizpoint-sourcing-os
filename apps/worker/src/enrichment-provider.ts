@@ -12,6 +12,8 @@ import type {
   MarketHistoryProvider,
   MarketplaceContext,
   PricingProvider,
+  ProviderCapability,
+  ProviderRuntimeMode,
   RestrictionProvider,
 } from "@rizpoint/provider-contracts";
 import { ProviderError } from "@rizpoint/provider-contracts";
@@ -40,6 +42,9 @@ export type EnrichmentConnection = {
 export type EnrichmentProviderBundle = {
   provider: EnrichmentProvider;
   providerKind: "AMAZON_SP_API" | "MOCK_AMAZON";
+  providerKey: "amazon-sp-api" | "mock-amazon";
+  mode: ProviderRuntimeMode;
+  capabilities: readonly ProviderCapability[];
   marketplace: MarketplaceContext;
 };
 
@@ -47,6 +52,15 @@ function mockBundle(): EnrichmentProviderBundle {
   return {
     provider: new MockAmazonProvider(),
     providerKind: "MOCK_AMAZON",
+    providerKey: "mock-amazon",
+    mode: "MOCK",
+    capabilities: [
+      "CATALOG",
+      "COMPETITIVE_OFFERS",
+      "FEES",
+      "RESTRICTIONS",
+      "MARKET_HISTORY",
+    ],
     marketplace: {
       marketplaceId: "ATVPDKIKX0DER",
       region: "NA",
@@ -62,7 +76,14 @@ function mockBundle(): EnrichmentProviderBundle {
 export function createEnrichmentProvider(
   connection: EnrichmentConnection | null | undefined,
 ): EnrichmentProviderBundle {
-  if (!connection || connection.mode === "MOCK") return mockBundle();
+  if (!connection) {
+    if (providerMode() === "sp_api") throw new ProviderError("UNAUTHORIZED");
+    return mockBundle();
+  }
+  if (connection.mode === "MOCK") {
+    if (providerMode() === "sp_api") throw new ProviderError("UNAUTHORIZED");
+    return mockBundle();
+  }
   if (
     providerMode() !== "sp_api" ||
     connection.provider !== "AMAZON_SP_API" ||
@@ -114,6 +135,9 @@ export function createEnrichmentProvider(
       }),
     ),
     providerKind: "AMAZON_SP_API",
+    providerKey: "amazon-sp-api",
+    mode: "LIVE",
+    capabilities: ["CATALOG", "COMPETITIVE_OFFERS", "FEES", "RESTRICTIONS"],
     marketplace: {
       marketplaceId: connection.marketplaceId,
       region: connection.region,

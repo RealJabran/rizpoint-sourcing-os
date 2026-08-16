@@ -2,18 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const phaseZeroDemoEnabled = vi.fn();
 const publicSpApiConfigurationStatus = vi.fn();
-const providerMode = vi.fn();
 const ensurePhaseZeroOrganization = vi.fn();
+const ensureMockAmazonConnection = vi.fn();
 const getAmazonProviderConnectionStatus = vi.fn();
+const listProviderCapabilityStates = vi.fn();
 
 vi.mock("@/src/phase-zero", () => ({ phaseZeroDemoEnabled }));
 vi.mock("@rizpoint/amazon-sp-api", () => ({
   publicSpApiConfigurationStatus,
-  providerMode,
 }));
 vi.mock("@rizpoint/database", () => ({
   ensurePhaseZeroOrganization,
+  ensureMockAmazonConnection,
   getAmazonProviderConnectionStatus,
+  listProviderCapabilityStates,
 }));
 
 describe("provider status route", () => {
@@ -27,14 +29,29 @@ describe("provider status route", () => {
       status: "MOCK",
       checkedAt: "2026-07-16T00:00:00.000Z",
     });
-    providerMode.mockReturnValue("mock");
+    ensurePhaseZeroOrganization.mockResolvedValue({ id: "org" });
+    ensureMockAmazonConnection.mockResolvedValue({
+      marketplaceId: "ATVPDKIKX0DER",
+    });
+    listProviderCapabilityStates.mockResolvedValue([
+      {
+        providerKey: "mock-amazon",
+        marketplaceId: "ATVPDKIKX0DER",
+        capability: "CATALOG",
+        mode: "MOCK",
+        state: "HEALTHY",
+        checkedAt: "2026-07-16T00:00:00.000Z",
+        completeness: "COMPLETE",
+      },
+    ]);
     const { GET } = await import("../app/api/providers/amazon/route.js");
     const body = await (await GET()).json();
-    expect(body).toEqual({
-      provider: "amazon-sp-api",
-      mode: "mock",
-      status: "MOCK",
+    expect(body).toMatchObject({
+      provider: "mock-amazon",
+      mode: "MOCK",
+      status: "HEALTHY",
       checkedAt: "2026-07-16T00:00:00.000Z",
+      dataOrigin: "MOCK_FIXTURE",
     });
     expect(JSON.stringify(body)).not.toMatch(/token|secret|credential/i);
   });
@@ -48,23 +65,65 @@ describe("provider status route", () => {
       checkedAt: "2026-07-16T00:00:00.000Z",
       lastErrorCode: "PROVIDER_OUTAGE",
     });
-    providerMode.mockReturnValue("sp_api");
     ensurePhaseZeroOrganization.mockResolvedValue({ id: "org" });
     getAmazonProviderConnectionStatus.mockResolvedValue({
       status: "ERROR",
+      marketplaceId: "ATVPDKIKX0DER",
       lastValidatedAt: new Date("2026-07-16T00:00:00.000Z"),
       lastSuccessAt: null,
       lastErrorCode: "PROVIDER_OUTAGE",
     });
+    listProviderCapabilityStates.mockResolvedValue([
+      {
+        providerKey: "amazon-sp-api",
+        marketplaceId: "ATVPDKIKX0DER",
+        capability: "CATALOG",
+        mode: "LIVE",
+        state: "UNAVAILABLE",
+        checkedAt: "2026-07-16T00:00:00.000Z",
+        reason: "PROVIDER_OUTAGE",
+        completeness: "UNKNOWN",
+      },
+    ]);
     const { GET } = await import("../app/api/providers/health/route.js");
     const response = await GET();
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       provider: "amazon-sp-api",
-      mode: "sp_api",
+      mode: "LIVE",
       status: "UNAVAILABLE",
       checkedAt: "2026-07-16T00:00:00.000Z",
       lastErrorCode: "PROVIDER_OUTAGE",
     });
+  });
+
+  it("explains missing live configuration per capability without secret fields", async () => {
+    phaseZeroDemoEnabled.mockReturnValue(true);
+    publicSpApiConfigurationStatus.mockReturnValue({
+      provider: "amazon-sp-api",
+      mode: "sp_api",
+      status: "MISCONFIGURED",
+      checkedAt: "2026-07-16T00:00:00.000Z",
+      lastErrorCode: "MISSING_CONFIGURATION",
+    });
+    ensurePhaseZeroOrganization.mockResolvedValue({ id: "org" });
+    const { GET } = await import("../app/api/providers/amazon/route.js");
+    const response = await GET();
+    const body = await response.json();
+    expect(body).toMatchObject({
+      provider: "amazon-sp-api",
+      mode: "LIVE",
+      status: "NOT_CONFIGURED",
+      reason: "CREDENTIALS_MISSING",
+    });
+    expect(body.capabilities).toHaveLength(4);
+    expect(body.capabilities[0]).toMatchObject({
+      state: "NOT_CONFIGURED",
+      reason: "CREDENTIALS_MISSING",
+      completeness: "UNKNOWN",
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /refreshToken|accessToken|clientSecret|ciphertext/i,
+    );
   });
 });

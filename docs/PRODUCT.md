@@ -85,3 +85,12 @@ This foundation does not add a research UI, claim live keyword/history coverage,
 or infer unavailable metrics. Licensed provider selection, entitlement checks,
 research jobs, calculation engines, and user-facing research workflows are later
 prompts.
+
+## Provider runtime foundation
+
+Every provider capability now has an organization/marketplace-scoped runtime
+state. `MOCK` and `LIVE` are explicit origins. A missing entitlement,
+authorization failure, exhausted credit window, throttle, outage, or partial
+response is a first-class reason for unavailable data; it is never converted to
+zero. Licensed history, keyword, category, brand, seller, advertising, and
+review providers are not selected or enabled by this foundation.

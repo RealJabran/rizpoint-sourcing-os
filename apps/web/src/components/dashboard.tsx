@@ -21,7 +21,11 @@ type ProviderState =
   | { kind: "error" }
   | {
       kind: "ready";
-      data: { status: ProviderConnectionStatus; checkedAt: string };
+      data: {
+        status: ProviderConnectionStatus;
+        mode: "MOCK" | "LIVE";
+        checkedAt: string;
+      };
     };
 
 function MetricCard({
@@ -86,6 +90,7 @@ export function Dashboard() {
         if (!response.ok) throw new Error("PROVIDER_STATUS_UNAVAILABLE");
         const data = (await response.json()) as {
           status: ProviderConnectionStatus;
+          mode: "MOCK" | "LIVE";
           checkedAt: string;
         };
         if (active) setProvider({ kind: "ready", data });
@@ -136,6 +141,7 @@ export function Dashboard() {
               ? (() => {
                   const presentation = providerStatusPresentation(
                     provider.data.status,
+                    provider.data.mode,
                   );
                   return (
                     <div className="dashboard-provider__status">

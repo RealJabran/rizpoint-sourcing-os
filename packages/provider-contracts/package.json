@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./runtime-policy": {
+      "types": "./src/runtime-policy.ts",
+      "default": "./dist/runtime-policy.js"
     }
   },
   "scripts": {

@@ -66,12 +66,12 @@ describe("dashboard presentation state", () => {
   });
 
   it("uses human-readable, non-secret provider connection states", () => {
-    expect(providerStatusPresentation("MOCK")).toMatchObject({
+    expect(providerStatusPresentation("HEALTHY", "MOCK")).toMatchObject({
       label: "Mock",
       tone: "neutral",
     });
-    expect(providerStatusPresentation("CONNECTED")).toMatchObject({
-      label: "Connected",
+    expect(providerStatusPresentation("HEALTHY")).toMatchObject({
+      label: "Healthy",
       tone: "success",
     });
     expect(providerStatusPresentation("UNAUTHORIZED")).toMatchObject({

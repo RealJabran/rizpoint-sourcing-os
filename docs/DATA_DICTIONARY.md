@@ -1,5 +1,22 @@
 # Data dictionary
 
+## Provider runtime truth layer
+
+| Entity                      | Purpose and invariants                                                                                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ProviderCredential`        | Tenant/provider/name-scoped encrypted envelope. The repository accepts ciphertext, nonce, tag, and key version only; browser DTOs never select these fields.                                                 |
+| `ProviderEntitlement`       | Capability discovery state for one organization, provider key, marketplace, and capability. Stores explicit mock/live mode, checked/expiry/retry times, completeness, and a safe reason code.                |
+| `ProviderRateBudget`        | NUMERIC request/credit/token capacity for a bounded time window. Capacity, reserved, consumed, and optional unit cost are nonnegative and cannot over-allocate.                                              |
+| `ProviderBudgetReservation` | Idempotent request-key reservation that becomes consumed, released, or expired. Repeat reservation/settlement does not double charge.                                                                        |
+| `ProviderCacheEntry`        | Tenant/provider/marketplace/capability/operation/request-hash cache identity with observation, fresh, stale, and retention deadlines. Older retries cannot replace newer entries.                            |
+| `ProviderRequestLease`      | Short-lived hashed-owner lease for concurrent provider-call deduplication. Raw owner tokens are not stored.                                                                                                  |
+| `ProviderRequestAttempt`    | Payload-free telemetry: sanitized request hash, provider/capability/operation, explicit origin/state, attempt, timing, retry, provider request ID, cache outcome, and optional NUMERIC credit/cost estimate. |
+
+Provider operational states are `NOT_CONFIGURED`, `CONFIGURED`, `AUTHORIZED`,
+`UNAUTHORIZED`, `QUOTA_EXHAUSTED`, `THROTTLED`, `UNAVAILABLE`, `PARTIAL`, and
+`HEALTHY`. Unknown or failed metrics remain null/absent in typed observations;
+these states never imply numeric zero.
+
 ## Phase 1 physical schema
 
 | Entity                                                     | Purpose                                                                                                                         | Tenant boundary                |

@@ -1,5 +1,19 @@
 # Security
 
+## Shared provider credentials and telemetry
+
+Provider secrets remain server-side. Generic licensed-provider credentials are
+stored only as authenticated encrypted envelopes; callers must encrypt before
+calling the database repository. The status and capability APIs select no
+ciphertext, nonce, tag, access token, refresh token, request payload, response
+payload, or signed-request detail. Provider request telemetry uses a sanitized
+request hash and allowlisted operational metadata only.
+
+Mock capability records are permanently labeled `MOCK`, including when healthy.
+Live worker selection fails closed when live configuration or authorization is
+missing. Quota and throttle states expose a safe reason and retry time rather
+than secret details or provider payloads.
+
 ## Threat model and boundaries
 
 The browser is untrusted. Web routes enforce an organization context before querying or mutating tenant-owned state. PostgreSQL is canonical; Redis is transient queue transport. Scanner and object storage are private services.

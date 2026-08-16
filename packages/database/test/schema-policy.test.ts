@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   PHASE_ZERO_ORGANIZATION_SLUG,
   isProfitVerifiedMatch,
+  providerCapabilityForOperation,
+  providerRuntimeStateForAttempt,
   shouldReplaceProviderObservation,
   shouldPromoteProfitResult,
 } from "../src/repositories.js";
@@ -85,6 +87,22 @@ describe("database policy", () => {
     );
     expect(schema).toContain(
       "@@unique([organizationId, enrichmentRunId, provider, operation, requestKey, attempt])",
+    );
+  });
+
+  it("normalizes legacy SP-API attempts without turning failures into values", () => {
+    expect(providerCapabilityForOperation("getCompetitiveSummary")).toBe(
+      "COMPETITIVE_OFFERS",
+    );
+    expect(providerCapabilityForOperation("getMyFeesEstimateForASIN")).toBe(
+      "FEES",
+    );
+    expect(providerRuntimeStateForAttempt("THROTTLED")).toBe("THROTTLED");
+    expect(
+      providerRuntimeStateForAttempt("PERMANENT_ERROR", "UNAUTHORIZED"),
+    ).toBe("UNAUTHORIZED");
+    expect(providerRuntimeStateForAttempt("RETRYABLE_ERROR")).toBe(
+      "UNAVAILABLE",
     );
   });
 

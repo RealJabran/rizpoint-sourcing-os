@@ -6,9 +6,17 @@ describe("enrichment provider selection", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("uses the fixture adapter without credentials for mock connections", () => {
+    vi.stubEnv("PROVIDER_MODE", "mock");
     const bundle = createEnrichmentProvider(null);
     expect(bundle.providerKind).toBe("MOCK_AMAZON");
+    expect(bundle.mode).toBe("MOCK");
+    expect(bundle.providerKey).toBe("mock-amazon");
     expect(bundle.marketplace.marketplaceId).toBe("ATVPDKIKX0DER");
+  });
+
+  it("never disguises a missing live connection as the mock provider", () => {
+    vi.stubEnv("PROVIDER_MODE", "sp_api");
+    expect(() => createEnrichmentProvider(null)).toThrow(ProviderError);
   });
 
   it("fails closed instead of silently falling back for an inactive SP-API connection", () => {

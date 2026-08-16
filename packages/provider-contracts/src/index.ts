@@ -27,13 +27,140 @@ export const marketplaceContextSchema = z.object({
 });
 export type MarketplaceContext = z.infer<typeof marketplaceContextSchema>;
 
+export const providerCapabilitySchema = z.enum([
+  "CATALOG",
+  "COMPETITIVE_OFFERS",
+  "FEES",
+  "RESTRICTIONS",
+  "MARKET_HISTORY",
+  "KEYWORD_DISCOVERY",
+  "REVERSE_ASIN",
+  "SEARCH_RANK",
+  "CATEGORY_INTELLIGENCE",
+  "BRAND_INTELLIGENCE",
+  "SELLER_INTELLIGENCE",
+  "AD_INTELLIGENCE",
+  "REVIEW_INTELLIGENCE",
+]);
+export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
+
+export const providerOperationalStateSchema = z.enum([
+  "NOT_CONFIGURED",
+  "CONFIGURED",
+  "AUTHORIZED",
+  "UNAUTHORIZED",
+  "QUOTA_EXHAUSTED",
+  "THROTTLED",
+  "UNAVAILABLE",
+  "PARTIAL",
+  "HEALTHY",
+]);
+export type ProviderOperationalState = z.infer<
+  typeof providerOperationalStateSchema
+>;
+
+export const providerRuntimeModeSchema = z.enum(["MOCK", "LIVE"]);
+export type ProviderRuntimeMode = z.infer<typeof providerRuntimeModeSchema>;
+
+export const providerUnavailableReasonSchema = z.enum([
+  "CREDENTIALS_MISSING",
+  "CONNECTION_NOT_AUTHORIZED",
+  "CAPABILITY_NOT_ENTITLED",
+  "QUOTA_WINDOW_EXHAUSTED",
+  "PROVIDER_THROTTLED",
+  "PROVIDER_OUTAGE",
+  "PARTIAL_RESPONSE",
+  "STALE_CACHE_ONLY",
+  "UNSUPPORTED_BY_PROVIDER",
+  "DATA_NOT_RETURNED",
+  "RATE_BUDGET_NOT_CONFIGURED",
+  "REQUEST_ALREADY_SETTLED",
+]);
+export type ProviderUnavailableReason = z.infer<
+  typeof providerUnavailableReasonSchema
+>;
+
+export const providerCapabilityStateSchema = z.object({
+  providerKey: z.string().min(1),
+  marketplaceId: z.string().min(1),
+  capability: providerCapabilitySchema,
+  mode: providerRuntimeModeSchema,
+  state: providerOperationalStateSchema,
+  checkedAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime().optional(),
+  retryAt: z.iso.datetime().optional(),
+  reason: providerUnavailableReasonSchema.optional(),
+  completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]),
+});
+export type ProviderCapabilityState = z.infer<
+  typeof providerCapabilityStateSchema
+>;
+
 export const providerHealthSchema = z.object({
   provider: z.string().min(1),
-  status: z.enum(["HEALTHY", "DEGRADED", "AUTH_REQUIRED", "UNAVAILABLE"]),
+  mode: providerRuntimeModeSchema,
+  status: providerOperationalStateSchema,
   checkedAt: z.iso.datetime(),
   lastErrorCode: z.string().min(1).optional(),
+  capabilities: z.array(providerCapabilityStateSchema).default([]),
 });
 export type ProviderHealth = z.infer<typeof providerHealthSchema>;
+
+export const providerFreshnessPolicySchema = z
+  .object({
+    capability: providerCapabilitySchema,
+    freshForSeconds: z.number().int().positive(),
+    staleWhileRevalidateSeconds: z.number().int().nonnegative(),
+    retainForSeconds: z.number().int().positive(),
+  })
+  .refine(
+    ({ freshForSeconds, retainForSeconds }) =>
+      retainForSeconds >= freshForSeconds,
+    { message: "Retention must cover the fresh window" },
+  );
+export type ProviderFreshnessPolicy = z.infer<
+  typeof providerFreshnessPolicySchema
+>;
+
+export const providerBudgetUnitSchema = z.enum(["REQUEST", "CREDIT", "TOKEN"]);
+export type ProviderBudgetUnit = z.infer<typeof providerBudgetUnitSchema>;
+
+export const providerCostEstimateSchema = z.object({
+  unit: providerBudgetUnitSchema,
+  estimatedUnits: decimalStringSchema,
+  estimatedMoney: decimalStringSchema.optional(),
+  currency: z.string().length(3).optional(),
+});
+export type ProviderCostEstimate = z.infer<typeof providerCostEstimateSchema>;
+
+export const providerCacheLookupSchema = z.object({
+  outcome: z.enum(["MISS", "FRESH_HIT", "STALE_HIT", "EXPIRED"]),
+  observedAt: z.iso.datetime().optional(),
+  freshUntil: z.iso.datetime().optional(),
+  staleUntil: z.iso.datetime().optional(),
+  completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]).optional(),
+});
+export type ProviderCacheLookup = z.infer<typeof providerCacheLookupSchema>;
+
+export const providerRequestTelemetrySchema = z.object({
+  providerKey: z.string().min(1),
+  marketplaceId: z.string().min(1),
+  capability: providerCapabilitySchema,
+  operation: z.string().min(1),
+  requestHash: z.string().min(1),
+  mode: providerRuntimeModeSchema,
+  state: providerOperationalStateSchema,
+  attempt: z.number().int().positive(),
+  startedAt: z.iso.datetime(),
+  completedAt: z.iso.datetime().optional(),
+  retryAt: z.iso.datetime().optional(),
+  cacheOutcome: providerCacheLookupSchema.shape.outcome.optional(),
+  cost: providerCostEstimateSchema.optional(),
+  errorCode: z.string().min(1).optional(),
+});
+export type ProviderRequestTelemetry = z.infer<
+  typeof providerRequestTelemetrySchema
+>;
 
 export class ProviderError extends Error {
   constructor(
@@ -420,6 +547,14 @@ export interface MarketHistoryProvider {
 
 export interface ProviderHealthProvider {
   health(marketplace?: MarketplaceContext): Promise<ProviderHealth>;
+}
+
+/** Credential-free capability discovery. Implementations must return MOCK or
+ * LIVE explicitly so fixture data can never be presented as live evidence. */
+export interface ProviderCapabilityDiscovery {
+  capabilities(
+    marketplace: MarketplaceContext,
+  ): Promise<readonly ProviderCapabilityState[]>;
 }
 
 export interface AiMatchProvider {

@@ -14,6 +14,9 @@ import type {
   MarketHistoryProvider,
   MarketplaceContext,
   PricingProvider,
+  ProviderCapability,
+  ProviderCapabilityDiscovery,
+  ProviderCapabilityState,
   ProviderHealth,
   ProviderHealthProvider,
   RestrictionProvider,
@@ -109,7 +112,8 @@ export class MockAmazonProvider
     FeeProvider,
     RestrictionProvider,
     MarketHistoryProvider,
-    ProviderHealthProvider
+    ProviderHealthProvider,
+    ProviderCapabilityDiscovery
 {
   private readonly catalog = new MockCatalogProvider();
 
@@ -375,8 +379,68 @@ export class MockAmazonProvider
   async health(): Promise<ProviderHealth> {
     return {
       provider: "mock-amazon",
+      mode: "MOCK",
       status: "HEALTHY",
       checkedAt: observedAt(),
+      capabilities: [
+        ...(await this.capabilities({
+          marketplaceId: "ATVPDKIKX0DER",
+          region: "NA",
+        })),
+      ],
     };
+  }
+
+  async capabilities(
+    marketplace: MarketplaceContext,
+  ): Promise<readonly ProviderCapabilityState[]> {
+    return mockCapabilityStates(marketplace.marketplaceId);
+  }
+}
+
+const MOCK_CAPABILITIES: readonly ProviderCapability[] = [
+  "CATALOG",
+  "COMPETITIVE_OFFERS",
+  "FEES",
+  "RESTRICTIONS",
+  "MARKET_HISTORY",
+];
+
+export function mockCapabilityStates(
+  marketplaceId: string,
+  state: ProviderCapabilityState["state"] = "HEALTHY",
+  checkedAt = observedAt(),
+): ProviderCapabilityState[] {
+  return MOCK_CAPABILITIES.map((capability) => ({
+    providerKey: "mock-amazon",
+    marketplaceId,
+    capability,
+    mode: "MOCK",
+    state,
+    checkedAt,
+    completeness: state === "PARTIAL" ? "PARTIAL" : "COMPLETE",
+    ...(state === "THROTTLED"
+      ? { reason: "PROVIDER_THROTTLED" as const }
+      : state === "QUOTA_EXHAUSTED"
+        ? { reason: "QUOTA_WINDOW_EXHAUSTED" as const }
+        : state === "PARTIAL"
+          ? { reason: "PARTIAL_RESPONSE" as const }
+          : state === "UNAVAILABLE"
+            ? { reason: "PROVIDER_OUTAGE" as const }
+            : {}),
+  }));
+}
+
+/** Deterministic fault boundary for runtime and UI tests. It never changes the
+ * provider mode, so an unhealthy fixture cannot be mistaken for live data. */
+export class MockProviderCapabilityDiscovery implements ProviderCapabilityDiscovery {
+  constructor(
+    private readonly state: ProviderCapabilityState["state"] = "HEALTHY",
+  ) {}
+
+  async capabilities(
+    marketplace: MarketplaceContext,
+  ): Promise<readonly ProviderCapabilityState[]> {
+    return mockCapabilityStates(marketplace.marketplaceId, this.state);
   }
 }

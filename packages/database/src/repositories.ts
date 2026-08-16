@@ -1384,26 +1384,146 @@ export function isProfitVerifiedMatch(input: {
 }
 
 const DEFAULT_MARKETPLACE_ID = "ATVPDKIKX0DER";
+const MOCK_AMAZON_CAPABILITIES = [
+  "CATALOG",
+  "COMPETITIVE_OFFERS",
+  "FEES",
+  "RESTRICTIONS",
+  "MARKET_HISTORY",
+] as const;
+const LIVE_AMAZON_CAPABILITIES = [
+  "CATALOG",
+  "COMPETITIVE_OFFERS",
+  "FEES",
+  "RESTRICTIONS",
+] as const;
+
+async function ensureAmazonCapabilityRows(
+  transaction: Prisma.TransactionClient,
+  connection: {
+    id: string;
+    organizationId: string;
+    provider: "AMAZON_SP_API" | "MOCK_AMAZON" | "MOCK_HISTORY";
+    marketplaceId: string;
+    status: "PENDING" | "ACTIVE" | "AUTH_REQUIRED" | "REVOKED" | "ERROR";
+    lastErrorCode: string | null;
+    lastSuccessAt: Date | null;
+    lastValidatedAt: Date | null;
+  },
+) {
+  const mock = connection.provider === "MOCK_AMAZON";
+  const state = mock
+    ? ("HEALTHY" as const)
+    : connection.status === "ACTIVE" && connection.lastSuccessAt
+      ? ("HEALTHY" as const)
+      : connection.status === "ACTIVE"
+        ? ("AUTHORIZED" as const)
+        : connection.status === "AUTH_REQUIRED" ||
+            connection.status === "REVOKED"
+          ? ("UNAUTHORIZED" as const)
+          : connection.status === "PENDING"
+            ? ("CONFIGURED" as const)
+            : connection.lastErrorCode === "THROTTLED"
+              ? ("THROTTLED" as const)
+              : ("UNAVAILABLE" as const);
+  const reasonCode =
+    state === "UNAUTHORIZED"
+      ? "CONNECTION_NOT_AUTHORIZED"
+      : state === "THROTTLED"
+        ? "PROVIDER_THROTTLED"
+        : state === "UNAVAILABLE"
+          ? "PROVIDER_OUTAGE"
+          : null;
+  const checkedAt =
+    connection.lastValidatedAt ?? connection.lastSuccessAt ?? new Date();
+  const capabilities = mock
+    ? MOCK_AMAZON_CAPABILITIES
+    : LIVE_AMAZON_CAPABILITIES;
+  await Promise.all(
+    capabilities.map(async (capability) => {
+      const providerKey = mock ? "mock-amazon" : "amazon-sp-api";
+      const existing = await transaction.providerEntitlement.findUnique({
+        where: {
+          organizationId_providerKey_marketplaceId_capability: {
+            organizationId: connection.organizationId,
+            providerKey,
+            marketplaceId: connection.marketplaceId,
+            capability,
+          },
+        },
+      });
+      if (
+        existing &&
+        ["QUOTA_EXHAUSTED", "THROTTLED"].includes(existing.state) &&
+        existing.retryAt &&
+        existing.retryAt > checkedAt
+      )
+        return existing;
+      return transaction.providerEntitlement.upsert({
+        where: {
+          organizationId_providerKey_marketplaceId_capability: {
+            organizationId: connection.organizationId,
+            providerKey,
+            marketplaceId: connection.marketplaceId,
+            capability,
+          },
+        },
+        create: {
+          organizationId: connection.organizationId,
+          providerConnectionId: connection.id,
+          providerKey,
+          marketplaceId: connection.marketplaceId,
+          capability,
+          mode: mock ? "MOCK" : "LIVE",
+          state,
+          reasonCode,
+          retryAt: null,
+          completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+          checkedAt,
+          ...(state === "HEALTHY" || state === "AUTHORIZED"
+            ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
+            : {}),
+        },
+        update: {
+          providerConnectionId: connection.id,
+          mode: mock ? "MOCK" : "LIVE",
+          state,
+          reasonCode,
+          retryAt: null,
+          completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+          checkedAt,
+          ...(state === "HEALTHY" || state === "AUTHORIZED"
+            ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
+            : {}),
+        },
+      });
+    }),
+  );
+}
 
 /** Creates the fixture-only connection used by local development and tests. */
 export async function ensureMockAmazonConnection(organizationId: string) {
-  return db.providerConnection.upsert({
-    where: {
-      organizationId_provider_marketplaceId: {
+  return db.$transaction(async (transaction) => {
+    const connection = await transaction.providerConnection.upsert({
+      where: {
+        organizationId_provider_marketplaceId: {
+          organizationId,
+          provider: "MOCK_AMAZON",
+          marketplaceId: DEFAULT_MARKETPLACE_ID,
+        },
+      },
+      create: {
         organizationId,
         provider: "MOCK_AMAZON",
+        mode: "MOCK",
+        status: "ACTIVE",
         marketplaceId: DEFAULT_MARKETPLACE_ID,
+        region: "NA",
       },
-    },
-    create: {
-      organizationId,
-      provider: "MOCK_AMAZON",
-      mode: "MOCK",
-      status: "ACTIVE",
-      marketplaceId: DEFAULT_MARKETPLACE_ID,
-      region: "NA",
-    },
-    update: {},
+      update: {},
+    });
+    await ensureAmazonCapabilityRows(transaction, connection);
+    return connection;
   });
 }
 
@@ -1411,16 +1531,21 @@ export async function ensureMockAmazonConnection(organizationId: string) {
 export async function getAmazonProviderConnectionStatus(
   organizationId: string,
 ) {
-  return db.providerConnection.findFirst({
+  const connection = await db.providerConnection.findFirst({
     where: { organizationId, provider: "AMAZON_SP_API" },
     orderBy: { updatedAt: "desc" },
-    select: {
-      status: true,
-      lastValidatedAt: true,
-      lastSuccessAt: true,
-      lastErrorCode: true,
-    },
   });
+  if (!connection) return null;
+  await db.$transaction((transaction) =>
+    ensureAmazonCapabilityRows(transaction, connection),
+  );
+  return {
+    status: connection.status,
+    marketplaceId: connection.marketplaceId,
+    lastValidatedAt: connection.lastValidatedAt,
+    lastSuccessAt: connection.lastSuccessAt,
+    lastErrorCode: connection.lastErrorCode,
+  };
 }
 
 /** Worker-only connection lookup. The caller receives encrypted material but
@@ -1430,10 +1555,15 @@ export async function getCatalogProviderConnection(organizationId: string) {
     process.env.PROVIDER_MODE === "sp_api" ||
     process.env.PROVIDER_MODE === "sp-api"
   ) {
-    return db.providerConnection.findFirst({
+    const connection = await db.providerConnection.findFirst({
       where: { organizationId, provider: "AMAZON_SP_API", status: "ACTIVE" },
       orderBy: { authorizedAt: "desc" },
     });
+    if (connection)
+      await db.$transaction((transaction) =>
+        ensureAmazonCapabilityRows(transaction, connection),
+      );
+    return connection;
   }
   return ensureMockAmazonConnection(organizationId);
 }
@@ -1502,6 +1632,7 @@ export async function queueEnrichment(
             update: {},
           });
     if (!connection) return null;
+    await ensureAmazonCapabilityRows(transaction, connection);
     const selected = await transaction.matchDecision.findMany({
       where: {
         organizationId,
@@ -1603,6 +1734,31 @@ export async function getEnrichmentRunForProcessing(scanJobId: string) {
   });
 }
 
+export function providerCapabilityForOperation(operation: string) {
+  return operation.includes("Competitive")
+    ? ("COMPETITIVE_OFFERS" as const)
+    : operation.includes("Fees")
+      ? ("FEES" as const)
+      : operation.includes("Restrictions")
+        ? ("RESTRICTIONS" as const)
+        : operation.toLowerCase().includes("history")
+          ? ("MARKET_HISTORY" as const)
+          : ("CATALOG" as const);
+}
+
+export function providerRuntimeStateForAttempt(
+  status: "SUCCESS" | "RETRYABLE_ERROR" | "PERMANENT_ERROR" | "THROTTLED",
+  errorCode?: string,
+) {
+  return status === "SUCCESS"
+    ? ("HEALTHY" as const)
+    : status === "THROTTLED"
+      ? ("THROTTLED" as const)
+      : errorCode === "UNAUTHORIZED" || errorCode === "FORBIDDEN"
+        ? ("UNAUTHORIZED" as const)
+        : ("UNAVAILABLE" as const);
+}
+
 export async function recordProviderCallAttempt(input: {
   organizationId: string;
   enrichmentRunId: string;
@@ -1616,19 +1772,119 @@ export async function recordProviderCallAttempt(input: {
   providerRequestId?: string;
   retryAt?: Date;
 }) {
-  return db.providerCallAttempt.upsert({
-    where: {
-      organizationId_enrichmentRunId_provider_operation_requestKey_attempt: {
+  const capability = providerCapabilityForOperation(input.operation);
+  const providerKey =
+    input.provider === "AMAZON_SP_API" ? "amazon-sp-api" : "mock-amazon";
+  const state = providerRuntimeStateForAttempt(input.status, input.errorCode);
+  const now = new Date();
+  return db.$transaction(async (transaction) => {
+    const run = await transaction.enrichmentRun.findFirst({
+      where: {
+        id: input.enrichmentRunId,
         organizationId: input.organizationId,
-        enrichmentRunId: input.enrichmentRunId,
-        provider: input.provider,
-        operation: input.operation,
-        requestKey: input.requestKey,
-        attempt: input.attempt,
       },
-    },
-    create: input,
-    update: input,
+      include: { providerConnection: { select: { marketplaceId: true } } },
+    });
+    if (!run) throw new Error("ENRICHMENT_RUN_NOT_FOUND");
+    const marketplaceId =
+      run.providerConnection?.marketplaceId ?? DEFAULT_MARKETPLACE_ID;
+    const entitlement = await transaction.providerEntitlement.findUnique({
+      where: {
+        organizationId_providerKey_marketplaceId_capability: {
+          organizationId: input.organizationId,
+          providerKey,
+          marketplaceId,
+          capability,
+        },
+      },
+      select: { id: true },
+    });
+    const legacy = await transaction.providerCallAttempt.upsert({
+      where: {
+        organizationId_enrichmentRunId_provider_operation_requestKey_attempt: {
+          organizationId: input.organizationId,
+          enrichmentRunId: input.enrichmentRunId,
+          provider: input.provider,
+          operation: input.operation,
+          requestKey: input.requestKey,
+          attempt: input.attempt,
+        },
+      },
+      create: input,
+      update: input,
+    });
+    await transaction.providerRequestAttempt.upsert({
+      where: {
+        organizationId_providerKey_marketplaceId_capability_operation_requestHash_attempt:
+          {
+            organizationId: input.organizationId,
+            providerKey,
+            marketplaceId,
+            capability,
+            operation: input.operation,
+            requestHash: input.requestKey,
+            attempt: input.attempt,
+          },
+      },
+      create: {
+        organizationId: input.organizationId,
+        ...(entitlement ? { entitlementId: entitlement.id } : {}),
+        providerKey,
+        marketplaceId,
+        capability,
+        operation: input.operation,
+        requestHash: input.requestKey,
+        mode: input.provider === "AMAZON_SP_API" ? "LIVE" : "MOCK",
+        state,
+        attempt: input.attempt,
+        startedAt: now,
+        ...(input.status === "SUCCESS" || input.status === "PERMANENT_ERROR"
+          ? { completedAt: now }
+          : {}),
+        ...(input.httpStatus === undefined
+          ? {}
+          : { httpStatus: input.httpStatus }),
+        ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+        ...(input.providerRequestId
+          ? { providerRequestId: input.providerRequestId }
+          : {}),
+        ...(input.retryAt ? { retryAt: input.retryAt } : {}),
+        budgetUnit: "REQUEST",
+        estimatedUnits: "1.0000",
+      },
+      update: {
+        state,
+        ...(input.status === "SUCCESS" || input.status === "PERMANENT_ERROR"
+          ? { completedAt: now }
+          : {}),
+        httpStatus: input.httpStatus ?? null,
+        errorCode: input.errorCode ?? null,
+        providerRequestId: input.providerRequestId ?? null,
+        retryAt: input.retryAt ?? null,
+      },
+    });
+    if (entitlement) {
+      const reasonCode =
+        state === "UNAUTHORIZED"
+          ? "CONNECTION_NOT_AUTHORIZED"
+          : state === "THROTTLED"
+            ? "PROVIDER_THROTTLED"
+            : state === "UNAVAILABLE"
+              ? "PROVIDER_OUTAGE"
+              : null;
+      await transaction.providerEntitlement.update({
+        where: { id: entitlement.id },
+        data: {
+          state,
+          reasonCode,
+          retryAt: input.retryAt ?? null,
+          checkedAt: now,
+          completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+          ...(state === "HEALTHY" ? { lastSuccessAt: now } : {}),
+        },
+      });
+    }
+    return legacy;
   });
 }
 

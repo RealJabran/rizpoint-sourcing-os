@@ -16,6 +16,8 @@ import {
   type MarketHistoryProvider,
   type MarketplaceContext,
   type PricingProvider,
+  type ProviderCapabilityDiscovery,
+  type ProviderCapabilityState,
   ProviderError,
   type ProviderHealth,
   type ProviderHealthProvider,
@@ -49,7 +51,8 @@ export class AmazonSpApiProvider
     FeeProvider,
     RestrictionProvider,
     MarketHistoryProvider,
-    ProviderHealthProvider
+    ProviderHealthProvider,
+    ProviderCapabilityDiscovery
 {
   private readonly transport: SpApiTransport;
   private pricingRateLimitPerSecond = 0.033;
@@ -1051,16 +1054,44 @@ export class AmazonSpApiProvider
     const health = await testSpApiConnection(this.transport);
     return {
       provider: health.provider,
+      mode: "LIVE",
       status:
         health.status === "CONNECTED"
           ? "HEALTHY"
           : health.status === "UNAUTHORIZED"
-            ? "AUTH_REQUIRED"
+            ? "UNAUTHORIZED"
             : health.status === "THROTTLED"
-              ? "DEGRADED"
+              ? "THROTTLED"
               : "UNAVAILABLE",
       checkedAt: health.checkedAt,
       ...(health.lastErrorCode ? { lastErrorCode: health.lastErrorCode } : {}),
+      capabilities: [],
     };
+  }
+
+  async capabilities(
+    marketplace: MarketplaceContext,
+  ): Promise<readonly ProviderCapabilityState[]> {
+    const health = await this.health(marketplace);
+    const reason =
+      health.status === "UNAUTHORIZED"
+        ? ("CONNECTION_NOT_AUTHORIZED" as const)
+        : health.status === "THROTTLED"
+          ? ("PROVIDER_THROTTLED" as const)
+          : health.status === "UNAVAILABLE"
+            ? ("PROVIDER_OUTAGE" as const)
+            : undefined;
+    return (
+      ["CATALOG", "COMPETITIVE_OFFERS", "FEES", "RESTRICTIONS"] as const
+    ).map((capability) => ({
+      providerKey: "amazon-sp-api",
+      marketplaceId: marketplace.marketplaceId,
+      capability,
+      mode: "LIVE",
+      state: health.status,
+      checkedAt: health.checkedAt,
+      completeness: health.status === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+      ...(reason ? { reason } : {}),
+    }));
   }
 }

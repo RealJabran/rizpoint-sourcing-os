@@ -10,36 +10,56 @@ export type DashboardSummary = {
 };
 
 export type ProviderConnectionStatus =
-  | "MOCK"
-  | "CONNECTED"
-  | "MISCONFIGURED"
+  | "NOT_CONFIGURED"
+  | "CONFIGURED"
+  | "AUTHORIZED"
   | "UNAUTHORIZED"
+  | "QUOTA_EXHAUSTED"
   | "THROTTLED"
-  | "UNAVAILABLE";
+  | "UNAVAILABLE"
+  | "PARTIAL"
+  | "HEALTHY";
 
-export function providerStatusPresentation(status: ProviderConnectionStatus): {
+export function providerStatusPresentation(
+  status: ProviderConnectionStatus,
+  mode: "MOCK" | "LIVE" = "LIVE",
+): {
   label: string;
   tone: "neutral" | "success" | "warning" | "danger";
   detail: string;
 } {
+  if (mode === "MOCK")
+    return {
+      label: "Mock",
+      tone: "neutral",
+      detail:
+        "Deterministic fixture data is active; it is not live Amazon data.",
+    };
   switch (status) {
-    case "MOCK":
+    case "HEALTHY":
       return {
-        label: "Mock",
-        tone: "neutral",
-        detail: "Deterministic fixture data is active.",
-      };
-    case "CONNECTED":
-      return {
-        label: "Connected",
+        label: "Healthy",
         tone: "success",
-        detail: "Server-side authorization was validated.",
+        detail: "The live provider connection was validated.",
       };
-    case "MISCONFIGURED":
+    case "AUTHORIZED":
       return {
-        label: "Misconfigured",
+        label: "Authorized",
+        tone: "success",
+        detail: "Authorization is present; provider health awaits validation.",
+      };
+    case "NOT_CONFIGURED":
+      return {
+        label: "Not configured",
         tone: "warning",
-        detail: "Live Amazon setup needs owner attention.",
+        detail: "Live Amazon credentials have not been configured.",
+      };
+    case "CONFIGURED":
+      return {
+        label: "Configured",
+        tone: "warning",
+        detail:
+          "Credentials are stored but authorization is not yet confirmed.",
       };
     case "UNAUTHORIZED":
       return {
@@ -52,6 +72,19 @@ export function providerStatusPresentation(status: ProviderConnectionStatus): {
         label: "Throttled",
         tone: "warning",
         detail: "Amazon has asked the service to slow down.",
+      };
+    case "QUOTA_EXHAUSTED":
+      return {
+        label: "Quota exhausted",
+        tone: "warning",
+        detail:
+          "The current provider budget is exhausted and will recover with its next window.",
+      };
+    case "PARTIAL":
+      return {
+        label: "Partial",
+        tone: "warning",
+        detail: "Only part of the requested provider data is available.",
       };
     case "UNAVAILABLE":
       return {

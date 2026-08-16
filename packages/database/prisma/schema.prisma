@@ -456,6 +456,58 @@ enum AlertEventStatus {
   RESOLVED
 }
 
+enum ProviderCapability {
+  CATALOG
+  COMPETITIVE_OFFERS
+  FEES
+  RESTRICTIONS
+  MARKET_HISTORY
+  KEYWORD_DISCOVERY
+  REVERSE_ASIN
+  SEARCH_RANK
+  CATEGORY_INTELLIGENCE
+  BRAND_INTELLIGENCE
+  SELLER_INTELLIGENCE
+  AD_INTELLIGENCE
+  REVIEW_INTELLIGENCE
+}
+
+enum ProviderRuntimeMode {
+  MOCK
+  LIVE
+}
+
+enum ProviderOperationalState {
+  NOT_CONFIGURED
+  CONFIGURED
+  AUTHORIZED
+  UNAUTHORIZED
+  QUOTA_EXHAUSTED
+  THROTTLED
+  UNAVAILABLE
+  PARTIAL
+  HEALTHY
+}
+
+enum ProviderBudgetUnit {
+  REQUEST
+  CREDIT
+  TOKEN
+}
+
+enum ProviderBudgetReservationStatus {
+  RESERVED
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
+enum ProviderRequestLeaseState {
+  ACTIVE
+  COMPLETED
+  RELEASED
+}
+
 model Organization {
   id        String   @id @default(cuid())
   slug      String   @unique
@@ -473,6 +525,13 @@ model Organization {
   matchDecisions              MatchDecision[]
   providerConnections         ProviderConnection[]
   providerAuthorizationStates ProviderAuthorizationState[]
+  providerCredentials         ProviderCredential[]
+  providerEntitlements        ProviderEntitlement[]
+  providerRateBudgets         ProviderRateBudget[]
+  providerBudgetReservations  ProviderBudgetReservation[]
+  providerCacheEntries        ProviderCacheEntry[]
+  providerRequestLeases       ProviderRequestLease[]
+  providerRequestAttempts     ProviderRequestAttempt[]
   enrichmentRuns              EnrichmentRun[]
   providerCallAttempts        ProviderCallAttempt[]
   financialPolicy             FinancialPolicy?
@@ -944,10 +1003,195 @@ model ProviderConnection {
   organization        Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   authorizationStates ProviderAuthorizationState[]
   enrichmentRuns      EnrichmentRun[]
+  entitlements        ProviderEntitlement[]
 
+  @@unique([id, organizationId])
   @@unique([organizationId, provider, marketplaceId])
   @@index([organizationId, status])
   @@map("provider_connections")
+}
+
+model ProviderCredential {
+  id                   String    @id @default(cuid())
+  organizationId       String    @map("organization_id")
+  providerKey          String    @map("provider_key")
+  credentialName       String    @map("credential_name")
+  ciphertext           String
+  encryptionNonce      String    @map("encryption_nonce")
+  encryptionTag        String    @map("encryption_tag")
+  encryptionKeyVersion Int       @map("encryption_key_version")
+  rotatedAt            DateTime? @map("rotated_at")
+  revokedAt            DateTime? @map("revoked_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, providerKey, credentialName], map: "provider_credentials_organization_id_provider_key_credential_na")
+  @@index([organizationId, providerKey, revokedAt], map: "provider_credentials_organization_id_provider_key_revoked_at_id")
+  @@map("provider_credentials")
+}
+
+model ProviderEntitlement {
+  id                   String                          @id @default(cuid())
+  organizationId       String                          @map("organization_id")
+  providerConnectionId String?                         @map("provider_connection_id")
+  providerKey          String                          @map("provider_key")
+  marketplaceId        String                          @map("marketplace_id")
+  capability           ProviderCapability
+  mode                 ProviderRuntimeMode
+  state                ProviderOperationalState
+  reasonCode           String?                         @map("reason_code")
+  completeness         ResearchObservationCompleteness @default(UNKNOWN)
+  checkedAt            DateTime                        @map("checked_at")
+  expiresAt            DateTime?                       @map("expires_at")
+  retryAt              DateTime?                       @map("retry_at")
+  lastSuccessAt        DateTime?                       @map("last_success_at")
+  createdAt            DateTime                        @default(now()) @map("created_at")
+  updatedAt            DateTime                        @updatedAt @map("updated_at")
+
+  organization       Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  providerConnection ProviderConnection?      @relation(fields: [providerConnectionId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "provider_entitlements_connection_org_fkey")
+  rateBudgets        ProviderRateBudget[]
+  cacheEntries       ProviderCacheEntry[]
+  requestAttempts    ProviderRequestAttempt[]
+
+  @@unique([id, organizationId])
+  @@unique([organizationId, providerKey, marketplaceId, capability], map: "provider_entitlements_org_provider_market_capability_key")
+  @@index([organizationId, state, retryAt])
+  @@index([providerConnectionId, organizationId], map: "provider_entitlements_connection_org_idx")
+  @@map("provider_entitlements")
+}
+
+model ProviderRateBudget {
+  id                String             @id @default(cuid())
+  organizationId    String             @map("organization_id")
+  entitlementId     String             @map("entitlement_id")
+  unit              ProviderBudgetUnit
+  windowStart       DateTime           @map("window_start")
+  windowEnd         DateTime           @map("window_end")
+  capacity          Decimal            @db.Decimal(20, 4)
+  reserved          Decimal            @default(0) @db.Decimal(20, 4)
+  consumed          Decimal            @default(0) @db.Decimal(20, 4)
+  estimatedUnitCost Decimal?           @map("estimated_unit_cost") @db.Decimal(20, 8)
+  costCurrency      String?            @map("cost_currency")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  entitlement  ProviderEntitlement         @relation(fields: [entitlementId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "provider_rate_budgets_entitlement_org_fkey")
+  reservations ProviderBudgetReservation[]
+
+  @@unique([id, organizationId])
+  @@unique([entitlementId, unit, windowStart, windowEnd], map: "provider_rate_budgets_entitlement_unit_window_key")
+  @@index([organizationId, windowEnd])
+  @@map("provider_rate_budgets")
+}
+
+model ProviderBudgetReservation {
+  id             String                          @id @default(cuid())
+  organizationId String                          @map("organization_id")
+  budgetId       String                          @map("budget_id")
+  requestKey     String                          @map("request_key")
+  units          Decimal                         @db.Decimal(20, 4)
+  estimatedCost  Decimal?                        @map("estimated_cost") @db.Decimal(20, 8)
+  status         ProviderBudgetReservationStatus @default(RESERVED)
+  expiresAt      DateTime                        @map("expires_at")
+  consumedAt     DateTime?                       @map("consumed_at")
+  releasedAt     DateTime?                       @map("released_at")
+  createdAt      DateTime                        @default(now()) @map("created_at")
+  updatedAt      DateTime                        @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  budget       ProviderRateBudget @relation(fields: [budgetId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "provider_budget_reservations_budget_org_fkey")
+
+  @@unique([organizationId, budgetId, requestKey], map: "provider_budget_reservations_org_budget_request_key")
+  @@index([organizationId, status, expiresAt], map: "provider_budget_reservations_org_status_expires_idx")
+  @@map("provider_budget_reservations")
+}
+
+model ProviderCacheEntry {
+  id                   String                          @id @default(cuid())
+  organizationId       String                          @map("organization_id")
+  entitlementId        String?                         @map("entitlement_id")
+  providerKey          String                          @map("provider_key")
+  marketplaceId        String                          @map("marketplace_id")
+  capability           ProviderCapability
+  operation            String
+  requestHash          String                          @map("request_hash")
+  normalizedProjection Json?                           @map("normalized_projection")
+  rawEvidenceReference String?                         @map("raw_evidence_reference")
+  observedAt           DateTime                        @map("observed_at")
+  freshUntil           DateTime                        @map("fresh_until")
+  staleUntil           DateTime                        @map("stale_until")
+  retainUntil          DateTime                        @map("retain_until")
+  completeness         ResearchObservationCompleteness
+  createdAt            DateTime                        @default(now()) @map("created_at")
+  updatedAt            DateTime                        @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  entitlement  ProviderEntitlement? @relation(fields: [entitlementId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "provider_cache_entries_entitlement_org_fkey")
+
+  @@unique([organizationId, providerKey, marketplaceId, capability, operation, requestHash], map: "provider_cache_entries_request_key")
+  @@index([organizationId, capability, freshUntil], map: "provider_cache_entries_org_capability_fresh_idx")
+  @@index([retainUntil])
+  @@map("provider_cache_entries")
+}
+
+model ProviderRequestLease {
+  id             String                    @id @default(cuid())
+  organizationId String                    @map("organization_id")
+  providerKey    String                    @map("provider_key")
+  marketplaceId  String                    @map("marketplace_id")
+  capability     ProviderCapability
+  operation      String
+  requestHash    String                    @map("request_hash")
+  ownerTokenHash String                    @map("owner_token_hash")
+  state          ProviderRequestLeaseState @default(ACTIVE)
+  leaseExpiresAt DateTime                  @map("lease_expires_at")
+  completedAt    DateTime?                 @map("completed_at")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, providerKey, marketplaceId, capability, operation, requestHash], map: "provider_request_leases_request_key")
+  @@index([organizationId, state, leaseExpiresAt], map: "provider_request_leases_org_state_expires_idx")
+  @@map("provider_request_leases")
+}
+
+model ProviderRequestAttempt {
+  id                String                   @id @default(cuid())
+  organizationId    String                   @map("organization_id")
+  entitlementId     String?                  @map("entitlement_id")
+  providerKey       String                   @map("provider_key")
+  marketplaceId     String                   @map("marketplace_id")
+  capability        ProviderCapability
+  operation         String
+  requestHash       String                   @map("request_hash")
+  mode              ProviderRuntimeMode
+  state             ProviderOperationalState
+  attempt           Int
+  httpStatus        Int?                     @map("http_status")
+  errorCode         String?                  @map("error_code")
+  providerRequestId String?                  @map("provider_request_id")
+  retryAt           DateTime?                @map("retry_at")
+  cacheOutcome      String?                  @map("cache_outcome")
+  budgetUnit        ProviderBudgetUnit?      @map("budget_unit")
+  estimatedUnits    Decimal?                 @map("estimated_units") @db.Decimal(20, 4)
+  estimatedCost     Decimal?                 @map("estimated_cost") @db.Decimal(20, 8)
+  costCurrency      String?                  @map("cost_currency")
+  startedAt         DateTime                 @map("started_at")
+  completedAt       DateTime?                @map("completed_at")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  entitlement  ProviderEntitlement? @relation(fields: [entitlementId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "provider_request_attempts_entitlement_org_fkey")
+
+  @@unique([organizationId, providerKey, marketplaceId, capability, operation, requestHash, attempt], map: "provider_request_attempts_request_attempt_key")
+  @@index([organizationId, providerKey, capability, createdAt], map: "provider_request_attempts_org_provider_capability_created_idx")
+  @@index([entitlementId, organizationId], map: "provider_request_attempts_entitlement_org_idx")
+  @@map("provider_request_attempts")
 }
 
 model ProviderAuthorizationState {

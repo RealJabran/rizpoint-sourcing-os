@@ -44,6 +44,9 @@ importers:
       '@rizpoint/profit-engine':
         specifier: workspace:*
         version: link:../../packages/profit-engine
+      '@rizpoint/provider-contracts':
+        specifier: workspace:*
+        version: link:../../packages/provider-contracts
       '@tanstack/react-table':
         specifier: 8.21.3
         version: 8.21.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -214,6 +217,9 @@ importers:
       '@rizpoint/order-engine':
         specifier: workspace:*
         version: link:../order-engine
+      '@rizpoint/provider-contracts':
+        specifier: workspace:*
+        version: link:../provider-contracts
       pg:
         specifier: 8.16.3
         version: 8.16.3
