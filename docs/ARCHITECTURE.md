@@ -75,6 +75,17 @@ and capabilities. Live mode fails closed when an authorized live connection is
 absent; it cannot fall back to mock. Capability status routes return only the
 credential-free reason matrix.
 
+Market history is an optional, separate checkpointed run attached to a scan.
+It accepts at most 100 ASINs already accepted by that organization, claims the
+same provider cache/lease key used by the runtime control plane, and writes
+append-only `ResearchObservation`, `HistoricalMetricSeries`, and
+`HistoricalMetricPoint` records. The Keepa adapter is server-only and receives
+an API key only by decrypting the tenant's `ProviderCredential` in the worker.
+Recorded history uses a distinct `MOCK` origin. Opaque response evidence is
+redacted, stored in the private bucket, referenced from the cache and typed
+observation, and removed with the shorter cache retention deadline; normalized
+series retain their configured historical window.
+
 The Phase 7.6 connectivity boundary validates only official NA/EU/FE SP-API
 endpoints. It exchanges an encrypted long-lived refresh token for a short-lived
 LWA access token in worker memory, using a single-flight cache. The first

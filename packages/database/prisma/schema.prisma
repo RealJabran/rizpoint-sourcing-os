@@ -155,6 +155,26 @@ enum ProviderKind {
   MOCK_HISTORY
 }
 
+enum HistoryRefreshRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL_SUCCESS
+  FAILED_RETRYABLE
+  FAILED_FINAL
+}
+
+enum HistoryRefreshItemStatus {
+  PENDING
+  COMPLETED
+  PARTIAL
+  UNAUTHORIZED
+  THROTTLED
+  UNAVAILABLE
+  FAILED_RETRYABLE
+  FAILED_FINAL
+}
+
 enum ProviderConnectionMode {
   MOCK
   SELF_AUTHORIZED
@@ -397,6 +417,7 @@ enum ResearchObservationType {
   CATEGORY
   BRAND
   SELLER
+  HISTORY
 }
 
 enum ResearchObservationCompleteness {
@@ -569,10 +590,12 @@ model Organization {
   sellerObservations          SellerObservation[]
   historicalMetricSeries      HistoricalMetricSeries[]
   historicalMetricPoints      HistoricalMetricPoint[]
+  historyRefreshRuns          HistoryRefreshRun[]
   opportunityAssessments      OpportunityAssessment[]
   opportunityReasons          OpportunityReason[]
   alertRules                  AlertRule[]
   alertEvents                 AlertEvent[]
+  historyRefreshItems         HistoryRefreshItem[]
 
   @@map("organizations")
 }
@@ -637,6 +660,7 @@ model ScanJob {
   analysisViews         AnalysisView[]
   profitCostOverrides   ProfitCostOverride[]
   exportJobs            ExportJob[]
+  historyRefreshRuns    HistoryRefreshRun[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status])
@@ -857,6 +881,7 @@ model CatalogProduct {
   productKeywordObservations ProductKeywordObservation[]
   productMarketObservations  ProductMarketObservation[]
   historicalMetricSeries     HistoricalMetricSeries[]
+  historyRefreshItems        HistoryRefreshItem[]
   opportunityAssessments     OpportunityAssessment[]
 
   @@unique([provider, providerReference])
@@ -1256,6 +1281,63 @@ model EnrichmentItem {
   @@index([enrichmentRunId, status])
   @@index([supplierRowId])
   @@map("enrichment_items")
+}
+
+/**
+ * Checkpointed, bounded history retrieval. It is deliberately separate from
+ * wholesale enrichment: history is optional unless a later policy requires it.
+ */
+model HistoryRefreshRun {
+  id             String                  @id @default(cuid())
+  organizationId String                  @map("organization_id")
+  scanJobId      String                  @map("scan_job_id")
+  providerKey    String                  @map("provider_key")
+  marketplaceId  String                  @map("marketplace_id")
+  idempotencyKey String                  @map("idempotency_key")
+  requestHash    String                  @map("request_hash")
+  historyDays    Int                     @default(365) @map("history_days")
+  status         HistoryRefreshRunStatus @default(PENDING)
+  attemptCount   Int                     @default(0) @map("attempt_count")
+  missingCount   Int                     @default(0) @map("missing_count")
+  errorCode      String?                 @map("error_code")
+  retryAt        DateTime?               @map("retry_at")
+  completedAt    DateTime?               @map("completed_at")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "history_refresh_runs_organization_fkey")
+  scanJob      ScanJob              @relation(fields: [scanJobId], references: [id], onDelete: Cascade, map: "history_refresh_runs_scan_job_fkey")
+  items        HistoryRefreshItem[]
+
+  @@unique([organizationId, idempotencyKey], map: "history_refresh_runs_org_idempotency_key")
+  @@unique([id, organizationId], map: "history_refresh_runs_id_organization_id_key")
+  @@index([organizationId, scanJobId, status, updatedAt], map: "history_refresh_runs_org_scan_status_updated_idx")
+  @@map("history_refresh_runs")
+}
+
+model HistoryRefreshItem {
+  id                   String                   @id @default(cuid())
+  organizationId       String                   @map("organization_id")
+  historyRefreshRunId  String                   @map("history_refresh_run_id")
+  asin                 String
+  catalogProductId     String?                  @map("catalog_product_id")
+  status               HistoryRefreshItemStatus @default(PENDING)
+  observationId        String?                  @map("observation_id")
+  rawEvidenceReference String?                  @map("raw_evidence_reference")
+  errorCode            String?                  @map("error_code")
+  completedAt          DateTime?                @map("completed_at")
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "history_refresh_items_organization_fkey")
+  historyRefreshRun HistoryRefreshRun    @relation(fields: [historyRefreshRunId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "history_refresh_items_run_org_fkey")
+  catalogProduct    CatalogProduct?      @relation(fields: [catalogProductId], references: [id], onDelete: Restrict, map: "history_refresh_items_catalog_product_fkey")
+  observation       ResearchObservation? @relation(fields: [observationId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "history_refresh_items_observation_org_fkey")
+
+  @@unique([historyRefreshRunId, asin], map: "history_refresh_items_run_asin_key")
+  @@index([organizationId, status, updatedAt], map: "history_refresh_items_org_status_updated_idx")
+  @@index([catalogProductId], map: "history_refresh_items_catalog_product_idx")
+  @@map("history_refresh_items")
 }
 
 model ProviderObservation {
@@ -2081,6 +2163,7 @@ model ResearchObservation {
   brandObservation          BrandObservation?
   sellerObservation         SellerObservation?
   historicalMetricPoints    HistoricalMetricPoint[]
+  historyRefreshItems       HistoryRefreshItem[]
 
   @@unique([id, organizationId])
   @@unique([organizationId, providerKey, marketplaceId, type, observationKey, observedAt])

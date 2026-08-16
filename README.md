@@ -22,6 +22,11 @@ See [local catalog import testing](docs/LOCAL_TESTING.md) for the API and browse
 
 After a mapping is confirmed, **Start scan** advances the checkpointed local workflow through normalization, matching, fixture enrichment, restrictions, and deterministic calculation. The completed or partial result opens at `/scans/{scanId}/analysis`. Local mode uses deterministic mock fixtures; the server-only SP-API adapter is configuration-gated and has no real credentials in this repository.
 
+Market history also defaults to `MARKET_HISTORY_PROVIDER_MODE=mock`, which uses
+recorded fixtures and is visibly labeled as such. The Keepa adapter is available
+only after an owner stores an encrypted `keepa` / `api_key` credential; it is not
+required for wholesale scans and never changes deterministic profit results.
+
 `PHASE_ZERO_DEMO_MODE=true` is set only by local Compose to enable this mock route. Do not expose it as a production authorization mechanism.
 
 Compose runs the built Next.js image with `next start` and `NODE_ENV=production`; its explicit unauthenticated demo exception is accepted only with both local-demo flags, loopback application URLs, and loopback-bound host ports. Direct `pnpm dev` remains the development-tooling path.

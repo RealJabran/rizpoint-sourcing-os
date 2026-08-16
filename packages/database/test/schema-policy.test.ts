@@ -216,4 +216,43 @@ describe("database policy", () => {
     expect(schema).toMatch(/finalFee\s+Decimal[^\n]+@db\.Decimal\(18, 4\)/);
     expect(schema).toContain("restrictionReasonCodes");
   });
+
+  it("keeps optional market-history checkpoints tenant-scoped and bounded", async () => {
+    const [schema, migration, tenantMigration] = await Promise.all([
+      readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8"),
+      readFile(
+        new URL(
+          "../prisma/migrations/20260816150000_keepa_market_history/migration.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../prisma/migrations/20260816153000_history_refresh_run_organization_fkey/migration.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ]);
+    expect(schema).toContain("model HistoryRefreshRun");
+    expect(schema).toContain("model HistoryRefreshItem");
+    expect(schema).toContain("HISTORY");
+    expect(migration).toContain(
+      'ALTER TYPE "ResearchObservationType" ADD VALUE',
+    );
+    expect(migration).toContain(
+      'FOREIGN KEY ("observation_id", "organization_id")',
+    );
+    expect(migration).toContain(
+      'CHECK ("history_days" > 0 AND "history_days" <= 730)',
+    );
+    expect(migration).not.toContain("DROP COLUMN");
+    expect(schema).toContain(
+      '@@unique([id, organizationId], map: "history_refresh_runs_id_organization_id_key")',
+    );
+    expect(tenantMigration).toContain(
+      'FOREIGN KEY ("history_refresh_run_id", "organization_id")',
+    );
+  });
 });

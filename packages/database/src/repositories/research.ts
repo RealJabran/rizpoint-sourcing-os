@@ -4,6 +4,7 @@ import type {
   AddResearchProjectItemInput,
   AppendHistoricalMetricPointInput,
   AppendKeywordObservationInput,
+  RecordHistoryObservationInput,
   CreateAlertRuleInput,
   CreateHistoricalMetricSeriesInput,
   CreateKeywordInput,
@@ -350,6 +351,61 @@ export function createResearchRepository(
           throw new Error("OBSERVATION_IDEMPOTENCY_CONFLICT");
         return { ...observation, keywordObservation: projection };
       });
+    },
+
+    async recordHistoryObservation(input: RecordHistoryObservationInput) {
+      const { envelope } = input;
+      if (envelope.expiresAt && envelope.expiresAt < envelope.observedAt)
+        throw new Error("OBSERVATION_FRESHNESS_WINDOW_INVALID");
+      const observation = await client.researchObservation.upsert({
+        where: {
+          organizationId_providerKey_marketplaceId_type_observationKey_observedAt:
+            {
+              organizationId: envelope.organizationId,
+              providerKey: envelope.providerKey,
+              marketplaceId: envelope.marketplaceId,
+              type: "HISTORY",
+              observationKey: envelope.observationKey,
+              observedAt: envelope.observedAt,
+            },
+        },
+        create: {
+          organizationId: envelope.organizationId,
+          marketplaceId: envelope.marketplaceId,
+          type: "HISTORY",
+          providerKey: requiredText(
+            envelope.providerKey,
+            "PROVIDER_KEY_REQUIRED",
+          ),
+          operation: requiredText(
+            envelope.operation,
+            "PROVIDER_OPERATION_REQUIRED",
+          ),
+          observationKey: requiredText(
+            envelope.observationKey,
+            "OBSERVATION_KEY_REQUIRED",
+          ),
+          providerReference: envelope.providerReference ?? null,
+          observedAt: envelope.observedAt,
+          expiresAt: envelope.expiresAt ?? null,
+          freshnessState: envelope.freshnessState,
+          completeness: envelope.completeness,
+          status: envelope.status,
+          requestHash: envelope.requestHash ?? null,
+          ...(envelope.requestInputs === undefined
+            ? {}
+            : { requestInputs: envelope.requestInputs }),
+          rawEvidenceReference: envelope.rawEvidenceReference ?? null,
+        },
+        update: {},
+      });
+      if (
+        observation.operation !== envelope.operation ||
+        observation.requestHash !== (envelope.requestHash ?? null) ||
+        observation.providerReference !== (envelope.providerReference ?? null)
+      )
+        throw new Error("OBSERVATION_IDEMPOTENCY_CONFLICT");
+      return observation;
     },
 
     async createHistoricalMetricSeries(

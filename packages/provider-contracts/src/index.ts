@@ -484,6 +484,98 @@ export const marketHistorySchema = observedMetricSchema(
 );
 export type MarketHistory = z.infer<typeof marketHistorySchema>;
 
+/**
+ * A vendor-neutral, append-only historical projection.  Price values are
+ * decimal text, never JavaScript numbers.  A point deliberately has exactly
+ * one typed value so a missing metric can stay missing rather than becoming a
+ * false zero.
+ */
+export const marketHistoryMetricKeySchema = z.enum([
+  "AMAZON_PRICE",
+  "NEW_OFFER_PRICE",
+  "FEATURED_OFFER_PRICE",
+  "SALES_RANK",
+  "OFFER_COUNT",
+  "AMAZON_RETAIL_PRESENT",
+  "RATING",
+  "REVIEW_COUNT",
+  "PRODUCT_FIRST_OBSERVED_AT",
+  "CATEGORY_CONTEXT",
+]);
+export type MarketHistoryMetricKey = z.infer<
+  typeof marketHistoryMetricKeySchema
+>;
+
+const marketHistoryPointBaseSchema = z.object({
+  observedAt: z.iso.datetime(),
+  decimalValue: decimalStringSchema.optional(),
+  integerValue: z
+    .string()
+    .regex(/^-?\d+$/)
+    .optional(),
+  booleanValue: z.boolean().optional(),
+  textValue: z.string().min(1).optional(),
+});
+
+export const marketHistoryPointSchema = marketHistoryPointBaseSchema.refine(
+  (point) =>
+    [
+      point.decimalValue !== undefined,
+      point.integerValue !== undefined,
+      point.booleanValue !== undefined,
+      point.textValue !== undefined,
+    ].filter(Boolean).length === 1,
+  { message: "A history point needs exactly one typed value" },
+);
+export type MarketHistoryPoint = z.infer<typeof marketHistoryPointSchema>;
+
+export const marketHistorySeriesSchema = z.object({
+  metricKey: marketHistoryMetricKeySchema,
+  unit: z.string().min(1),
+  currency: z.string().length(3).optional(),
+  points: z.array(marketHistoryPointSchema),
+});
+export type MarketHistorySeries = z.infer<typeof marketHistorySeriesSchema>;
+
+export const marketHistoryProductSchema = z.object({
+  asin: z.string().regex(/^B[A-Z0-9]{9}$/),
+  marketplaceId: z.string().min(1),
+  firstObservedAt: z.iso.datetime().optional(),
+  categoryContext: z
+    .array(
+      z.object({
+        categoryId: z.string().min(1),
+        name: z.string().min(1).optional(),
+        currentRank: z.string().regex(/^\d+$/).optional(),
+      }),
+    )
+    .default([]),
+  series: z.array(marketHistorySeriesSchema),
+  completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]),
+  /** Never rendered directly. A worker writes this to private storage. */
+  rawProviderObservation: z.unknown().optional(),
+});
+export type MarketHistoryProduct = z.infer<typeof marketHistoryProductSchema>;
+
+export const marketHistoryBatchSchema = observedMetricSchema(
+  z.object({
+    operation: z.literal("getProductHistory"),
+    marketplaceId: z.string().min(1),
+    products: z.array(marketHistoryProductSchema),
+  }),
+).extend({ rawProviderObservation: z.unknown().optional() });
+export type MarketHistoryBatch = z.infer<typeof marketHistoryBatchSchema>;
+
+export const marketHistoryRequestSchema = z.object({
+  asins: z
+    .array(z.string().regex(/^B[A-Z0-9]{9}$/))
+    .min(1)
+    .max(100),
+  historyDays: z.number().int().positive().max(730).default(365),
+  includeRatingAndReviews: z.boolean().default(true),
+});
+export type MarketHistoryRequest = z.infer<typeof marketHistoryRequestSchema>;
+
 export const aiMatchRankingSchema = z.object({
   candidateAsin: z.string().regex(/^B[A-Z0-9]{9}$/),
   confidence: z.number().int().min(0).max(100),
@@ -539,6 +631,15 @@ export interface RestrictionProvider {
 }
 
 export interface MarketHistoryProvider {
+  /**
+   * Normalized request used by licensed history vendors.  It is optional for
+   * legacy providers until they support historical projections.
+   */
+  getProductHistory?(
+    request: MarketHistoryRequest,
+    marketplace: MarketplaceContext,
+  ): Promise<MarketHistoryBatch>;
+  /** Legacy price-only history retained for existing wholesale checkpoints. */
   getHistory(
     asin: string,
     marketplace: MarketplaceContext,

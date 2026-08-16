@@ -895,6 +895,7 @@ export async function getAnalysisResult(
                 include: {
                   catalogProduct: {
                     select: {
+                      id: true,
                       asin: true,
                       title: true,
                       brand: true,
@@ -923,6 +924,7 @@ export async function getAnalysisResult(
             include: {
               catalogProduct: {
                 select: {
+                  id: true,
                   asin: true,
                   title: true,
                   brand: true,
@@ -1022,5 +1024,39 @@ export async function getAnalysisResult(
     },
     orderBy: { createdAt: "asc" },
   });
-  return { ...result, auditEvents };
+  const catalogProductId =
+    result.supplierRow.matchDecision?.selectedCandidate?.catalogProduct?.id;
+  const historyEvidence = catalogProductId
+    ? await db.historicalMetricSeries.findMany({
+        where: { organizationId, catalogProductId },
+        select: {
+          metricKey: true,
+          providerKey: true,
+          unit: true,
+          currency: true,
+          points: {
+            select: {
+              metricAt: true,
+              decimalValue: true,
+              integerValue: true,
+              booleanValue: true,
+              textValue: true,
+              sourceObservation: {
+                select: {
+                  providerKey: true,
+                  observedAt: true,
+                  expiresAt: true,
+                  freshnessState: true,
+                  completeness: true,
+                },
+              },
+            },
+            orderBy: { metricAt: "desc" },
+            take: 24,
+          },
+        },
+        orderBy: { metricKey: "asc" },
+      })
+    : [];
+  return { ...result, auditEvents, historyEvidence };
 }

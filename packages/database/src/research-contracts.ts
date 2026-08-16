@@ -97,6 +97,12 @@ export interface AppendKeywordObservationInput {
   metrics?: Prisma.InputJsonValue;
 }
 
+/** A history retrieval envelope has no lossy JSON projection; its useful facts
+ * are persisted as typed HistoricalMetricSeries/Point rows. */
+export interface RecordHistoryObservationInput {
+  envelope: ResearchObservationEnvelopeInput & { type: "HISTORY" };
+}
+
 export interface CreateHistoricalMetricSeriesInput {
   organizationId: string;
   marketplaceId: string;
@@ -184,6 +190,9 @@ export interface ResearchRepositoryContract {
   appendKeywordObservation(
     input: AppendKeywordObservationInput,
   ): Promise<ResearchObservation & { keywordObservation: KeywordObservation }>;
+  recordHistoryObservation(
+    input: RecordHistoryObservationInput,
+  ): Promise<ResearchObservation>;
   createHistoricalMetricSeries(
     input: CreateHistoricalMetricSeriesInput,
   ): Promise<HistoricalMetricSeries>;

@@ -3,6 +3,7 @@ import {
   completeMockScanJob,
   db,
   failProfitCalculation,
+  failHistoryRefreshRun,
   failUploadStage,
   failScanJob,
   markScanJobRunning,
@@ -25,6 +26,7 @@ import { processMatching } from "./matching.js";
 import { processEnrichment } from "./enrichment.js";
 import { processProfitCalculation } from "./profit.js";
 import { processExport } from "./export.js";
+import { processHistoryRefresh } from "./market-history.js";
 import { jobFailures, logger, redactText } from "./observability.js";
 import { reportOperationalError } from "./error-tracking.js";
 
@@ -63,6 +65,7 @@ export const mockScanWorker = new Worker<{
     | "MATCH"
     | "ENRICH"
     | "CALCULATE"
+    | "HISTORY_REFRESH"
     | "EXPORT";
 }>(
   "mock-scan",
@@ -165,6 +168,11 @@ export const mockScanWorker = new Worker<{
         await processProfitCalculation(job.data.runId);
         return;
       }
+      if (job.data.kind === "HISTORY_REFRESH") {
+        if (!job.data.runId) throw new Error("history_refresh_run_missing");
+        await processHistoryRefresh(job.data.runId);
+        return;
+      }
       const shouldProcess = await markScanJobRunning(job.data.scanJobId);
       if (!shouldProcess) return;
       const result = await requestMockScan(job.data.scanJobId);
@@ -185,6 +193,19 @@ export const mockScanWorker = new Worker<{
         ...(job.data.exportJobId ? { exportJobId: job.data.exportJobId } : {}),
       }).catch(() => undefined);
       if (job.data.kind === "EXPORT") throw error;
+      if (job.data.kind === "HISTORY_REFRESH") {
+        if (job.data.runId)
+          await failHistoryRefreshRun({
+            runId: job.data.runId,
+            status:
+              failureStatusForAttempt(job.attemptsMade, job.opts.attempts) ===
+              "FAILED_FINAL"
+                ? "FAILED_FINAL"
+                : "FAILED_RETRYABLE",
+            errorCode: "HISTORY_REFRESH_FAILED",
+          });
+        throw error;
+      }
       const status = failureStatusForAttempt(
         job.attemptsMade,
         job.opts.attempts,

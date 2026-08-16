@@ -70,7 +70,8 @@ Slice 6 presents those persisted facts in the server-windowed analysis workspace
 Its active-view CSV/XLSX exports are private, formula-safe snapshots of the same
 typed server filters used by the grid. Evidence refreshes are checkpointed,
 organization-scoped jobs and preserve explicit queued, partial, and failed
-states. Licensed historical enrichment remains intentionally deferred.
+states. Licensed historical enrichment is optional and separately checkpointed;
+it never blocks a wholesale scan unless a future policy explicitly requires it.
 
 ## Research foundation scope
 
@@ -81,10 +82,22 @@ assessments, and alert foundations. Marketplace- and time-specific research
 observations use a shared provenance envelope with typed keyword, product-market,
 category, brand, and seller projections.
 
-This foundation does not add a research UI, claim live keyword/history coverage,
-or infer unavailable metrics. Licensed provider selection, entitlement checks,
-research jobs, calculation engines, and user-facing research workflows are later
+This foundation does not add a full research UI, claim live keyword coverage, or
+infer unavailable metrics. Licensed provider selection beyond optional history,
+research calculation engines, and broader research workflows remain later
 prompts.
+
+## Licensed market history
+
+Prompt 04 adds an optional, vendor-neutral market-history boundary. The first
+implementation is a Keepa adapter selected only with
+`MARKET_HISTORY_PROVIDER_MODE=keepa` and an encrypted `keepa` / `api_key`
+credential. The default recorded adapter is explicitly `MOCK`. Bounded refresh
+runs persist append-only price, sales-rank, offer-count, Amazon-availability,
+rating/review, first-observed, and category-context points when returned.
+Missing fields remain absent, not zero. Historical evidence is optional for
+wholesale calculations and is shown with provider, observation time, freshness,
+and completeness.
 
 ## Provider runtime foundation
 

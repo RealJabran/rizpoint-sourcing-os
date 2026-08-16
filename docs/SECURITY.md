@@ -61,6 +61,25 @@ browser allowlist.
 
 The Amazon authorization instructions above are based on Amazon's current [private application self-authorization guide](https://developer-docs.amazon.com/sp-api/docs/self-authorization), [Sellers API role mapping](https://developer-docs.amazon.com/sp-api/lang-tr_TR/docs/sellers-api), and [LWA credential guidance](https://developer-docs.amazon.com/sp-api/docs/lwa-credentials-faq). Amazon may change roles and access terms; confirm them in the official portal before enabling live mode.
 
+## Licensed market-history credentials
+
+Keepa is an optional server-only market-history provider. Do not set a Keepa
+API key in `NEXT_PUBLIC_*`, Compose, a browser environment file, logs, fixtures,
+or Git. An owner must encrypt it as the tenant-scoped `ProviderCredential`
+named `keepa` / `api_key` using `PROVIDER_CREDENTIAL_KEY_V1`; the worker decrypts
+it only with authenticated context `${organizationId}:keepa:api_key` when
+`MARKET_HISTORY_PROVIDER_MODE=keepa`. Without that encrypted credential the
+connection is `NOT_CONFIGURED`/`UNAUTHORIZED`, never silently mocked. Keepa's
+Product endpoint uses an API-key query parameter, so the adapter never logs
+request URLs and telemetry records only a request hash. Raw responses are
+redacted and private, then removed at provider-cache retention expiry.
+
+Before enabling live Keepa mode, configure a tenant-scoped `TOKEN`
+`ProviderRateBudget` for `MARKET_HISTORY` and set the non-secret
+`KEEPA_HISTORY_TOKEN_ESTIMATE_PER_ASIN` from the licensed plan's current
+documented product-request cost. The worker refuses to call Keepa without both
+controls and reports `RATE_BUDGET_NOT_CONFIGURED`; it never guesses token cost.
+
 ## Phase 7 private-production controls
 
 - Private production validates the signed Auth.js session against the active owner membership and session epoch on every protected request. Demo mode is local-only; a production request rejects it before routing.

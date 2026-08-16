@@ -11,6 +11,8 @@ import type {
   FeeEstimateRequest,
   FeeProvider,
   MarketHistory,
+  MarketHistoryBatch,
+  MarketHistoryRequest,
   MarketHistoryProvider,
   MarketplaceContext,
   PricingProvider,
@@ -442,5 +444,109 @@ export class MockProviderCapabilityDiscovery implements ProviderCapabilityDiscov
     marketplace: MarketplaceContext,
   ): Promise<readonly ProviderCapabilityState[]> {
     return mockCapabilityStates(marketplace.marketplaceId, this.state);
+  }
+}
+
+/** Recorded, sparse history fixtures. Their MOCK provenance is intentional so
+ * development data can never be mistaken for licensed live evidence. */
+export class RecordedMarketHistoryProvider implements MarketHistoryProvider {
+  readonly providerKey = "recorded-history";
+
+  constructor(
+    private readonly options: {
+      fault?: "THROTTLED" | "UNAUTHORIZED" | "UNAVAILABLE";
+      sparse?: boolean;
+    } = {},
+  ) {}
+
+  async getProductHistory(
+    request: MarketHistoryRequest,
+    marketplace: MarketplaceContext,
+  ): Promise<MarketHistoryBatch> {
+    if (this.options.fault === "THROTTLED")
+      throw new ProviderError("THROTTLED", { retryAfterMs: 2_000 });
+    if (this.options.fault === "UNAUTHORIZED")
+      throw new ProviderError("UNAUTHORIZED");
+    if (this.options.fault === "UNAVAILABLE")
+      throw new ProviderError("PROVIDER_OUTAGE");
+    const observedAt = "2026-01-15T00:00:00.000Z";
+    const products = request.asins.map((asin, index) => ({
+      asin,
+      marketplaceId: marketplace.marketplaceId,
+      firstObservedAt: "2024-01-01T00:00:00.000Z",
+      categoryContext: [{ categoryId: "123", name: "Recorded fixtures" }],
+      series: [
+        {
+          metricKey: "AMAZON_PRICE" as const,
+          unit: "currency",
+          currency: "USD",
+          points: [
+            {
+              observedAt: "2026-01-01T00:00:00.000Z",
+              decimalValue: "19.99",
+            },
+            { observedAt, decimalValue: "18.99" },
+          ],
+        },
+        {
+          metricKey: "SALES_RANK" as const,
+          unit: "rank",
+          points: [{ observedAt, integerValue: String(1234 + index) }],
+        },
+        {
+          metricKey: "AMAZON_RETAIL_PRESENT" as const,
+          unit: "boolean",
+          points: [{ observedAt, booleanValue: index % 2 === 0 }],
+        },
+        ...(this.options.sparse
+          ? []
+          : [
+              {
+                metricKey: "REVIEW_COUNT" as const,
+                unit: "count",
+                points: [{ observedAt, integerValue: "42" }],
+              },
+            ]),
+      ],
+      completeness: this.options.sparse
+        ? ("PARTIAL" as const)
+        : ("COMPLETE" as const),
+      rawProviderObservation: { fixture: "recorded-history", asin },
+    }));
+    return {
+      value: {
+        operation: "getProductHistory",
+        marketplaceId: marketplace.marketplaceId,
+        products,
+      },
+      provenance: {
+        provider: this.providerKey,
+        observedAt,
+        freshnessState: "FRESH",
+        marketplaceId: marketplace.marketplaceId,
+        responseCompleteness: this.options.sparse ? "PARTIAL" : "COMPLETE",
+      },
+      rawProviderObservation: { fixture: "recorded-history" },
+    };
+  }
+
+  async getHistory(
+    asin: string,
+    marketplace: MarketplaceContext,
+  ): Promise<MarketHistory> {
+    const result = await this.getProductHistory(
+      { asins: [asin], historyDays: 365, includeRatingAndReviews: false },
+      marketplace,
+    );
+    return {
+      value: [
+        {
+          observedAt: "2026-01-15T00:00:00.000Z",
+          price: "18.99",
+          currency: "USD",
+        },
+      ],
+      provenance: result.provenance,
+    };
   }
 }

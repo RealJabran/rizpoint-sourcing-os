@@ -22,6 +22,7 @@ type ProviderState =
   | {
       kind: "ready";
       data: {
+        name: string;
         status: ProviderConnectionStatus;
         mode: "MOCK" | "LIVE";
         checkedAt: string;
@@ -66,6 +67,9 @@ function DashboardLoading() {
 export function Dashboard() {
   const [state, setState] = useState<DashboardState>({ kind: "loading" });
   const [provider, setProvider] = useState<ProviderState>({ kind: "loading" });
+  const [historyProvider, setHistoryProvider] = useState<ProviderState>({
+    kind: "loading",
+  });
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -82,9 +86,13 @@ export function Dashboard() {
         setState({ kind: "error" });
       }
     })();
-    void (async () => {
+    const loadProvider = async (
+      url: string,
+      name: string,
+      setProviderState: (value: ProviderState) => void,
+    ) => {
       try {
-        const response = await fetch("/api/providers/amazon", {
+        const response = await fetch(url, {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error("PROVIDER_STATUS_UNAVAILABLE");
@@ -93,12 +101,19 @@ export function Dashboard() {
           mode: "MOCK" | "LIVE";
           checkedAt: string;
         };
-        if (active) setProvider({ kind: "ready", data });
+        if (active)
+          setProviderState({ kind: "ready", data: { ...data, name } });
       } catch (error) {
         if (!active || requestWasAborted(error, controller.signal)) return;
-        setProvider({ kind: "error" });
+        setProviderState({ kind: "error" });
       }
-    })();
+    };
+    void loadProvider("/api/providers/amazon", "Amazon", setProvider);
+    void loadProvider(
+      "/api/providers/market-history",
+      "Market history",
+      setHistoryProvider,
+    );
     return () => {
       active = false;
       abortExpectedRequest(controller);
@@ -120,39 +135,52 @@ export function Dashboard() {
       ) : null}
       {state.kind === "ready" ? (
         <>
-          <section
-            className="dashboard-provider"
-            aria-label="Amazon provider status"
-          >
+          <section className="dashboard-provider" aria-label="Provider status">
             <div>
-              <span className="dashboard-provider__eyebrow">Amazon data</span>
-              <h2>Provider connection</h2>
+              <span className="dashboard-provider__eyebrow">
+                Provider truth
+              </span>
+              <h2>Data connections</h2>
             </div>
-            {provider.kind === "loading" ? (
-              <Skeleton className="provider-skeleton" />
-            ) : null}
-            {provider.kind === "error" ? (
-              <Alert tone="warning" title="Provider status is unavailable">
-                Amazon data status could not be confirmed. Your persisted scan
-                data is unchanged.
-              </Alert>
-            ) : null}
-            {provider.kind === "ready"
-              ? (() => {
-                  const presentation = providerStatusPresentation(
-                    provider.data.status,
-                    provider.data.mode,
-                  );
-                  return (
-                    <div className="dashboard-provider__status">
-                      <Badge tone={presentation.tone}>
-                        {presentation.label}
-                      </Badge>
-                      <p>{presentation.detail}</p>
-                    </div>
-                  );
-                })()
-              : null}
+            {[provider, historyProvider].map((connection, index) => (
+              <div
+                className="dashboard-provider__status"
+                key={index}
+                role="region"
+                aria-label={
+                  connection.kind === "ready"
+                    ? `${connection.data.name} provider status`
+                    : "Provider status"
+                }
+              >
+                {connection.kind === "loading" ? (
+                  <Skeleton className="provider-skeleton" />
+                ) : null}
+                {connection.kind === "error" ? (
+                  <Alert tone="warning" title="Provider status is unavailable">
+                    This provider could not be confirmed. Persisted data is
+                    unchanged.
+                  </Alert>
+                ) : null}
+                {connection.kind === "ready"
+                  ? (() => {
+                      const presentation = providerStatusPresentation(
+                        connection.data.status,
+                        connection.data.mode,
+                      );
+                      return (
+                        <>
+                          <strong>{connection.data.name}</strong>
+                          <Badge tone={presentation.tone}>
+                            {presentation.label}
+                          </Badge>
+                          <p>{presentation.detail}</p>
+                        </>
+                      );
+                    })()
+                  : null}
+              </div>
+            ))}
           </section>
           <section className="metric-grid" aria-label="Catalog scan summary">
             <MetricCard

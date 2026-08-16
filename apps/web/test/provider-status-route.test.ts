@@ -6,6 +6,7 @@ const ensurePhaseZeroOrganization = vi.fn();
 const ensureMockAmazonConnection = vi.fn();
 const getAmazonProviderConnectionStatus = vi.fn();
 const listProviderCapabilityStates = vi.fn();
+const hasActiveProviderCredential = vi.fn();
 
 vi.mock("@/src/phase-zero", () => ({ phaseZeroDemoEnabled }));
 vi.mock("@rizpoint/amazon-sp-api", () => ({
@@ -16,10 +17,14 @@ vi.mock("@rizpoint/database", () => ({
   ensureMockAmazonConnection,
   getAmazonProviderConnectionStatus,
   listProviderCapabilityStates,
+  hasActiveProviderCredential,
 }));
 
 describe("provider status route", () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+  });
 
   it("returns a sanitized mock status without a credential-shaped field", async () => {
     phaseZeroDemoEnabled.mockReturnValue(true);
@@ -125,5 +130,64 @@ describe("provider status route", () => {
     expect(JSON.stringify(body)).not.toMatch(
       /refreshToken|accessToken|clientSecret|ciphertext/i,
     );
+  });
+
+  it("labels recorded history fixtures as mock data and never returns a Keepa key", async () => {
+    vi.stubEnv("MARKET_HISTORY_PROVIDER_MODE", "mock");
+    phaseZeroDemoEnabled.mockReturnValue(true);
+    ensurePhaseZeroOrganization.mockResolvedValue({ id: "org" });
+    ensureMockAmazonConnection.mockResolvedValue({
+      marketplaceId: "ATVPDKIKX0DER",
+    });
+    listProviderCapabilityStates.mockResolvedValue([
+      {
+        providerKey: "mock-amazon",
+        marketplaceId: "ATVPDKIKX0DER",
+        capability: "MARKET_HISTORY",
+        mode: "MOCK",
+        state: "HEALTHY",
+        checkedAt: "2026-07-16T00:00:00.000Z",
+        completeness: "COMPLETE",
+      },
+    ]);
+    const { GET } =
+      await import("../app/api/providers/market-history/route.js");
+    const body = await (await GET()).json();
+    expect(body).toMatchObject({
+      provider: "recorded-history",
+      mode: "MOCK",
+      dataOrigin: "RECORDED_FIXTURE",
+    });
+    expect(JSON.stringify(body)).not.toMatch(/api.?key|ciphertext|secret/i);
+  });
+
+  it("surfaces persisted live quota state without disclosing configuration", async () => {
+    vi.stubEnv("MARKET_HISTORY_PROVIDER_MODE", "keepa");
+    phaseZeroDemoEnabled.mockReturnValue(true);
+    ensurePhaseZeroOrganization.mockResolvedValue({ id: "org" });
+    hasActiveProviderCredential.mockResolvedValue(true);
+    listProviderCapabilityStates.mockResolvedValue([
+      {
+        providerKey: "keepa",
+        marketplaceId: "ATVPDKIKX0DER",
+        capability: "MARKET_HISTORY",
+        mode: "LIVE",
+        state: "QUOTA_EXHAUSTED",
+        checkedAt: "2026-08-16T00:00:00.000Z",
+        retryAt: "2026-08-16T01:00:00.000Z",
+        reason: "QUOTA_WINDOW_EXHAUSTED",
+        completeness: "UNKNOWN",
+      },
+    ]);
+    const { GET } =
+      await import("../app/api/providers/market-history/route.js");
+    const body = await (await GET()).json();
+    expect(body).toMatchObject({
+      provider: "keepa",
+      mode: "LIVE",
+      status: "QUOTA_EXHAUSTED",
+      checkedAt: "2026-08-16T00:00:00.000Z",
+    });
+    expect(JSON.stringify(body)).not.toMatch(/api.?key|ciphertext|secret/i);
   });
 });

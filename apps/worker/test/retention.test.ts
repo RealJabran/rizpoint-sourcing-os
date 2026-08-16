@@ -3,12 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const listExpiredExportObjects = vi.fn();
 const acknowledgeExpiredExportObject = vi.fn();
 const recordExpiredExportRetentionReport = vi.fn();
+const listExpiredProviderEvidence = vi.fn();
+const acknowledgeExpiredProviderEvidence = vi.fn();
 const deletePrivateObject = vi.fn();
 
 vi.mock("@rizpoint/database", () => ({
   listExpiredExportObjects,
   acknowledgeExpiredExportObject,
   recordExpiredExportRetentionReport,
+  listExpiredProviderEvidence,
+  acknowledgeExpiredProviderEvidence,
 }));
 vi.mock("@rizpoint/object-storage", () => ({ deletePrivateObject }));
 
@@ -26,6 +30,7 @@ describe("export retention", () => {
         objectKey: "exports/org_1/a.csv",
       },
     ]);
+    listExpiredProviderEvidence.mockResolvedValue([]);
     const { runRetentionOnce } = await import("../src/retention.js");
     await expect(runRetentionOnce(new Date())).resolves.toBe(1);
     expect(recordExpiredExportRetentionReport).toHaveBeenCalledOnce();
@@ -41,6 +46,7 @@ describe("export retention", () => {
         objectKey: "exports/org_1/a.csv",
       },
     ]);
+    listExpiredProviderEvidence.mockResolvedValue([]);
     const { runRetentionOnce } = await import("../src/retention.js");
     await runRetentionOnce(new Date());
     expect(deletePrivateObject).toHaveBeenCalledWith("exports/org_1/a.csv");

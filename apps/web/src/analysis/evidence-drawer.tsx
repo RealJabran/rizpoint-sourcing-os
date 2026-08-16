@@ -258,6 +258,41 @@ export function EvidenceDrawer({
         ) : (
           <p>No provider observation is stored for this result.</p>
         )}
+        <h3>Licensed market history</h3>
+        {Array.isArray(detail.historyEvidence) &&
+        detail.historyEvidence.length ? (
+          <ul className="evidence-list">
+            {detail.historyEvidence.map((series, index) => {
+              const record = series as Record<string, unknown>;
+              const points = Array.isArray(record.points) ? record.points : [];
+              const latest = points[0] as Record<string, unknown> | undefined;
+              const source = latest?.sourceObservation as
+                Record<string, unknown> | undefined;
+              const value =
+                latest?.decimalValue ??
+                latest?.integerValue ??
+                latest?.booleanValue ??
+                latest?.textValue;
+              return (
+                <li key={`${String(record.metricKey)}-${index}`}>
+                  <strong>
+                    {String(record.metricKey).replaceAll("_", " ")}
+                  </strong>
+                  {": "}
+                  {String(value ?? "Not available")} ·{" "}
+                  {String(record.providerKey)} · observed{" "}
+                  {String(source?.observedAt ?? "unknown")} ·{" "}
+                  {String(source?.freshnessState ?? "UNKNOWN")}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p>
+            No licensed market history is stored. Historical evidence is
+            optional and does not change the current wholesale calculation.
+          </p>
+        )}
         <h3>Costs, formulas, decision evidence, and required next actions</h3>
         <EvidenceList
           values={{

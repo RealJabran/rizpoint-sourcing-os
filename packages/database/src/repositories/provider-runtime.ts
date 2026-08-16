@@ -139,6 +139,48 @@ export async function storeEncryptedProviderCredential(
   });
 }
 
+/** Worker-only retrieval of an encrypted envelope. Callers must decrypt it
+ * locally with the server vault and must never serialize this result. */
+export async function getEncryptedProviderCredentialForWorker(input: {
+  organizationId: string;
+  providerKey: string;
+  credentialName: string;
+}) {
+  return db.providerCredential.findFirst({
+    where: {
+      organizationId: input.organizationId,
+      providerKey: input.providerKey,
+      credentialName: input.credentialName,
+      revokedAt: null,
+    },
+    select: {
+      ciphertext: true,
+      encryptionNonce: true,
+      encryptionTag: true,
+      encryptionKeyVersion: true,
+    },
+  });
+}
+
+/** Safe configuration probe for status endpoints; intentionally excludes all
+ * envelope fields. */
+export async function hasActiveProviderCredential(input: {
+  organizationId: string;
+  providerKey: string;
+  credentialName: string;
+}): Promise<boolean> {
+  const credential = await db.providerCredential.findFirst({
+    where: {
+      organizationId: input.organizationId,
+      providerKey: input.providerKey,
+      credentialName: input.credentialName,
+      revokedAt: null,
+    },
+    select: { id: true },
+  });
+  return credential !== null;
+}
+
 export async function upsertProviderEntitlement(input: {
   organizationId: string;
   providerConnectionId?: string;
@@ -267,6 +309,40 @@ export async function createOrUpdateProviderRateBudget(input: {
       capacity: input.capacity,
       estimatedUnitCost: input.estimatedUnitCost ?? null,
       costCurrency: input.costCurrency ?? null,
+    },
+  });
+}
+
+/** Returns the active tenant-scoped budget for a capability without exposing
+ * credentials or provider payloads. */
+export async function findActiveProviderRateBudget(input: {
+  organizationId: string;
+  providerKey: string;
+  marketplaceId: string;
+  capability: ProviderCapability;
+  unit: "REQUEST" | "CREDIT" | "TOKEN";
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  return db.providerRateBudget.findFirst({
+    where: {
+      organizationId: input.organizationId,
+      unit: input.unit,
+      windowStart: { lte: now },
+      windowEnd: { gt: now },
+      entitlement: {
+        organizationId: input.organizationId,
+        providerKey: input.providerKey,
+        marketplaceId: input.marketplaceId,
+        capability: input.capability,
+      },
+    },
+    orderBy: { windowEnd: "asc" },
+    select: {
+      id: true,
+      entitlementId: true,
+      estimatedUnitCost: true,
+      costCurrency: true,
     },
   });
 }
@@ -527,6 +603,41 @@ export async function getProviderCacheEntry(
       ? { rawEvidenceReference: row.rawEvidenceReference }
       : {}),
   };
+}
+
+/** Raw evidence has a shorter provider-cache retention than its normalized
+ * series. The caller deletes the private object before clearing this reference. */
+export async function listExpiredProviderEvidence(now = new Date()) {
+  return db.providerCacheEntry.findMany({
+    where: {
+      capability: "MARKET_HISTORY",
+      retainUntil: { lte: now },
+      rawEvidenceReference: { not: null },
+    },
+    select: { id: true, rawEvidenceReference: true },
+  });
+}
+
+export async function acknowledgeExpiredProviderEvidence(id: string) {
+  const entry = await db.providerCacheEntry.findUnique({
+    where: { id },
+    select: { rawEvidenceReference: true },
+  });
+  await db.providerCacheEntry.update({
+    where: { id },
+    data: { rawEvidenceReference: null },
+  });
+  if (entry?.rawEvidenceReference)
+    await db.$transaction([
+      db.historyRefreshItem.updateMany({
+        where: { rawEvidenceReference: entry.rawEvidenceReference },
+        data: { rawEvidenceReference: null },
+      }),
+      db.researchObservation.updateMany({
+        where: { rawEvidenceReference: entry.rawEvidenceReference },
+        data: { rawEvidenceReference: null },
+      }),
+    ]);
 }
 
 export async function putProviderCacheEntry(
