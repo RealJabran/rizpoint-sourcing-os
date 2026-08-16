@@ -6,3 +6,4 @@ pnpm-lock.yaml
 services/scanner/uv.lock
 packages/database/src/generated/
 docs/MASTER_BLUEPRINT.md
+docs/NEXT_LEVEL_PROMPT_PACK.md

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getProfitCalculationForProcessing: vi.fn(),
@@ -19,10 +19,14 @@ const decimal = (value: string) => ({ toString: () => value });
 
 describe("profit calculation with partial rows", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-17T00:00:00.000Z"));
     vi.clearAllMocks();
     mocks.findExactFeeQuote.mockReturnValue(null);
     mocks.isProfitVerifiedMatch.mockReturnValue(false);
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it("persists an unmatched row without dereferencing missing observations", async () => {
     mocks.markProfitCalculationRunning.mockResolvedValue(true);

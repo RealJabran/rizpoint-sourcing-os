@@ -1,4 +1,3 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import {
   catalogProductSchema,
   competitivePricingSchema,
@@ -33,145 +32,15 @@ import {
 } from "./connectivity.js";
 
 export * from "./connectivity.js";
+export * from "./credential-vault.js";
 export * from "./offer-policy.js";
 import { amazonRetailPresence } from "./offer-policy.js";
-
-type ProviderMoney = { Amount?: unknown; CurrencyCode?: unknown };
-
-function providerMoney(value: unknown) {
-  if (!value || typeof value !== "object") return null;
-  const money = value as ProviderMoney;
-  const amount =
-    typeof money.Amount === "string" || typeof money.Amount === "number"
-      ? String(money.Amount)
-      : null;
-  const currency =
-    typeof money.CurrencyCode === "string" ? money.CurrencyCode : null;
-  if (!amount || !/^-?\d+(\.\d+)?$/.test(amount) || currency?.length !== 3)
-    return null;
-  return { amount, currency };
-}
-
-type NormalizedFeeComponent = {
-  feeType: string;
-  feeAmount: string;
-  finalFee: string;
-  currency: string;
-  promotion?: string;
-  tax?: string;
-  parentFeeType?: string;
-};
-
-function normalizeFeeComponents(
-  value: unknown,
-  parentFeeType?: string,
-): { components: NormalizedFeeComponent[]; complete: boolean } {
-  if (!Array.isArray(value)) return { components: [], complete: false };
-  const components: NormalizedFeeComponent[] = [];
-  let complete = true;
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object") {
-      complete = false;
-      continue;
-    }
-    const detail = entry as Record<string, unknown>;
-    const feeType =
-      typeof detail.FeeType === "string" ? detail.FeeType : undefined;
-    const feeAmount = providerMoney(detail.FeeAmount);
-    const finalFee = providerMoney(detail.FinalFee);
-    if (!feeType || !feeAmount || !finalFee) {
-      complete = false;
-      continue;
-    }
-    const promotion = providerMoney(detail.FeePromotion);
-    const tax = providerMoney(detail.TaxAmount);
-    if (
-      feeAmount.currency !== finalFee.currency ||
-      (detail.FeePromotion !== undefined && !promotion) ||
-      (detail.TaxAmount !== undefined && !tax)
-    )
-      complete = false;
-    components.push({
-      feeType,
-      feeAmount: feeAmount.amount,
-      finalFee: finalFee.amount,
-      currency: finalFee.currency,
-      ...(promotion ? { promotion: promotion.amount } : {}),
-      ...(tax ? { tax: tax.amount } : {}),
-      ...(parentFeeType ? { parentFeeType } : {}),
-    });
-    if (detail.IncludedFeeDetailList !== undefined) {
-      const nested: ReturnType<typeof normalizeFeeComponents> =
-        normalizeFeeComponents(detail.IncludedFeeDetailList, feeType);
-      components.push(...nested.components);
-      complete &&= nested.complete;
-    }
-  }
-  return { components, complete };
-}
-
-const restrictionReasonCodes = new Set([
-  "APPROVAL_REQUIRED",
-  "ASIN_NOT_FOUND",
-  "NOT_ELIGIBLE",
-]);
-
-export type EncryptedSecret = {
-  ciphertext: string;
-  nonce: string;
-  tag: string;
-  keyVersion: number;
-};
-
-export class CredentialVault {
-  constructor(
-    private readonly keys: ReadonlyMap<number, Buffer>,
-    private readonly activeKeyVersion: number,
-  ) {}
-
-  encrypt(value: string, aad: string): EncryptedSecret {
-    const key = this.keys.get(this.activeKeyVersion);
-    if (!key || key.length !== 32)
-      throw new Error("credential_encryption_key_missing");
-    const nonce = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, nonce);
-    cipher.setAAD(Buffer.from(aad));
-    const ciphertext = Buffer.concat([
-      cipher.update(value, "utf8"),
-      cipher.final(),
-    ]);
-    return {
-      ciphertext: ciphertext.toString("base64url"),
-      nonce: nonce.toString("base64url"),
-      tag: cipher.getAuthTag().toString("base64url"),
-      keyVersion: this.activeKeyVersion,
-    };
-  }
-
-  decrypt(value: EncryptedSecret, aad: string): string {
-    const key = this.keys.get(value.keyVersion);
-    if (!key || key.length !== 32)
-      throw new Error("credential_encryption_key_unavailable");
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      key,
-      Buffer.from(value.nonce, "base64url"),
-    );
-    decipher.setAAD(Buffer.from(aad));
-    decipher.setAuthTag(Buffer.from(value.tag, "base64url"));
-    return Buffer.concat([
-      decipher.update(Buffer.from(value.ciphertext, "base64url")),
-      decipher.final(),
-    ]).toString("utf8");
-  }
-}
-
-export function vaultFromEnvironment(): CredentialVault | null {
-  const encoded = process.env.PROVIDER_CREDENTIAL_KEY_V1;
-  if (!encoded) return null;
-  const key = Buffer.from(encoded, "base64");
-  return key.length === 32 ? new CredentialVault(new Map([[1, key]]), 1) : null;
-}
+import {
+  normalizeFeeComponents,
+  providerMoney,
+  type ProviderMoney,
+} from "./fee-normalizer.js";
+import { restrictionReasonCodes } from "./restriction-policy.js";
 
 export class AmazonSpApiProvider
   implements

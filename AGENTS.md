@@ -33,3 +33,16 @@ Build an explainable Amazon wholesale sourcing system. Correct matches and audit
 - Show the proposed file-level plan before large changes.
 - Prefer small vertical slices and checkpoint commits.
 - Report assumptions, commands run, test results, and remaining risks.
+
+## Next-level prompt pack protocol
+
+- The canonical staged expansion instructions are in `docs/NEXT_LEVEL_PROMPT_PACK.md` (version 2026-08-16). Read its global operating contract and the complete requested prompt before acting.
+- A request such as `run prompt 00` means execute only that exact numbered prompt. Do not begin, partially implement, or prepare runtime changes for later prompts in the same turn.
+- Run prompts `00` through `36` in order. Prompts `37` and `38` are optional and require explicit user approval; never infer approval from completing prompt `36`.
+- Respect each prompt's mode. A read-only or planning prompt authorizes no implementation beyond the deliverable explicitly named by that prompt.
+- Before each prompt, inspect the current repository and prerequisites. Preserve existing user changes; do not reset, revert, stash, discard, or overwrite them merely to obtain a clean tree.
+- Preserve the existing wholesale workflow throughout the expansion. Do not weaken PackGuard, deterministic Decimal/NUMERIC calculations, provider boundaries, provenance/freshness/completeness, tenant isolation, security, or idempotent retry behavior.
+- Treat unavailable paid providers and live credentials honestly: implement only the boundary, entitlement state, mocks/recorded fixtures, tests, and truthful UI allowed by the requested prompt. Never present mock data as live.
+- Complete the requested prompt's acceptance criteria, focused verification, documentation, and final diff review before recommending progression.
+- At the end of a numbered prompt, stop, report outcomes and remaining blockers, identify the next prompt, and ask the user whether to continue. Never auto-run the next prompt.
+- Merely reading or updating the prompt pack does not authorize any numbered prompt or product-stage work.

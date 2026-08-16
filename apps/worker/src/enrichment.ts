@@ -6,187 +6,25 @@ import {
   scheduleEnrichmentRetry,
 } from "@rizpoint/database";
 import { ProviderError } from "@rizpoint/provider-contracts";
-import { createHash } from "node:crypto";
 import { createEnrichmentProvider } from "./enrichment-provider.js";
+import {
+  feeRequestInputs,
+  observationFailureStatus,
+  operationForMetric,
+  pricingRequestInputs,
+  providerError,
+  providerRetryDeadline,
+  restrictionFailureState,
+  restrictionRequestInputs,
+  stableHash,
+  type CachedEnrichmentResult as CachedResult,
+  type EnrichmentMetric as Metric,
+} from "./enrichment-policy.js";
 import { providerCalls } from "./observability.js";
 
+export { providerRetryDeadline } from "./enrichment-policy.js";
+
 const FRESH_FOR_MS = 15 * 60_000;
-const TRANSIENT_RETRY_DELAY_MS = 30_000;
-const TRANSIENT_RETRY_JITTER_MS = 7_500;
-
-/**
- * Provider Retry-After is authoritative. When a retryable provider response
- * omits it, spread restart traffic over a small bounded window instead of
- * synchronizing all resumed runs on the same second.
- */
-export function providerRetryDeadline(
-  retryAfterMs: number | undefined,
-  now = Date.now(),
-  random = Math.random,
-): Date {
-  if (retryAfterMs !== undefined) return new Date(now + retryAfterMs);
-  return new Date(
-    now +
-      TRANSIENT_RETRY_DELAY_MS +
-      Math.floor(random() * TRANSIENT_RETRY_JITTER_MS),
-  );
-}
-
-type Metric = "CATALOG" | "PRICING" | "FEES" | "RESTRICTIONS" | "HISTORY";
-type CachedResult = {
-  metric: Metric;
-  value: unknown;
-  primaryAmount?: string;
-  quotedPrice?: string;
-  currency?: string;
-  provider: "AMAZON_SP_API" | "MOCK_AMAZON" | "MOCK_HISTORY";
-  observedAt: Date;
-  freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
-  providerReference?: string;
-  pricing?: {
-    requestHash: string;
-    requestInputs: ReturnType<typeof pricingRequestInputs>;
-    rawEvidenceReference?: string;
-    rawEvidence?: unknown;
-    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-    featuredOfferState: "PRESENT" | "ABSENT" | "UNKNOWN";
-    featuredPrice?: string;
-    featuredCurrency?: string;
-    featuredFulfillment?: "AMAZON" | "MERCHANT" | "UNKNOWN";
-    featuredSellerId?: string;
-    amazonRetailPresence: "PRESENT" | "ABSENT" | "UNKNOWN";
-    visibleOfferCount?: number;
-    visibleOfferCountCompleteness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-    fbaOfferCount?: number;
-    fbaOfferCountCompleteness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-    fbmOfferCount?: number;
-    fbmOfferCountCompleteness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-    lowestFbaPrice?: string;
-    lowestFbmPrice?: string;
-  };
-  fee?: {
-    requestHash: string;
-    requestInputs: ReturnType<typeof feeRequestInputs>;
-    rawEvidenceReference?: string;
-    rawEvidence?: unknown;
-    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-    scenarioSource: "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
-    fulfillment: "AMAZON" | "MERCHANT" | "UNKNOWN";
-    components: Array<{
-      feeType: string;
-      parentFeeType?: string;
-      currency: string;
-      feeAmount: string;
-      promotionAmount?: string;
-      taxAmount?: string;
-      finalFee: string;
-    }>;
-  };
-  restrictions?: {
-    requestHash: string;
-    requestInputs: ReturnType<typeof restrictionRequestInputs>;
-    rawEvidenceReference?: string;
-    rawEvidence?: unknown;
-    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-    state:
-      | "ELIGIBLE"
-      | "RESTRICTED"
-      | "APPROVAL_REQUIRED"
-      | "INCOMPLETE"
-      | "UNAUTHORIZED"
-      | "THROTTLED"
-      | "UNKNOWN";
-    reasonCodes: string[];
-    reasons: unknown[];
-    conditionType?: string;
-  };
-};
-
-function stableHash(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function pricingRequestInputs(asin: string, marketplaceId: string) {
-  return {
-    operation: "getCompetitiveSummary",
-    asin,
-    marketplaceId,
-    includedData: ["featuredBuyingOptions", "lowestPricedOffers"],
-    lowestPricedOffersInputs: [{ itemCondition: "New", offerType: "Consumer" }],
-  };
-}
-
-function feeRequestInputs(input: {
-  asin: string;
-  marketplaceId: string;
-  price: string;
-  listingPrice?: string;
-  shippingPrice: string;
-  currency: string;
-  fulfillmentChannel: "AMAZON" | "MERCHANT";
-  scenarioSource: "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
-}) {
-  return { operation: "getMyFeesEstimateForASIN", ...input };
-}
-
-function restrictionRequestInputs(asin: string, marketplaceId: string) {
-  return {
-    operation: "getListingsRestrictions",
-    asin,
-    marketplaceId,
-    conditionType: "new_new",
-  };
-}
-
-function observationFailureStatus(detail: ReturnType<typeof providerError>) {
-  return detail.code === "UNAUTHORIZED" || detail.code === "FORBIDDEN"
-    ? ("UNAUTHORIZED" as const)
-    : detail.status === "THROTTLED"
-      ? ("THROTTLED" as const)
-      : detail.status === "RETRYABLE_ERROR"
-        ? ("RETRYABLE_FAILURE" as const)
-        : detail.code === "NOT_FOUND"
-          ? ("UNAVAILABLE" as const)
-          : ("TERMINAL_FAILURE" as const);
-}
-
-function restrictionFailureState(detail: ReturnType<typeof providerError>) {
-  return detail.code === "UNAUTHORIZED" || detail.code === "FORBIDDEN"
-    ? ("UNAUTHORIZED" as const)
-    : detail.status === "THROTTLED"
-      ? ("THROTTLED" as const)
-      : ("UNKNOWN" as const);
-}
-
-function operationForMetric(metric: Metric) {
-  return metric === "PRICING"
-    ? "getCompetitiveSummary"
-    : metric === "FEES"
-      ? "getMyFeesEstimateForASIN"
-      : metric === "RESTRICTIONS"
-        ? "getListingsRestrictions"
-        : metric;
-}
-
-function providerError(error: unknown) {
-  if (!(error instanceof ProviderError))
-    return { code: "UNKNOWN", status: "RETRYABLE_ERROR" as const };
-  return {
-    code: error.code,
-    status:
-      error.code === "THROTTLED"
-        ? ("THROTTLED" as const)
-        : ["TRANSIENT", "PROVIDER_OUTAGE"].includes(error.code)
-          ? ("RETRYABLE_ERROR" as const)
-          : ("PERMANENT_ERROR" as const),
-    retryAt:
-      error.options.retryAfterMs === undefined
-        ? undefined
-        : providerRetryDeadline(error.options.retryAfterMs),
-    httpStatus: error.options.httpStatus,
-    providerRequestId: error.options.providerRequestId,
-  };
-}
 
 /** Fixture-first, deterministic enrichment. Cache is run-scoped so duplicate ASIN rows do not duplicate provider calls. */
 export async function processEnrichment(scanJobId: string) {

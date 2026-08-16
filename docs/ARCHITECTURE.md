@@ -122,6 +122,35 @@ concurrent workers do not resume in lockstep.
 
 Local Compose executes the optimized Next.js production server. Its unauthenticated fixture mode is not the private-production mode: it requires both explicit demo flags, loopback application/auth URLs, and host ports bound to loopback. Private production continues to reject demo mode and requires authenticated membership.
 
+## High-risk module boundaries
+
+Cross-cutting orchestration remains behind the same package and route entry
+points, while cohesive policy and presentation responsibilities live in focused
+modules:
+
+- `packages/database/src/repositories.ts` remains the stable database facade.
+  Tenant-scoped analysis projections, filters, sorting, and evidence reads live
+  in `packages/database/src/repositories/analysis.ts`; callers continue to
+  import the same functions and types from `@rizpoint/database`.
+- `apps/web/src/analysis/workspace.tsx` owns result-query state, paging,
+  virtualization, edits, and actions. Typed view models, pure display
+  formatting, and the accessible evidence dialog live in
+  `workspace-types.ts`, `presentation.ts`, and `evidence-drawer.tsx`.
+- `packages/amazon-sp-api/src/index.ts` remains the typed adapter entry point.
+  AES-GCM credential storage, fee response normalization, and restriction-code
+  policy live in `credential-vault.ts`, `fee-normalizer.ts`, and
+  `restriction-policy.ts`. The package root continues to export the credential
+  vault API used by the worker.
+- `apps/worker/src/enrichment.ts` remains the checkpointed enrichment
+  coordinator. Pure request-lineage construction, hashing, retry deadlines,
+  provider error classification, and typed cache shapes live in
+  `enrichment-policy.ts`; the existing `providerRetryDeadline` export remains
+  available from the coordinator module.
+
+These are source-only boundaries. They do not change routes, database schema,
+tenant predicates, provider meanings, PackGuard gates, matching rules, or
+Decimal financial behavior.
+
 ## Phase 6 workflow and exports
 
 Shortlist and purchase-order aggregates are organization-scoped PostgreSQL records. PO lines snapshot the selected current immutable profit scenario, route, supplier-owned ordering-rule provenance, quantities, pack conversion, MOQ, order-multiple rounding, and Decimal totals. Validation rebuilds line/header totals before transition. The worker owns export generation through the transactional outbox; export jobs are persisted before Redis publication, recover expired running leases, and write checksummed allowlisted CSV/XLSX artifacts to private object storage. Download routes verify the organization and redirect only on an explicit download request, never exposing object keys.
