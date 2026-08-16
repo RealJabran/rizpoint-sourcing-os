@@ -70,6 +70,14 @@ describe("Product Pricing competitive summary", () => {
         { asin: "B000000002" },
       ],
     });
+    expect(
+      (requests[0] as { requests: Array<{ uri: string }> }).requests.map(
+        (request) => request.uri,
+      ),
+    ).toEqual([
+      "/products/pricing/2022-05-01/items/competitiveSummary",
+      "/products/pricing/2022-05-01/items/competitiveSummary",
+    ]);
   });
 
   it("rejects duplicate and oversized batches before a provider call", async () => {

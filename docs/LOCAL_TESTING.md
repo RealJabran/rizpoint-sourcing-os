@@ -25,6 +25,10 @@ Run it only after the Compose images have been built from the current worktree.
 `test:browser` uses the installed Chrome channel by default. Set `PLAYWRIGHT_BROWSER_CHANNEL=chromium` only when a managed Playwright Chromium binary has been installed. The tests generate in-memory synthetic catalogs and never print signed URLs.
 
 For release-scale database evidence, start Compose and run `pnpm test:scale`.
+For the corresponding browser workflow evidence, run
+`pnpm test:scale:browser` after Compose is healthy. It uses only synthetic,
+temporary fixture rows, waits for fixture-owned exports to become terminal,
+deletes their private objects, and then cleans database children by generated ID.
 It creates and removes isolated synthetic 5,000-, 20,000-, and 50,000-row
 analysis scans, then verifies a bounded filtered 100-row server window at each
 size. Record its timings with the browser-scale evidence for the release gate.

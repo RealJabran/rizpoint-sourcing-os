@@ -27,6 +27,12 @@ function stringList(value: unknown): string[] {
     ? value.filter((item): item is string => typeof item === "string")
     : [];
 }
+
+// The web API intentionally caps interactive windows at 200 rows. Export is a
+// worker-only, tenant-scoped operation, so it can use a larger bounded page to
+// avoid repeating the same filter/count/context work hundreds of times for a
+// 50,000-row active view.
+export const ANALYSIS_EXPORT_PAGE_SIZE = 5_000;
 export function isExportAttemptRunnable(
   status:
     "PENDING" | "RUNNING" | "COMPLETED" | "FAILED_RETRYABLE" | "FAILED_FINAL",
@@ -412,13 +418,13 @@ async function analysisTable(job: {
     "Pricing freshness",
   ];
   const rows: Array<Array<string | number | null>> = [];
-  for (let offset = 0; ; offset += 200) {
+  for (let offset = 0; ; offset += ANALYSIS_EXPORT_PAGE_SIZE) {
     const page = await listAnalysisResults({
       organizationId: job.organizationId,
       scanJobId: job.scanJobId,
       ...(routeId ? { shippingRouteId: routeId } : {}),
       offset,
-      limit: 200,
+      limit: ANALYSIS_EXPORT_PAGE_SIZE,
       filters,
       sort,
       direction,

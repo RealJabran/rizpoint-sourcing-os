@@ -110,9 +110,10 @@ The analysis API queries a tenant-scoped current-result projection in 100-row wi
 
 An active-view export persists the versioned filter/sort/route state and the
 current scan attempt revision before publishing one idempotent export outbox
-event. The worker repeats the same tenant-scoped query in bounded 200-row
-windows, refuses a superseded source revision, and writes the CSV/XLSX artifact
-only to private storage. Evidence refresh is a named, idempotency-keyed request
+event. The worker repeats the same tenant-scoped query in bounded 5,000-row
+worker-only windows (the interactive API remains capped at 200), refuses a
+superseded source revision, and writes the CSV/XLSX artifact only to private
+storage. Evidence refresh is a named, idempotency-keyed request
 that reuses the existing enrichment run/checkpoints. `Retry-After` is honored
 exactly; retryable provider responses without a deadline use bounded jitter so
 concurrent workers do not resume in lockstep.

@@ -13,19 +13,17 @@ const catalogItem = {
   summaries: [
     {
       itemName: "Acme Soda 12 oz Pack of 6",
-      brandName: "Acme",
+      brand: "Acme",
       manufacturer: "Acme Foods",
       modelNumber: "LEMON-12",
-      colorName: "Yellow",
-      sizeName: "12 oz",
+      color: "Yellow",
+      size: "12 oz",
+      packageQuantity: 6,
     },
   ],
-  attributes: [
-    {
-      packageQuantity: [{ value: "6" }],
-      variationTheme: [{ value: "Flavor" }],
-    },
-  ],
+  attributes: {
+    item_package_quantity: [{ value: "6" }],
+  },
   identifiers: [
     { identifiers: [{ identifierType: "UPC", identifier: "012345678905" }] },
   ],
@@ -49,6 +47,10 @@ const catalogItem = {
           type: "VARIATION",
           parentAsins: ["B000000002"],
           childAsins: ["B000000003"],
+          variationTheme: {
+            theme: "FLAVOR_NAME/PACKAGE_QUANTITY",
+            attributes: ["flavor_name", "item_package_quantity"],
+          },
         },
       ],
     },
@@ -56,11 +58,18 @@ const catalogItem = {
   salesRanks: [{ classificationId: "GROCERY", rank: 42 }],
   dimensions: [
     {
-      height: { value: 2 },
-      length: { value: 8 },
-      width: { value: 4 },
-      weight: { value: 1 },
-      unitOfMeasure: "IN",
+      marketplaceId: "ATVPDKIKX0DER",
+      item: {
+        height: { value: 1, unit: "IN" },
+        length: { value: 7, unit: "IN" },
+        width: { value: 3, unit: "IN" },
+      },
+      package: {
+        height: { value: 2, unit: "IN" },
+        length: { value: 8, unit: "IN" },
+        width: { value: 4, unit: "IN" },
+        weight: { value: 1, unit: "LB" },
+      },
     },
   ],
 };
@@ -99,7 +108,13 @@ describe("Catalog Items identity projection", () => {
       asin: "B000000001",
       manufacturer: "Acme Foods",
       packCount: 6,
-      variationTheme: "Flavor",
+      variationTheme: "FLAVOR_NAME/PACKAGE_QUANTITY",
+      dimensions: {
+        height: { value: "2", unit: "IN" },
+        length: { value: "8", unit: "IN" },
+        width: { value: "4", unit: "IN" },
+        weight: { value: "1", unit: "LB" },
+      },
       identifiers: [{ type: "UPC", value: "012345678905" }],
       provenance: {
         marketplaceId: "ATVPDKIKX0DER",
@@ -108,6 +123,10 @@ describe("Catalog Items identity projection", () => {
       },
     });
     expect(products[0]?.images?.[0]?.url).toMatch(/^https:/);
+    expect(products[0]?.packageHierarchy).toEqual([
+      { type: "VARIATION", asin: "B000000002" },
+      { type: "VARIATION", asin: "B000000003" },
+    ]);
     expect(String(fetch.mock.calls[0]?.[0])).toContain("identifiersType=UPC");
   });
 

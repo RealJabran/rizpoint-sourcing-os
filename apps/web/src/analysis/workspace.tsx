@@ -206,6 +206,7 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const { notify } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef(new Map<number, Row[]>());
+  const pendingPagesRef = useRef(new Set<string>());
   const [pages, setPages] = useState(new Map<number, Row[]>());
   const [total, setTotal] = useState(0);
   const [unfilteredTotal, setUnfilteredTotal] = useState(0);
@@ -231,7 +232,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const [minVisibleOfferCount, setMinVisibleOfferCount] = useState("");
   const [maxVisibleOfferCount, setMaxVisibleOfferCount] = useState("");
   const [minFbaOfferCount, setMinFbaOfferCount] = useState("");
+  const [maxFbaOfferCount, setMaxFbaOfferCount] = useState("");
   const [minFbmOfferCount, setMinFbmOfferCount] = useState("");
+  const [maxFbmOfferCount, setMaxFbmOfferCount] = useState("");
   const [partialData, setPartialData] = useState(false);
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
@@ -287,7 +290,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         minVisibleOfferCount?: number;
         maxVisibleOfferCount?: number;
         minFbaOfferCount?: number;
+        maxFbaOfferCount?: number;
         minFbmOfferCount?: number;
+        maxFbmOfferCount?: number;
         partialData?: boolean;
         brand?: string;
         category?: string;
@@ -297,12 +302,19 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       };
     }>
   >([]);
-  const queryKey = `${routeId ?? ""}|${search}|${recommendation}|${status}|${minRoiPercent}|${maxRoiPercent}|${minNetProfit}|${maxNetProfit}|${minMarginPercent}|${maxMarginPercent}|${matchStatus}|${minMatchConfidence}|${packGuardStatus}|${featuredOfferState}|${amazonRetailPresence}|${pricingCompleteness}|${pricingFreshness}|${minVisibleOfferCount}|${maxVisibleOfferCount}|${minFbaOfferCount}|${minFbmOfferCount}|${partialData}|${brand}|${category}|${feeCompleteness}|${restrictionState}|${restrictionReasonCode}|${sort}|${direction}|${refreshNonce}`;
+  const queryKey = `${routeId ?? ""}|${search}|${recommendation}|${status}|${minRoiPercent}|${maxRoiPercent}|${minNetProfit}|${maxNetProfit}|${minMarginPercent}|${maxMarginPercent}|${matchStatus}|${minMatchConfidence}|${packGuardStatus}|${featuredOfferState}|${amazonRetailPresence}|${pricingCompleteness}|${pricingFreshness}|${minVisibleOfferCount}|${maxVisibleOfferCount}|${minFbaOfferCount}|${maxFbaOfferCount}|${minFbmOfferCount}|${maxFbmOfferCount}|${partialData}|${brand}|${category}|${feeCompleteness}|${restrictionState}|${restrictionReasonCode}|${sort}|${direction}|${refreshNonce}`;
   queryKeyRef.current = queryKey;
 
   const requestPage = useCallback(
     async (offset: number, reset = false) => {
-      if (!reset && pagesRef.current.has(offset)) return;
+      const pageRequestKey = `${queryKey}:${offset}`;
+      if (
+        (!reset && pagesRef.current.has(offset)) ||
+        pendingPagesRef.current.has(pageRequestKey)
+      )
+        return;
+      if (reset) pagesRef.current = new Map();
+      pendingPagesRef.current.add(pageRequestKey);
       const params = new URLSearchParams({
         offset: String(offset),
         limit: String(PAGE_SIZE),
@@ -340,8 +352,12 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         params.set("maxVisibleOfferCount", maxVisibleOfferCount.trim());
       if (minFbaOfferCount.trim())
         params.set("minFbaOfferCount", minFbaOfferCount.trim());
+      if (maxFbaOfferCount.trim())
+        params.set("maxFbaOfferCount", maxFbaOfferCount.trim());
       if (minFbmOfferCount.trim())
         params.set("minFbmOfferCount", minFbmOfferCount.trim());
+      if (maxFbmOfferCount.trim())
+        params.set("maxFbmOfferCount", maxFbmOfferCount.trim());
       if (partialData) params.set("partialData", "true");
       if (brand.trim()) params.set("brand", brand.trim());
       if (category.trim()) params.set("category", category.trim());
@@ -350,27 +366,30 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       if (restrictionReasonCode)
         params.set("restrictionReasonCode", restrictionReasonCode);
       const requestedQueryKey = queryKey;
-      const response = await fetch(`/api/scans/${scanId}/results?${params}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error("Unable to load analysis results.");
-      const data = (await response.json()) as {
-        total: number;
-        unfilteredTotal: number;
-        rows: Row[];
-        routes: Route[];
-        shippingRouteId?: string;
-        context: ScanContext;
-      };
-      if (queryKeyRef.current !== requestedQueryKey) return;
-      if (reset) pagesRef.current = new Map();
-      pagesRef.current.set(offset, data.rows);
-      setPages(new Map(pagesRef.current));
-      setTotal(data.total);
-      setUnfilteredTotal(data.unfilteredTotal);
-      setScanContext(data.context);
-      setRoutes(data.routes);
-      if (!routeId && data.shippingRouteId) setRouteId(data.shippingRouteId);
+      try {
+        const response = await fetch(`/api/scans/${scanId}/results?${params}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Unable to load analysis results.");
+        const data = (await response.json()) as {
+          total: number;
+          unfilteredTotal: number;
+          rows: Row[];
+          routes: Route[];
+          shippingRouteId?: string;
+          context: ScanContext;
+        };
+        if (queryKeyRef.current !== requestedQueryKey) return;
+        pagesRef.current.set(offset, data.rows);
+        setPages(new Map(pagesRef.current));
+        setTotal(data.total);
+        setUnfilteredTotal(data.unfilteredTotal);
+        setScanContext(data.context);
+        setRoutes(data.routes);
+        if (!routeId && data.shippingRouteId) setRouteId(data.shippingRouteId);
+      } finally {
+        pendingPagesRef.current.delete(pageRequestKey);
+      }
     },
     [
       direction,
@@ -380,7 +399,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
       pricingCompleteness,
       pricingFreshness,
       minFbaOfferCount,
+      maxFbaOfferCount,
       minFbmOfferCount,
+      maxFbmOfferCount,
       minMarginPercent,
       minMatchConfidence,
       minNetProfit,
@@ -522,7 +543,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     minVisibleOfferCount.trim() ||
     maxVisibleOfferCount.trim() ||
     minFbaOfferCount.trim() ||
+    maxFbaOfferCount.trim() ||
     minFbmOfferCount.trim() ||
+    maxFbmOfferCount.trim() ||
     partialData ||
     brand.trim() ||
     category.trim() ||
@@ -618,7 +641,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     setMinVisibleOfferCount("");
     setMaxVisibleOfferCount("");
     setMinFbaOfferCount("");
+    setMaxFbaOfferCount("");
     setMinFbmOfferCount("");
+    setMaxFbmOfferCount("");
     setPartialData(false);
     setBrand("");
     setCategory("");
@@ -712,7 +737,9 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
         ? Number(maxVisibleOfferCount)
         : undefined,
       minFbaOfferCount: minFbaOfferCount ? Number(minFbaOfferCount) : undefined,
+      maxFbaOfferCount: maxFbaOfferCount ? Number(maxFbaOfferCount) : undefined,
       minFbmOfferCount: minFbmOfferCount ? Number(minFbmOfferCount) : undefined,
+      maxFbmOfferCount: maxFbmOfferCount ? Number(maxFbmOfferCount) : undefined,
       partialData: partialData || undefined,
       brand: brand || undefined,
       category: category || undefined,
@@ -1287,11 +1314,27 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
               />
             </label>
             <label>
+              Maximum FBA sellers
+              <TextInput
+                inputMode="numeric"
+                value={maxFbaOfferCount}
+                onChange={(event) => setMaxFbaOfferCount(event.target.value)}
+              />
+            </label>
+            <label>
               Minimum FBM sellers
               <TextInput
                 inputMode="numeric"
                 value={minFbmOfferCount}
                 onChange={(event) => setMinFbmOfferCount(event.target.value)}
+              />
+            </label>
+            <label>
+              Maximum FBM sellers
+              <TextInput
+                inputMode="numeric"
+                value={maxFbmOfferCount}
+                onChange={(event) => setMaxFbmOfferCount(event.target.value)}
               />
             </label>
             <label>
@@ -1414,8 +1457,14 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
                   setMinFbaOfferCount(
                     String(view.queryState.minFbaOfferCount ?? ""),
                   );
+                  setMaxFbaOfferCount(
+                    String(view.queryState.maxFbaOfferCount ?? ""),
+                  );
                   setMinFbmOfferCount(
                     String(view.queryState.minFbmOfferCount ?? ""),
+                  );
+                  setMaxFbmOfferCount(
+                    String(view.queryState.maxFbmOfferCount ?? ""),
                   );
                   setPartialData(view.queryState.partialData ?? false);
                   setBrand(view.queryState.brand ?? "");

@@ -78,6 +78,50 @@ export const catalogIdentifierSchema = z.object({
 });
 export type CatalogIdentifier = z.infer<typeof catalogIdentifierSchema>;
 
+/**
+ * Catalog Items reports a unit with each physical measurement. Do not share a
+ * unit across height/length/width and weight: a sellable package commonly has
+ * inch dimensions and a pound weight.
+ */
+const catalogDimensionSchema = z.object({
+  value: decimalStringSchema,
+  unit: z.string().trim().min(1),
+});
+
+const catalogDimensionsSchema = z.union([
+  z.object({
+    height: catalogDimensionSchema.optional(),
+    length: catalogDimensionSchema.optional(),
+    width: catalogDimensionSchema.optional(),
+    weight: catalogDimensionSchema.optional(),
+  }),
+  // Older persisted mock observations used a shared unit. Read them safely so
+  // checkpoints remain resumable, but all new provider projections use the
+  // per-dimension canonical shape above.
+  z
+    .object({
+      height: decimalStringSchema.optional(),
+      length: decimalStringSchema.optional(),
+      width: decimalStringSchema.optional(),
+      weight: decimalStringSchema.optional(),
+      unit: z.string().trim().min(1).optional(),
+    })
+    .transform((legacy) => ({
+      ...(legacy.height && legacy.unit
+        ? { height: { value: legacy.height, unit: legacy.unit } }
+        : {}),
+      ...(legacy.length && legacy.unit
+        ? { length: { value: legacy.length, unit: legacy.unit } }
+        : {}),
+      ...(legacy.width && legacy.unit
+        ? { width: { value: legacy.width, unit: legacy.unit } }
+        : {}),
+      ...(legacy.weight && legacy.unit
+        ? { weight: { value: legacy.weight, unit: legacy.unit } }
+        : {}),
+    })),
+]);
+
 export const catalogProductSchema = z.object({
   asin: z.string().regex(/^B[A-Z0-9]{9}$/),
   title: z.string().min(1),
@@ -120,15 +164,7 @@ export const catalogProductSchema = z.object({
       }),
     )
     .optional(),
-  dimensions: z
-    .object({
-      height: decimalStringSchema.optional(),
-      length: decimalStringSchema.optional(),
-      width: decimalStringSchema.optional(),
-      weight: decimalStringSchema.optional(),
-      unit: z.string().min(1).optional(),
-    })
-    .optional(),
+  dimensions: catalogDimensionsSchema.optional(),
   identifiers: z.array(catalogIdentifierSchema),
   provenance: provenanceSchema,
   /** Private provider observation. Persistence may retain it; UI DTOs must not. */

@@ -1053,6 +1053,7 @@ model ProfitCalculationRun {
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, scanJobId, status])
+  @@index([scanJobId])
   @@map("profit_calculation_runs")
 }
 
@@ -1097,6 +1098,7 @@ model ProfitResult {
   @@unique([profitCalculationRunId, supplierRowId, shippingRouteId])
   @@index([organizationId, scanJobId, shippingRouteId, isCurrent, updatedAt])
   @@index([organizationId, scanJobId, recommendation, isCurrent])
+  @@index([scanJobId])
   @@index([supplierRowId])
   @@map("profit_results")
 }
@@ -1116,6 +1118,7 @@ model AnalysisView {
   scanJob      ScanJob?     @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, scanJobId, name])
+  @@index([scanJobId])
   @@index([organizationId, scanJobId, updatedAt])
   @@map("analysis_views")
 }
@@ -1145,6 +1148,7 @@ model ProfitCostOverride {
 
   @@unique([organizationId, supplierRowId, shippingRouteId])
   @@index([organizationId, scanJobId, status])
+  @@index([scanJobId])
   @@index([supplierRowId])
   @@map("profit_cost_overrides")
 }
@@ -1214,6 +1218,7 @@ model ProviderCallAttempt {
   enrichmentRun EnrichmentRun? @relation(fields: [enrichmentRunId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, enrichmentRunId, provider, operation, requestKey, attempt])
+  @@index([enrichmentRunId])
   @@index([organizationId, provider, createdAt])
   @@map("provider_call_attempts")
 }
@@ -1328,6 +1333,7 @@ model ShortlistNote {
   shortlistItem ShortlistItem @relation(fields: [shortlistItemId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, shortlistItemId, createdAt])
+  @@index([shortlistItemId])
   @@map("shortlist_notes")
 }
 
@@ -1439,6 +1445,9 @@ model ExportJob {
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, status, createdAt])
   @@index([organizationId, scanJobId, createdAt])
+  @@index([scanJobId])
+  @@index([shortlistId])
+  @@index([purchaseOrderId])
   @@map("export_jobs")
 }
 

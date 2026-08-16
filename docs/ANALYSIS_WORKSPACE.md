@@ -19,15 +19,21 @@ recommendation, and compares every persisted financial output and reason code.
 The default grid virtualizes fixed-height rows and server-windows data. It keeps identity columns pinned, labels current versus conservative financial values and currency, exposes partial/pending calculation state, announces loading and queued recalculation, and provides a native paginated table mode for assistive technology. The evidence drawer moves focus on open, traps tab navigation, supports Escape, and restores focus when closed.
 
 Active-view exports persist the same typed filters, route, sort, and visible
-groups as the grid. They are generated from tenant-scoped server windows, keep
+groups as the grid. They are generated from tenant-scoped 5,000-row worker
+windows (the interactive grid remains capped at 100/200-row windows), keep
 identifiers as text, include provider/freshness columns, and pass all textual
 cells through the formula-injection guard. A completed source revision is
 required; a scan that changes before export is rejected rather than silently
 exporting a mixed snapshot.
 
 The generated 50,000-row fixture verifies that a distant viewport resolves to
-one 100-row window rather than a full payload. Production release additionally
-requires a database-and-browser measurement at 5k, 20k, and 50k rows, including
-filtering, opening evidence, and active-view CSV export. Record elapsed time,
-database query count, browser console errors, and peak process memory with the
-release evidence; synthetic offset math alone is not sufficient.
+one 100-row window rather than a full payload. `pnpm test:scale` measures the
+tenant-scoped database windows at 5k, 20k, and 50k rows. With Compose already
+healthy, `pnpm test:scale:browser` creates bounded, uniquely named disposable
+children under the local demo organization, then measures filtering, evidence
+opening, and active-view CSV export at the same sizes. It records elapsed time,
+browser result-window request count, browser runtime/request failures, Chromium
+JS heap use, and the peak sampled container memory for the Compose web/worker
+processes.
+Its cleanup waits for fixture exports to be terminal, deletes their private
+objects, then removes only the generated fixture IDs even after a test failure.

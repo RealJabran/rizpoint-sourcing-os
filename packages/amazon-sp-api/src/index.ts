@@ -260,30 +260,52 @@ export class AmazonSpApiProvider
   ): CatalogProduct | null {
     const asin = typeof item.asin === "string" ? item.asin : null;
     if (!asin || !/^B[A-Z0-9]{9}$/.test(asin)) return null;
+    const record = (value: unknown): Record<string, unknown> | undefined =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : undefined;
     const summary = Array.isArray(item.summaries)
-      ? item.summaries[0]
+      ? record(item.summaries[0])
       : undefined;
-    const attributes = Array.isArray(item.attributes)
-      ? item.attributes[0]
-      : undefined;
+    // Catalog Items v2022-04-01 returns ItemAttributes as an object whose
+    // product-type-specific keys hold arrays of marketplace values. It is not
+    // an array of attribute objects. Keeping that shape here prevents valid
+    // live observations from losing package/variation evidence or becoming
+    // falsely PARTIAL.
+    const attributes = record(item.attributes);
     const source = {
-      ...(summary && typeof summary === "object" ? summary : {}),
-      ...(attributes && typeof attributes === "object" ? attributes : {}),
-    } as Record<string, unknown>;
+      ...summary,
+      ...attributes,
+    };
+    const normalizedKey = (key: string) =>
+      key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const sourceValue = (key: string) =>
+      source[key] ??
+      Object.entries(source).find(
+        ([candidate]) => normalizedKey(candidate) === normalizedKey(key),
+      )?.[1];
+    const scalarText = (value: unknown): string | undefined => {
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "number" && Number.isFinite(value))
+        return String(value);
+      if (!Array.isArray(value)) return undefined;
+      for (const entry of value) {
+        if (typeof entry === "string" && entry.trim()) return entry.trim();
+        if (typeof entry === "number" && Number.isFinite(entry))
+          return String(entry);
+        const entryRecord = record(entry);
+        const display = entryRecord?.value ?? entryRecord?.displayValue;
+        if (typeof display === "string" && display.trim())
+          return display.trim();
+        if (typeof display === "number" && Number.isFinite(display))
+          return String(display);
+      }
+      return undefined;
+    };
     const text = (...keys: string[]) => {
       for (const key of keys) {
-        const value = source[key];
-        if (typeof value === "string" && value.trim()) return value.trim();
-        if (Array.isArray(value)) {
-          const first = value[0] as
-            Record<string, unknown> | string | undefined;
-          if (typeof first === "string" && first.trim()) return first.trim();
-          if (first && typeof first === "object") {
-            const display = first.value ?? first.displayValue;
-            if (typeof display === "string" && display.trim())
-              return display.trim();
-          }
-        }
+        const value = scalarText(sourceValue(key));
+        if (value) return value;
       }
       return undefined;
     };
@@ -340,48 +362,60 @@ export class AmazonSpApiProvider
             ]
           : [];
       });
-    const relationships = (
+    const relationshipDetails = (
       Array.isArray(item.relationships) ? item.relationships : []
-    )
-      .flatMap((group) =>
-        group &&
-        typeof group === "object" &&
-        Array.isArray((group as Record<string, unknown>).relationships)
-          ? ((group as Record<string, unknown>).relationships as unknown[])
+    ).flatMap((group) =>
+      group &&
+      typeof group === "object" &&
+      Array.isArray((group as Record<string, unknown>).relationships)
+        ? ((group as Record<string, unknown>).relationships as unknown[])
+        : [],
+    );
+    const relationshipVariationTheme = relationshipDetails
+      .map((relation) => record(record(relation)?.variationTheme)?.theme)
+      .find((theme): theme is string => typeof theme === "string" && !!theme);
+    const packageHierarchy = relationshipDetails.flatMap((relation) => {
+      const value = relation as Record<string, unknown>;
+      const type = typeof value.type === "string" ? value.type : "RELATIONSHIP";
+      return ["parentAsins", "childAsins"].flatMap((key) =>
+        Array.isArray(value[key])
+          ? (value[key] as unknown[]).flatMap((related) =>
+              typeof related === "string" && /^B[A-Z0-9]{9}$/.test(related)
+                ? [{ type, asin: related }]
+                : [],
+            )
           : [],
-      )
-      .flatMap((relation) => {
-        const value = relation as Record<string, unknown>;
-        const type =
-          typeof value.type === "string" ? value.type : "RELATIONSHIP";
-        return ["parentAsins", "childAsins"].flatMap((key) =>
-          Array.isArray(value[key])
-            ? (value[key] as unknown[]).flatMap((related) =>
-                typeof related === "string" && /^B[A-Z0-9]{9}$/.test(related)
-                  ? [{ type, asin: related }]
-                  : [],
-              )
-            : [],
-        );
-      });
-    const dimension = Array.isArray(item.dimensions)
-      ? item.dimensions[0]
+      );
+    });
+    const dimensionByMarketplace = Array.isArray(item.dimensions)
+      ? record(item.dimensions[0])
       : undefined;
+    // DimensionsByMarketplace nests physical dimensions under `package` and
+    // `item`. Prefer package dimensions because they describe the sellable
+    // Amazon package; preserve the legacy direct shape for recorded fixtures.
+    const dimension =
+      record(dimensionByMarketplace?.package) ??
+      record(dimensionByMarketplace?.item) ??
+      dimensionByMarketplace;
     const dimensionValue = (key: string) => {
-      const value =
-        dimension && typeof dimension === "object"
-          ? (dimension as Record<string, unknown>)[key]
-          : undefined;
-      if (!value || typeof value !== "object") return undefined;
-      const amount = (value as Record<string, unknown>).value;
-      return typeof amount === "number" || typeof amount === "string"
-        ? String(amount)
+      const source = record(dimension?.[key]);
+      const amount = source?.value;
+      const unit =
+        typeof source?.unit === "string"
+          ? source.unit
+          : // This fallback keeps legacy recorded fixtures resumable. Live
+            // Catalog Items v2022-04-01 projections use the documented `unit`.
+            typeof source?.unitOfMeasure === "string"
+            ? source.unitOfMeasure
+            : undefined;
+      return (typeof amount === "number" || typeof amount === "string") && unit
+        ? { value: String(amount), unit }
         : undefined;
     };
-    const dimensionUnit =
-      dimension && typeof dimension === "object"
-        ? (dimension as Record<string, unknown>).unitOfMeasure
-        : undefined;
+    const height = dimensionValue("height");
+    const length = dimensionValue("length");
+    const width = dimensionValue("width");
+    const weight = dimensionValue("weight");
     const expected = [
       "summaries",
       "identifiers",
@@ -389,7 +423,11 @@ export class AmazonSpApiProvider
       "images",
       "relationships",
     ];
-    const completeness = expected.every((key) => Array.isArray(item[key]))
+    const completeness = expected.every((key) =>
+      key === "attributes"
+        ? attributes !== undefined
+        : Array.isArray(item[key]),
+    )
       ? "COMPLETE"
       : "PARTIAL";
     return catalogProductSchema.parse({
@@ -406,7 +444,7 @@ export class AmazonSpApiProvider
           ? Number(count)
           : undefined,
       variation: text("styleName"),
-      variationTheme: text("variationTheme"),
+      variationTheme: text("variationTheme") ?? relationshipVariationTheme,
       productTypes: (Array.isArray(item.productTypes)
         ? item.productTypes
         : []
@@ -414,20 +452,13 @@ export class AmazonSpApiProvider
         const value = entry as Record<string, unknown>;
         return typeof value.productType === "string" ? [value.productType] : [];
       }),
-      packageHierarchy: relationships,
+      packageHierarchy,
       images,
       dimensions: {
-        ...(dimensionValue("height")
-          ? { height: dimensionValue("height") }
-          : {}),
-        ...(dimensionValue("length")
-          ? { length: dimensionValue("length") }
-          : {}),
-        ...(dimensionValue("width") ? { width: dimensionValue("width") } : {}),
-        ...(dimensionValue("weight")
-          ? { weight: dimensionValue("weight") }
-          : {}),
-        ...(typeof dimensionUnit === "string" ? { unit: dimensionUnit } : {}),
+        ...(height ? { height } : {}),
+        ...(length ? { length } : {}),
+        ...(width ? { width } : {}),
+        ...(weight ? { weight } : {}),
       },
       identifiers,
       salesRanks: (Array.isArray(item.salesRanks)
@@ -596,7 +627,7 @@ export class AmazonSpApiProvider
               asin,
               marketplaceId: marketplace.marketplaceId,
               method: "GET",
-              uri: `/products/pricing/2022-05-01/items/${asin}/competitiveSummary`,
+              uri: "/products/pricing/2022-05-01/items/competitiveSummary",
               includedData: ["featuredBuyingOptions", "lowestPricedOffers"],
               lowestPricedOffersInputs: [
                 { itemCondition: "New", offerType: "Consumer" },

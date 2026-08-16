@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import {
+  captureUnexpectedBrowserFailures,
+  expectNoUnexpectedBrowserFailures,
+} from "./runtime-failures.js";
 
 const syntheticCatalog = [
   "supplier_sku,upc,asin,title,brand,unit_cost,available_quantity,case_pack,currency",
@@ -8,30 +12,6 @@ const syntheticCatalog = [
   "DEMO-004,,B000000001,Acme Lemon Soda 12 oz Pack of 6,Acme,0.50,10,10,USD",
   "",
 ].join("\n");
-
-function captureUnexpectedBrowserFailures(
-  page: import("@playwright/test").Page,
-) {
-  const pageErrors: string[] = [];
-  const consoleErrors: string[] = [];
-  const failedResponses: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") {
-      const location = message.location().url;
-      consoleErrors.push(
-        location ? `${message.text()} (${location})` : message.text(),
-      );
-    }
-  });
-  page.on("response", (response) => {
-    if (response.status() >= 400)
-      failedResponses.push(
-        `${response.request().method()} ${new URL(response.url()).pathname} ${response.status()}`,
-      );
-  });
-  return { pageErrors, consoleErrors, failedResponses };
-}
 
 test.describe("catalog upload", () => {
   test("shows the guided private catalog workflow", async ({ page }) => {
@@ -172,6 +152,42 @@ test.describe("catalog upload", () => {
     await page.getByRole("button", { name: "Low competition" }).click();
     await lowCompetitionResults;
 
+    await page
+      .getByText("Columns, sorting, and saved views", { exact: true })
+      .click();
+    await page.getByLabel("Maximum FBA sellers").fill("3");
+    const offerLimitResults = page.waitForResponse((response) => {
+      if (!response.url().includes(`/api/scans/${created.scanId}/results?`))
+        return false;
+      const query = new URL(response.url()).searchParams;
+      return (
+        query.get("maxFbaOfferCount") === "3" &&
+        query.get("maxFbmOfferCount") === "3"
+      );
+    });
+    await page.getByLabel("Maximum FBM sellers").fill("3");
+    await offerLimitResults;
+
+    await page.getByLabel("View name").fill("Bounded seller counts");
+    await page.getByRole("button", { name: "Save view" }).click();
+    await page
+      .getByLabel("Result filters")
+      .getByRole("button", { name: "Clear filters" })
+      .click();
+    const restoredLimits = page.waitForResponse((response) => {
+      if (!response.url().includes(`/api/scans/${created.scanId}/results?`))
+        return false;
+      const query = new URL(response.url()).searchParams;
+      return (
+        query.get("maxFbaOfferCount") === "3" &&
+        query.get("maxFbmOfferCount") === "3"
+      );
+    });
+    await page.getByLabel("Saved view").selectOption({
+      label: "Bounded seller counts",
+    });
+    await restoredLimits;
+
     const exportQueued = page.waitForResponse(
       (response) =>
         response
@@ -179,9 +195,22 @@ test.describe("catalog upload", () => {
           .endsWith(`/api/scans/${created.scanId}/analysis-exports`) &&
         response.request().method() === "POST",
     );
+    const exportRequest = page.waitForRequest(
+      (request) =>
+        request
+          .url()
+          .endsWith(`/api/scans/${created.scanId}/analysis-exports`) &&
+        request.method() === "POST",
+    );
     await page.getByRole("button", { name: "Export CSV" }).click();
     const exportResponse = await exportQueued;
     expect(exportResponse.status()).toBe(202);
+    expect((await exportRequest).postDataJSON()).toMatchObject({
+      queryState: {
+        maxFbaOfferCount: 3,
+        maxFbmOfferCount: 3,
+      },
+    });
     const exportJob = (await exportResponse.json()) as { id: string };
     await expect
       .poll(
@@ -218,9 +247,7 @@ test.describe("catalog upload", () => {
       ).toBeLessThanOrEqual(width);
     }
 
-    expect(failures.pageErrors).toEqual([]);
-    expect(failures.consoleErrors).toEqual([]);
-    expect(failures.failedResponses).toEqual([]);
+    expectNoUnexpectedBrowserFailures(failures);
   });
 
   test("rejects an unsupported browser-selected file with an actionable error", async ({

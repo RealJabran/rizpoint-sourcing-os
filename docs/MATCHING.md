@@ -43,6 +43,11 @@ freshness, request lineage, and response completeness. The raw provider response
 is retained only in private catalog persistence and is never a web DTO. Images
 are hotlinked with `no-referrer`; they are not copied to RizPoint storage.
 
+Physical dimensions retain a value and unit for each measurement independently
+(for example, package length in `IN` and package weight in `LB`). A relationship
+variation theme is retained when Catalog Items returns it, even if that theme is
+not repeated in the general attributes payload.
+
 Provider throttling, authorization failure, and partial observations remain
 explicit states. A title search never auto-accepts; brand/model/size/count/pack
 or package-hierarchy contradictions require review and PackGuard remains blocked.

@@ -161,6 +161,28 @@ describe("database policy", () => {
       expect(migration).toContain(index);
   });
 
+  it("indexes remaining high-volume scan and export foreign-key lifecycle paths", async () => {
+    const migration = await readFile(
+      new URL(
+        "../prisma/migrations/20260718200000_lifecycle_foreign_key_indexes/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    for (const index of [
+      "profit_calculation_runs_scan_job_id_idx",
+      "profit_results_scan_job_id_idx",
+      "analysis_views_scan_job_id_idx",
+      "profit_cost_overrides_scan_job_id_idx",
+      "provider_call_attempts_enrichment_run_id_idx",
+      "shortlist_notes_shortlist_item_id_idx",
+      "export_jobs_scan_job_id_idx",
+      "export_jobs_shortlist_id_idx",
+      "export_jobs_purchase_order_id_idx",
+    ])
+      expect(migration).toContain(index);
+  });
+
   it("stores account fee components as NUMERIC and restriction outcomes as explicit states", async () => {
     const schema = await readFile(
       new URL("../prisma/schema.prisma", import.meta.url),

@@ -30,11 +30,16 @@ describe("analysis workspace contracts", () => {
         restrictionState: "APPROVAL_REQUIRED",
         restrictionReasonCode: "APPROVAL_REQUIRED",
         minFbaOfferCount: "1",
+        maxFbaOfferCount: "3",
+        minFbmOfferCount: "1",
         maxFbmOfferCount: "4",
       }).success,
     ).toBe(true);
     expect(
       analysisQuerySchema.safeParse({ minFbaOfferCount: "-1" }).success,
+    ).toBe(false);
+    expect(
+      analysisQuerySchema.safeParse({ maxFbmOfferCount: "-1" }).success,
     ).toBe(false);
     expect(
       analysisQuerySchema.safeParse({ restrictionState: "ALLOWED" }).success,

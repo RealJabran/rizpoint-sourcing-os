@@ -1,0 +1,9 @@
+DROP INDEX "export_jobs_purchase_order_id_idx";
+DROP INDEX "export_jobs_shortlist_id_idx";
+DROP INDEX "export_jobs_scan_job_id_idx";
+DROP INDEX "shortlist_notes_shortlist_item_id_idx";
+DROP INDEX "provider_call_attempts_enrichment_run_id_idx";
+DROP INDEX "profit_cost_overrides_scan_job_id_idx";
+DROP INDEX "analysis_views_scan_job_id_idx";
+DROP INDEX "profit_results_scan_job_id_idx";
+DROP INDEX "profit_calculation_runs_scan_job_id_idx";

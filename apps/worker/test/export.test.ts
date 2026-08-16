@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANALYSIS_EXPORT_PAGE_SIZE,
   analysisFiltersFromViewState,
   poSummaryTable,
   poTable,
@@ -76,6 +77,10 @@ const order = {
 };
 
 describe("purchase-order export tables", () => {
+  it("uses a bounded worker export window without changing the interactive API limit", () => {
+    expect(ANALYSIS_EXPORT_PAGE_SIZE).toBe(5_000);
+  });
+
   it("includes canonical summary totals and selected-scenario audit provenance", () => {
     const summary = poSummaryTable(order as never);
     const audit = poTable(order as never, true);
