@@ -109,6 +109,18 @@ calculation version, input points, provider, window, coverage, and confidence.
 Missing dates are never filled, BSR never becomes a sales estimate, and sparse
 history remains partial or insufficient rather than becoming a clean score.
 
+## Product Explorer
+
+Prompt 06 adds Product Explorer, a server-windowed discovery surface over an
+organization's existing evidence universe: accepted/imported products, research
+project items, active watches, market members, and history-refresh subjects.
+It is not a claim to a global Amazon catalog. Filters are available only for
+typed, stored observations such as identity, observed price, review count, and
+history analytics; unavailable demand, concentration, variation, opportunity,
+and private-label profit metrics remain visibly unavailable. Explorer products
+can be compared, saved to projects, watched, exported as a formula-safe
+authorized CSV window, and saved as reusable views.
+
 ## Provider runtime foundation
 
 Every provider capability now has an organization/marketplace-scoped runtime

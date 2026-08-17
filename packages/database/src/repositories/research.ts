@@ -10,6 +10,7 @@ import type {
   CreateKeywordInput,
   CreateMarketDefinitionInput,
   CreateResearchProjectInput,
+  CreateProductWatchInput,
   RecordOpportunityAssessmentInput,
   ResearchRepositoryContract,
 } from "../research-contracts.js";
@@ -22,6 +23,7 @@ type ResearchDatabase = Pick<
   | "keyword"
   | "marketDefinition"
   | "researchProjectItem"
+  | "productWatch"
   | "researchObservation"
   | "historicalMetricSeries"
   | "historicalMetricPoint"
@@ -132,6 +134,17 @@ export function createResearchRepository(
       return client.researchProject.findFirst({
         where: { id: projectId, organizationId },
         include: { items: true, projectTags: { include: { tag: true } } },
+      });
+    },
+
+    listProjects(organizationId: string, marketplaceId?: string) {
+      return client.researchProject.findMany({
+        where: {
+          organizationId,
+          status: "ACTIVE",
+          ...(marketplaceId ? { marketplaceId } : {}),
+        },
+        orderBy: { updatedAt: "desc" },
       });
     },
 
@@ -261,6 +274,50 @@ export function createResearchRepository(
           displayLabel: input.displayLabel?.trim() || null,
         },
         update: {},
+      });
+    },
+
+    async createProductWatch(input: CreateProductWatchInput) {
+      const product = await client.catalogProduct.findUnique({
+        where: { id: input.catalogProductId },
+        select: { id: true, marketplaceId: true },
+      });
+      if (!product) throw new Error("CATALOG_PRODUCT_NOT_FOUND");
+      if (
+        product.marketplaceId &&
+        product.marketplaceId !== input.marketplaceId
+      )
+        throw new Error("MARKETPLACE_MISMATCH");
+      if (input.projectId) {
+        const project = await client.researchProject.findFirst({
+          where: {
+            id: input.projectId,
+            organizationId: input.organizationId,
+            marketplaceId: input.marketplaceId,
+          },
+          select: { id: true },
+        });
+        if (!project) throw new Error("RESEARCH_PROJECT_NOT_FOUND");
+      }
+      return client.productWatch.upsert({
+        where: {
+          organizationId_marketplaceId_catalogProductId: {
+            organizationId: input.organizationId,
+            marketplaceId: input.marketplaceId,
+            catalogProductId: input.catalogProductId,
+          },
+        },
+        create: {
+          organizationId: input.organizationId,
+          projectId: input.projectId ?? null,
+          catalogProductId: input.catalogProductId,
+          marketplaceId: input.marketplaceId,
+          cadenceMinutes: input.cadenceMinutes ?? 1440,
+        },
+        update: {
+          status: "ACTIVE",
+          ...(input.projectId ? { projectId: input.projectId } : {}),
+        },
       });
     },
 

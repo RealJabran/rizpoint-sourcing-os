@@ -11,6 +11,7 @@ import type {
   OpportunityReason,
   OpportunityAssessmentStatus,
   OpportunityReasonKind,
+  ProductWatch,
   OpportunityRecommendation,
   Prisma,
   ProviderObservationStatus,
@@ -85,6 +86,14 @@ export interface AddResearchProjectItemInput {
   marketDefinitionId?: string;
   keywordId?: string;
   displayLabel?: string;
+}
+
+export interface CreateProductWatchInput {
+  organizationId: string;
+  projectId?: string;
+  catalogProductId: string;
+  marketplaceId: string;
+  cadenceMinutes?: number;
 }
 
 export interface AppendKeywordObservationInput {
@@ -180,6 +189,10 @@ export interface ResearchRepositoryContract {
       })
     | null
   >;
+  listProjects(
+    organizationId: string,
+    marketplaceId?: string,
+  ): Promise<ResearchProject[]>;
   createKeyword(input: CreateKeywordInput): Promise<Keyword>;
   createMarketDefinition(
     input: CreateMarketDefinitionInput,
@@ -187,6 +200,7 @@ export interface ResearchRepositoryContract {
   addProjectItem(
     input: AddResearchProjectItemInput,
   ): Promise<ResearchProjectItem>;
+  createProductWatch(input: CreateProductWatchInput): Promise<ProductWatch>;
   appendKeywordObservation(
     input: AppendKeywordObservationInput,
   ): Promise<ResearchObservation & { keywordObservation: KeywordObservation }>;

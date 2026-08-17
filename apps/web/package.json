@@ -15,6 +15,7 @@
     "@rizpoint/amazon-sp-api": "workspace:*",
     "@rizpoint/database": "workspace:*",
     "@rizpoint/domain": "workspace:*",
+    "@rizpoint/export-engine": "workspace:*",
     "@rizpoint/mock-providers": "workspace:*",
     "@rizpoint/object-storage": "workspace:*",
     "@rizpoint/order-engine": "workspace:*",

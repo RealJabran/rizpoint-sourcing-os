@@ -230,6 +230,18 @@ references. They cannot update or replace the raw observation envelope. The
 database repository boundary is `packages/database/src/repositories/research.ts`;
 commands validate typed subjects and all reads/writes carry `organization_id`.
 
+## Product Explorer
+
+Product Explorer has a distinct server query boundary in
+`packages/database/src/repositories/product-explorer.ts`. Its SQL derives a
+tenant-authorized product universe from organization-owned relationships before
+joining the global catalog identity table. It then selects only typed current
+pricing and normalized historical facts, with an exact filtered count and a
+maximum 100-row server window. Opaque provider payloads and global catalog rows
+without an organization relationship are never browser results. Explorer views
+reuse the versioned `AnalysisView` persistence pattern with a null scan scope
+and Explorer schema version; they do not change scan analysis views.
+
 ## Phase 6 workflow and exports
 
 Shortlist and purchase-order aggregates are organization-scoped PostgreSQL records. PO lines snapshot the selected current immutable profit scenario, route, supplier-owned ordering-rule provenance, quantities, pack conversion, MOQ, order-multiple rounding, and Decimal totals. Validation rebuilds line/header totals before transition. The worker owns export generation through the transactional outbox; export jobs are persisted before Redis publication, recover expired running leases, and write checksummed allowlisted CSV/XLSX artifacts to private object storage. Download routes verify the organization and redirect only on an explicit download request, never exposing object keys.

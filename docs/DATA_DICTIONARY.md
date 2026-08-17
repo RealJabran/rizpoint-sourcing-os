@@ -149,6 +149,18 @@ window, Decimal coverage percentage, and warnings. It is provider-scoped and
 cannot overwrite the raw history that produced it; null/insufficient outputs
 mean coverage was not adequate, never that a missing month had a zero value.
 
+## Product Explorer query boundary
+
+Product Explorer is a read projection, not a new product truth table. Its
+universe is the union of `ListingCandidate` imported matches,
+`ResearchProjectItem` products, active `ProductWatch` records, active
+`MarketMember` records, and `HistoryRefreshItem` products for one organization.
+The query exposes only typed catalog fields, latest typed pricing observation,
+latest review/rank history points, and the latest versioned history assessment.
+Each result retains the universe-source labels. Explorer saved views are
+`AnalysisView` records with null `scan_job_id` and schema version 1; their query
+state is Explorer-specific and cannot be interpreted as scan analysis state.
+
 ## Phase 6 workflow entities
 
 `Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Supplier ordering rules retain a source and observed timestamp; PO creation blocks without them. Export jobs retain the source revision, checksum, byte size, generator version, private object key, and expiry; raw provider payloads are not exported by default.

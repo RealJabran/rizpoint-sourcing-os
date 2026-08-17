@@ -238,6 +238,89 @@ a:focus-visible,
   width: 19px;
   height: 19px;
 }
+
+.product-explorer {
+  display: grid;
+  gap: 1rem;
+}
+.explorer-controls {
+  display: grid;
+  gap: 0.75rem;
+}
+.explorer-filter-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.explorer-presets,
+.explorer-saved-views,
+.explorer-actions,
+.explorer-actions > div,
+.explorer-compare {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.explorer-actions {
+  justify-content: space-between;
+}
+.explorer-actions .rp-select {
+  min-width: 13rem;
+}
+.explorer-create-project {
+  flex: 1;
+  justify-content: flex-end;
+}
+.explorer-table-wrap {
+  overflow-x: auto;
+}
+.explorer-results table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 850px;
+}
+.explorer-results th,
+.explorer-results td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--rp-border);
+  text-align: left;
+  vertical-align: top;
+}
+.explorer-results td small,
+.explorer-results td span {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--rp-text-muted);
+}
+.explorer-results .rp-badge {
+  margin: 0 0.25rem 0.25rem 0;
+}
+.explorer-compare span {
+  color: var(--rp-text-muted);
+}
+.explorer-footnote {
+  color: var(--rp-text-muted);
+  font-size: 0.9rem;
+}
+@media (max-width: 1000px) {
+  .explorer-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .explorer-filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .explorer-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .explorer-create-project {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
 .sidebar-footer {
   margin-top: auto;
   padding: 0.75rem;
