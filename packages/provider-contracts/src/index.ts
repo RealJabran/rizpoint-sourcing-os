@@ -86,6 +86,26 @@ export interface SalesEstimateProvider {
   ): Promise<SalesEstimateProviderResult>;
 }
 
+export const keywordMetricSchema = z.object({
+  phrase: z.string().min(1),
+  searchVolume: decimalStringSchema.optional(),
+  competingProductCount: decimalStringSchema.optional(),
+  suggestedBid: decimalStringSchema.optional(),
+  relatedTerms: z.array(z.string().min(1)).optional(),
+  metrics: z.record(z.string(), z.unknown()).optional(),
+  provenance: provenanceSchema,
+  completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]),
+});
+export type KeywordMetric = z.infer<typeof keywordMetricSchema>;
+export interface KeywordIntelligenceProvider {
+  readonly providerKey: string;
+  discover(input: {
+    marketplaceId: string;
+    locale: string;
+    seed: string;
+  }): Promise<readonly KeywordMetric[]>;
+}
+
 export const providerOperationalStateSchema = z.enum([
   "NOT_CONFIGURED",
   "CONFIGURED",
