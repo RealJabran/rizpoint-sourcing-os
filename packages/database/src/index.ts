@@ -11,4 +11,5 @@ export * from "./repositories/opportunity-finder.js";
 export * from "./opportunity-scoring.js";
 export * from "./repositories/sales-estimation.js";
 export * from "./repositories/keyword-explorer.js";
+export * from "./repositories/reverse-asin.js";
 export * from "./generated/prisma/client.js";
