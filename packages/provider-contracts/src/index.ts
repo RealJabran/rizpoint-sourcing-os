@@ -106,6 +106,20 @@ export interface KeywordIntelligenceProvider {
   }): Promise<readonly KeywordMetric[]>;
 }
 
+export interface BrandAnalyticsProvider {
+  readonly providerKey: string;
+  requestSearchQueryPerformance(input: {
+    marketplaceId: string;
+    brandReference: string;
+    startDate: string;
+    endDate: string;
+  }): Promise<{
+    requestId: string;
+    status: "QUEUED" | "UNSUPPORTED" | "INELIGIBLE";
+    reasonCode?: string;
+  }>;
+}
+
 export const providerOperationalStateSchema = z.enum([
   "NOT_CONFIGURED",
   "CONFIGURED",
