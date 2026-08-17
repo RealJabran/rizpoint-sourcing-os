@@ -209,3 +209,11 @@ authorized current title/known metadata with an editable draft. Versioned,
 saved assessments decompose each checklist score and source references. Keyword
 coverage is a copy-presence check—not an Amazon ranking claim—and SEO
 opportunities are visibly separate from conservative compliance-risk warnings.
+
+## Listing Builder
+
+Prompt 22 adds ResearchProject-scoped verified ProductFacts, versioned listing
+drafts, and per-section claim/evidence mappings. The deterministic builder uses
+only fact values and supplied keywords. Drafts with unverified claims cannot be
+approved by the API; keyword-stuffing and configured constraints remain visible
+as warnings rather than fabricated content.

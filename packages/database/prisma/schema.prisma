@@ -426,6 +426,21 @@ enum ReviewThemeKind {
   INSTRUCTIONS
 }
 
+enum ProductFactSource {
+  USER_VERIFIED
+  AUTHORIZED_SOURCE
+}
+
+enum ListingDraftStatus {
+  DRAFT
+  APPROVED
+}
+
+enum ListingClaimStatus {
+  VERIFIED
+  UNVERIFIED
+}
+
 enum ResearchObservationType {
   KEYWORD
   PRODUCT_KEYWORD
@@ -639,6 +654,9 @@ model Organization {
   authorizedReviews           AuthorizedReview[]
   reviewThemes                ReviewTheme[]
   listingQualityAssessments   ListingQualityAssessment[]
+  productFacts                ProductFact[]
+  listingDrafts               ListingDraft[]
+  listingDraftClaims          ListingDraftClaim[]
 
   @@map("organizations")
 }
@@ -1998,6 +2016,8 @@ model ResearchProject {
   items             ResearchProjectItem[]
   projectTags       ResearchProjectTag[]
   notes             ResearchNote[]
+  productFacts      ProductFact[]
+  listingDrafts     ListingDraft[]
   productWatches    ProductWatch[]
   marketDefinitions MarketDefinition[]
   assessments       OpportunityAssessment[]
@@ -2423,6 +2443,68 @@ model ListingQualityAssessment {
 
   @@index([organizationId, catalogProductId, calculatedAt])
   @@map("listing_quality_assessments")
+}
+
+model ProductFact {
+  id                String            @id @default(cuid())
+  organizationId    String            @map("organization_id")
+  projectId         String            @map("project_id")
+  factKey           String            @map("fact_key")
+  value             String
+  source            ProductFactSource
+  evidenceReference String            @map("evidence_reference")
+  verifiedAt        DateTime          @map("verified_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  claims       ListingDraftClaim[]
+
+  @@unique([organizationId, projectId, factKey, value])
+  @@index([organizationId, projectId, verifiedAt])
+  @@map("product_facts")
+}
+
+model ListingDraft {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  projectId      String             @map("project_id")
+  marketplaceId  String             @map("marketplace_id")
+  version        Int
+  status         ListingDraftStatus @default(DRAFT)
+  content        Json
+  keywordRefs    Json               @map("keyword_refs")
+  warnings       Json
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  claims       ListingDraftClaim[]
+
+  @@unique([organizationId, projectId, version])
+  @@index([organizationId, projectId, updatedAt])
+  @@map("listing_drafts")
+}
+
+model ListingDraftClaim {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  draftId        String             @map("draft_id")
+  section        String
+  phrase         String
+  status         ListingClaimStatus
+  productFactId  String?            @map("product_fact_id")
+  keywordRefs    Json               @map("keyword_refs")
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  draft        ListingDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  productFact  ProductFact? @relation(fields: [productFactId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, draftId, status])
+  @@map("listing_draft_claims")
 }
 
 model HistoricalMetricSeries {
