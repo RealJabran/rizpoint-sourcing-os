@@ -17,4 +17,6 @@ export * from "./repositories/market-tracker.js";
 export * from "./repositories/brand-intelligence.js";
 export * from "./repositories/seller-intelligence.js";
 export * from "./repositories/product-relationships.js";
+export * from "./review-intelligence.js";
+export * from "./repositories/review-intelligence.js";
 export * from "./generated/prisma/client.js";

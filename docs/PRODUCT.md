@@ -185,3 +185,11 @@ capability-gated workspace. Sponsored placement, share-of-voice, and CPC
 metrics are unavailable until an entitled licensed or authorized first-party
 source supplies them; the product never scrapes sponsored placements or shows
 mock observations as live.
+
+## Review Intelligence
+
+Prompt 19 accepts only licensed, user-imported, or otherwise authorized review
+records. It deduplicates redacted text, stores source/timestamp/rating, and
+builds deterministic, versioned theme summaries with review-ID evidence links.
+Review text is not scraped from Amazon pages; contact and order-like references
+are minimized before persistence.

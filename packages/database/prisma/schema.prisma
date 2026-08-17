@@ -409,6 +409,23 @@ enum MarketMemberSource {
   DERIVED
 }
 
+enum AuthorizedReviewSource {
+  LICENSED_PROVIDER
+  USER_IMPORT
+  AUTHORIZED_OTHER
+}
+
+enum ReviewThemeKind {
+  COMPLAINT
+  PRAISE
+  QUALITY
+  SIZING_COMPATIBILITY
+  PACKAGING
+  MISSING_FEATURE
+  DURABILITY
+  INSTRUCTIONS
+}
+
 enum ResearchObservationType {
   KEYWORD
   PRODUCT_KEYWORD
@@ -619,6 +636,8 @@ model Organization {
   alertRules                  AlertRule[]
   alertEvents                 AlertEvent[]
   historyRefreshItems         HistoryRefreshItem[]
+  authorizedReviews           AuthorizedReview[]
+  reviewThemes                ReviewTheme[]
 
   @@map("organizations")
 }
@@ -909,6 +928,8 @@ model CatalogProduct {
   opportunityAssessments     OpportunityAssessment[]
   salesEstimates             SalesEstimate[]
   keywordRankTracks          KeywordRankTrack[]
+  authorizedReviews          AuthorizedReview[]
+  reviewThemes               ReviewTheme[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -2338,6 +2359,49 @@ model SellerObservation {
   @@unique([observationId, organizationId])
   @@index([organizationId, sellerReference])
   @@map("seller_observations")
+}
+
+model AuthorizedReview {
+  id                   String                 @id @default(cuid())
+  organizationId       String                 @map("organization_id")
+  catalogProductId     String                 @map("catalog_product_id")
+  source               AuthorizedReviewSource
+  sourceReference      String                 @map("source_reference")
+  dedupeHash           String                 @map("dedupe_hash")
+  rating               Int
+  normalizedLanguage   String                 @default("und") @map("normalized_language")
+  bodyRedacted         String                 @map("body_redacted")
+  observedAt           DateTime               @map("observed_at")
+  createdAt            DateTime               @default(now()) @map("created_at")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, source, dedupeHash])
+  @@index([organizationId, catalogProductId, observedAt])
+  @@map("authorized_reviews")
+}
+
+model ReviewTheme {
+  id                String          @id @default(cuid())
+  organizationId    String          @map("organization_id")
+  catalogProductId  String          @map("catalog_product_id")
+  kind              ReviewThemeKind
+  label             String
+  reviewCount       Int             @map("review_count")
+  averageRating     Decimal?        @map("average_rating") @db.Decimal(4, 2)
+  evidenceReviewIds Json            @map("evidence_review_ids")
+  methodVersion     String          @map("method_version")
+  calculatedAt      DateTime        @map("calculated_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, catalogProductId, kind, label])
+  @@index([organizationId, catalogProductId, calculatedAt])
+  @@map("review_themes")
 }
 
 model HistoricalMetricSeries {
