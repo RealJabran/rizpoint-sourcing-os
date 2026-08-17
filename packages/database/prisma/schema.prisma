@@ -614,6 +614,8 @@ model Organization {
   nicheAssessments            NicheAssessment[]
   salesEstimationModels       SalesEstimationModel[]
   salesEstimates              SalesEstimate[]
+  keywordRankTracks           KeywordRankTrack[]
+  keywordRankObservations     KeywordRankObservation[]
   alertRules                  AlertRule[]
   alertEvents                 AlertEvent[]
   historyRefreshItems         HistoryRefreshItem[]
@@ -906,6 +908,7 @@ model CatalogProduct {
   historyAnalyticsAssessments HistoryAnalyticsAssessment[]
   opportunityAssessments     OpportunityAssessment[]
   salesEstimates             SalesEstimate[]
+  keywordRankTracks          KeywordRankTrack[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -1976,6 +1979,7 @@ model ResearchProject {
   marketDefinitions MarketDefinition[]
   assessments       OpportunityAssessment[]
   alertRules        AlertRule[]
+  keywordRankTracks KeywordRankTrack[]
 
   @@unique([id, organizationId])
   @@index([organizationId, status, updatedAt])
@@ -2152,6 +2156,7 @@ model Keyword {
   keywordObservations        KeywordObservation[]
   productKeywordObservations ProductKeywordObservation[]
   historicalMetricSeries     HistoricalMetricSeries[]
+  keywordRankTracks          KeywordRankTrack[]
 
   @@unique([id, organizationId])
   @@unique([organizationId, marketplaceId, locale, normalizedPhrase])
@@ -2550,6 +2555,45 @@ model SalesEstimate {
   @@index([organizationId, catalogProductId, observedAt])
   @@index([modelId])
   @@map("sales_estimates")
+}
+
+model KeywordRankTrack {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  projectId        String?  @map("project_id")
+  keywordId        String   @map("keyword_id")
+  catalogProductId String   @map("catalog_product_id")
+  marketplaceId    String   @map("marketplace_id")
+  cadenceMinutes   Int      @map("cadence_minutes")
+  nextRunAt        DateTime? @map("next_run_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project ResearchProject? @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  keyword Keyword @relation(fields: [keywordId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  observations KeywordRankObservation[]
+  @@unique([organizationId, marketplaceId, keywordId, catalogProductId])
+  @@index([organizationId, nextRunAt])
+  @@map("keyword_rank_tracks")
+}
+
+model KeywordRankObservation {
+  id String @id @default(cuid())
+  organizationId String @map("organization_id")
+  trackId String @map("track_id")
+  providerKey String @map("provider_key")
+  observedAt DateTime @map("observed_at")
+  organicRank Int? @map("organic_rank")
+  sponsoredRank Int? @map("sponsored_rank")
+  freshnessState ExternalFreshnessState @map("freshness_state")
+  requestKey String @map("request_key")
+  createdAt DateTime @default(now()) @map("created_at")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  track KeywordRankTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  @@unique([trackId, requestKey])
+  @@index([organizationId, trackId, observedAt])
+  @@map("keyword_rank_observations")
 }
 
 model AlertRule {
