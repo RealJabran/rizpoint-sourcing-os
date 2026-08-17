@@ -170,3 +170,10 @@ and any provider metrics retain their observation source, timestamp, and
 completeness. No seller storefront scraping or personal-data enrichment is
 performed; absent licensed data leaves this optional workspace unavailable
 without affecting product research.
+
+## Product relationships
+
+Prompt 17 adds a product-neighborhood query and accessible table view. In the
+absence of a licensed relationship provider, it derives only shared-keyword and
+shared-saved-market similarity from organization evidence. Each result is
+explicitly labeled `DERIVED`; no behavioral Amazon relationship is inferred.

@@ -140,6 +140,34 @@ export interface SellerIntelligenceProvider {
   >;
 }
 
+export type ProductRelationshipType =
+  | "FREQUENTLY_BOUGHT_TOGETHER"
+  | "ALSO_VIEWED"
+  | "RELATED_RECOMMENDED"
+  | "SHARED_KEYWORD"
+  | "SHARED_MARKET"
+  | "CO_RANKING"
+  | "VARIANT_FAMILY";
+
+/** Direct behavioral types require a licensed source. Derived types must be
+ * surfaced as derived similarity in every caller-facing DTO. */
+export interface ProductRelationshipProvider {
+  readonly providerKey: string;
+  neighbors(input: {
+    marketplaceId: string;
+    asin: string;
+    relationshipTypes?: readonly ProductRelationshipType[];
+  }): Promise<
+    readonly {
+      relatedAsin: string;
+      type: ProductRelationshipType;
+      strength: string;
+      confidence: "HIGH" | "MEDIUM" | "LOW";
+      provenance: z.infer<typeof provenanceSchema>;
+    }[]
+  >;
+}
+
 export const providerOperationalStateSchema = z.enum([
   "NOT_CONFIGURED",
   "CONFIGURED",
