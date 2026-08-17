@@ -226,3 +226,12 @@ keywords, known competitor/watches, owners, due dates, budgets, KPIs,
 assumptions, risks, stage evidence, and an append-only change log. Missing
 market-price, PPC, and margin inputs remain unavailable, and the planner makes
 no external purchase or Seller Central change.
+
+## Private-Label Profitability
+
+Prompt 24 adds versioned EXW/FOB/DDP supplier-quote scenarios to private-label
+ResearchProjects. A separate Decimal engine compares complete, sourced cost
+registers, explicit currency conversion observations, MOQ cash exposure,
+landed cost, profit/ROI/margin, mathematical break-even thresholds, waterfall
+allocations, and named price/cost stresses. The wholesale engine and its
+`profit-engine/v3` formulas remain unchanged.

@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS "private_label_scenario_results";
+DROP TABLE IF EXISTS "private_label_cost_assumptions";
+DROP TABLE IF EXISTS "private_label_quote_scenarios";
+DROP TYPE IF EXISTS "PrivateLabelResultStatus";
+DROP TYPE IF EXISTS "PrivateLabelResultKind";
+DROP TYPE IF EXISTS "PrivateLabelCostConfidence";
+DROP TYPE IF EXISTS "PrivateLabelCostAllocation";
+DROP TYPE IF EXISTS "PrivateLabelCostCategory";
+DROP TYPE IF EXISTS "PrivateLabelIncoterm";

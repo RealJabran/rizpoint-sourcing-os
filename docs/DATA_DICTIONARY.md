@@ -107,6 +107,14 @@ retained for audit; browser DTOs expose only its checksum reference.
 
 Financial columns use PostgreSQL `NUMERIC`. Application calculations use Decimal libraries and explicit rounding policies. Binary floats are prohibited. Ratios are represented as Decimal values, not percentages stored as floats.
 
+Private-label finance adds `PrivateLabelQuoteScenario`,
+`PrivateLabelCostAssumption`, and `PrivateLabelScenarioResult`. Quote and cost
+money uses `NUMERIC(18,4)`, FX uses `NUMERIC(20,10)`, aggregate cash uses
+`NUMERIC(20,4)`, and ratios use `NUMERIC(12,4)`. Each scenario belongs to one
+organization-scoped private-label ResearchProject; cost rows retain allocation,
+currency, source, date, and confidence, while immutable base/stress results
+retain the complete input snapshot and formula version.
+
 ## Research foundation entities
 
 | Entity                                                | Purpose                                                                                                                                                                | Tenant/time boundary                                                      |

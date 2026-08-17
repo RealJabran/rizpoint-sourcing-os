@@ -471,6 +471,55 @@ enum LaunchStageStatus {
   COMPLETE
 }
 
+enum PrivateLabelIncoterm {
+  EXW
+  FOB
+  DDP
+}
+
+enum PrivateLabelCostCategory {
+  SAMPLES
+  TOOLING_SETUP
+  PACKAGING
+  LABELING
+  INSPECTION
+  FREIGHT
+  CUSTOMS_TARIFFS
+  INSURANCE
+  PREP
+  INBOUND_SHIPPING
+  AMAZON_REFERRAL
+  AMAZON_FBA
+  STORAGE_ALLOWANCE
+  RETURNS_ALLOWANCE
+  AD_LAUNCH_BUDGET
+  COUPON_PROMO
+  DEFECT_ALLOWANCE
+}
+
+enum PrivateLabelCostAllocation {
+  PER_UNIT
+  BATCH_TOTAL
+  PERCENT_OF_PRICE
+}
+
+enum PrivateLabelCostConfidence {
+  CONFIRMED
+  ESTIMATED
+  UNKNOWN
+}
+
+enum PrivateLabelResultKind {
+  BASE
+  STRESS
+}
+
+enum PrivateLabelResultStatus {
+  CALCULATED
+  BLOCKED_MISSING_COST
+  BLOCKED_INVALID_INPUT
+}
+
 enum ResearchObservationType {
   KEYWORD
   PRODUCT_KEYWORD
@@ -690,6 +739,9 @@ model Organization {
   launchPlans                 LaunchPlan[]
   launchPlanStages            LaunchPlanStage[]
   launchPlanChanges           LaunchPlanChange[]
+  privateLabelQuoteScenarios  PrivateLabelQuoteScenario[]
+  privateLabelCostAssumptions PrivateLabelCostAssumption[]
+  privateLabelScenarioResults PrivateLabelScenarioResult[]
 
   @@map("organizations")
 }
@@ -967,22 +1019,22 @@ model CatalogProduct {
   createdAt            DateTime               @default(now()) @map("created_at")
   updatedAt            DateTime               @updatedAt @map("updated_at")
 
-  identifiers                ProductIdentifier[]
-  listingCandidates          ListingCandidate[]
-  researchProjectItems       ResearchProjectItem[]
-  productWatches             ProductWatch[]
-  marketMembers              MarketMember[]
-  productKeywordObservations ProductKeywordObservation[]
-  productMarketObservations  ProductMarketObservation[]
-  historicalMetricSeries     HistoricalMetricSeries[]
-  historyRefreshItems        HistoryRefreshItem[]
+  identifiers                 ProductIdentifier[]
+  listingCandidates           ListingCandidate[]
+  researchProjectItems        ResearchProjectItem[]
+  productWatches              ProductWatch[]
+  marketMembers               MarketMember[]
+  productKeywordObservations  ProductKeywordObservation[]
+  productMarketObservations   ProductMarketObservation[]
+  historicalMetricSeries      HistoricalMetricSeries[]
+  historyRefreshItems         HistoryRefreshItem[]
   historyAnalyticsAssessments HistoryAnalyticsAssessment[]
-  opportunityAssessments     OpportunityAssessment[]
-  salesEstimates             SalesEstimate[]
-  keywordRankTracks          KeywordRankTrack[]
-  authorizedReviews          AuthorizedReview[]
-  reviewThemes               ReviewTheme[]
-  listingQualityAssessments ListingQualityAssessment[]
+  opportunityAssessments      OpportunityAssessment[]
+  salesEstimates              SalesEstimate[]
+  keywordRankTracks           KeywordRankTrack[]
+  authorizedReviews           AuthorizedReview[]
+  reviewThemes                ReviewTheme[]
+  listingQualityAssessments   ListingQualityAssessment[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -2045,18 +2097,19 @@ model ResearchProject {
   createdAt      DateTime              @default(now()) @map("created_at")
   updatedAt      DateTime              @updatedAt @map("updated_at")
 
-  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  items             ResearchProjectItem[]
-  projectTags       ResearchProjectTag[]
-  notes             ResearchNote[]
-  productFacts      ProductFact[]
-  listingDrafts     ListingDraft[]
-  launchPlans       LaunchPlan[]
-  productWatches    ProductWatch[]
-  marketDefinitions MarketDefinition[]
-  assessments       OpportunityAssessment[]
-  alertRules        AlertRule[]
-  keywordRankTracks KeywordRankTrack[]
+  organization               Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  items                      ResearchProjectItem[]
+  projectTags                ResearchProjectTag[]
+  notes                      ResearchNote[]
+  productFacts               ProductFact[]
+  listingDrafts              ListingDraft[]
+  launchPlans                LaunchPlan[]
+  privateLabelQuoteScenarios PrivateLabelQuoteScenario[]
+  productWatches             ProductWatch[]
+  marketDefinitions          MarketDefinition[]
+  assessments                OpportunityAssessment[]
+  alertRules                 AlertRule[]
+  keywordRankTracks          KeywordRankTrack[]
 
   @@unique([id, organizationId])
   @@index([organizationId, status, updatedAt])
@@ -2418,17 +2471,17 @@ model SellerObservation {
 }
 
 model AuthorizedReview {
-  id                   String                 @id @default(cuid())
-  organizationId       String                 @map("organization_id")
-  catalogProductId     String                 @map("catalog_product_id")
-  source               AuthorizedReviewSource
-  sourceReference      String                 @map("source_reference")
-  dedupeHash           String                 @map("dedupe_hash")
-  rating               Int
-  normalizedLanguage   String                 @default("und") @map("normalized_language")
-  bodyRedacted         String                 @map("body_redacted")
-  observedAt           DateTime               @map("observed_at")
-  createdAt            DateTime               @default(now()) @map("created_at")
+  id                 String                 @id @default(cuid())
+  organizationId     String                 @map("organization_id")
+  catalogProductId   String                 @map("catalog_product_id")
+  source             AuthorizedReviewSource
+  sourceReference    String                 @map("source_reference")
+  dedupeHash         String                 @map("dedupe_hash")
+  rating             Int
+  normalizedLanguage String                 @default("und") @map("normalized_language")
+  bodyRedacted       String                 @map("body_redacted")
+  observedAt         DateTime               @map("observed_at")
+  createdAt          DateTime               @default(now()) @map("created_at")
 
   organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
@@ -2491,8 +2544,8 @@ model ProductFact {
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project      ResearchProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject     @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
   claims       ListingDraftClaim[]
 
   @@unique([organizationId, projectId, factKey, value])
@@ -2513,8 +2566,8 @@ model ListingDraft {
   createdAt      DateTime           @default(now()) @map("created_at")
   updatedAt      DateTime           @updatedAt @map("updated_at")
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project      ResearchProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject     @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
   claims       ListingDraftClaim[]
 
   @@unique([organizationId, projectId, version])
@@ -2542,20 +2595,20 @@ model ListingDraftClaim {
 }
 
 model LaunchPlan {
-  id              String           @id @default(cuid())
-  organizationId  String           @map("organization_id")
-  projectId       String           @map("project_id")
-  name            String
-  status          LaunchPlanStatus @default(ACTIVE)
-  evidenceSnapshot Json            @map("evidence_snapshot")
-  researchOutputs Json             @map("research_outputs")
-  assumptions     Json
-  risks           Json
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
+  id               String           @id @default(cuid())
+  organizationId   String           @map("organization_id")
+  projectId        String           @map("project_id")
+  name             String
+  status           LaunchPlanStatus @default(ACTIVE)
+  evidenceSnapshot Json             @map("evidence_snapshot")
+  researchOutputs  Json             @map("research_outputs")
+  assumptions      Json
+  risks            Json
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
   organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project      ResearchProject   @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  project      ResearchProject    @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
   stages       LaunchPlanStage[]
   changes      LaunchPlanChange[]
 
@@ -2590,19 +2643,107 @@ model LaunchPlanStage {
 }
 
 model LaunchPlanChange {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
-  launchPlanId   String   @map("launch_plan_id")
+  id             String          @id @default(cuid())
+  organizationId String          @map("organization_id")
+  launchPlanId   String          @map("launch_plan_id")
   stage          LaunchStageKey?
   action         String
   details        Json
-  createdAt      DateTime @default(now()) @map("created_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   launchPlan   LaunchPlan   @relation(fields: [launchPlanId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, launchPlanId, createdAt])
   @@map("launch_plan_changes")
+}
+
+model PrivateLabelQuoteScenario {
+  id                   String               @id @default(cuid())
+  organizationId       String               @map("organization_id")
+  projectId            String               @map("project_id")
+  name                 String
+  version              Int
+  incoterm             PrivateLabelIncoterm
+  supplierCurrency     String               @map("supplier_currency")
+  analysisCurrency     String               @map("analysis_currency")
+  unitCost             Decimal              @map("unit_cost") @db.Decimal(18, 4)
+  unitCostSource       String               @map("unit_cost_source")
+  unitCostAssumedAt    DateTime             @map("unit_cost_assumed_at")
+  moq                  Int
+  targetSellingPrice   Decimal              @map("target_selling_price") @db.Decimal(18, 4)
+  targetPriceSource    String               @map("target_price_source")
+  targetPriceAssumedAt DateTime             @map("target_price_assumed_at")
+  fxRate               Decimal?             @map("fx_rate") @db.Decimal(20, 10)
+  fxSource             String?              @map("fx_source")
+  fxObservedAt         DateTime?            @map("fx_observed_at")
+  formulaVersion       String               @map("formula_version")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  organization Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject              @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  costs        PrivateLabelCostAssumption[]
+  results      PrivateLabelScenarioResult[]
+
+  @@unique([organizationId, projectId, name, version])
+  @@index([organizationId, projectId, updatedAt])
+  @@map("private_label_quote_scenarios")
+}
+
+model PrivateLabelCostAssumption {
+  id             String                     @id @default(cuid())
+  organizationId String                     @map("organization_id")
+  scenarioId     String                     @map("scenario_id")
+  category       PrivateLabelCostCategory
+  allocation     PrivateLabelCostAllocation
+  amount         Decimal?                   @db.Decimal(18, 4)
+  currency       String
+  source         String
+  assumedAt      DateTime                   @map("assumed_at")
+  confidence     PrivateLabelCostConfidence
+  createdAt      DateTime                   @default(now()) @map("created_at")
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scenario     PrivateLabelQuoteScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@unique([scenarioId, category])
+  @@index([organizationId, scenarioId])
+  @@map("private_label_cost_assumptions")
+}
+
+model PrivateLabelScenarioResult {
+  id                        String                   @id @default(cuid())
+  organizationId            String                   @map("organization_id")
+  scenarioId                String                   @map("scenario_id")
+  kind                      PrivateLabelResultKind
+  stressName                String                   @map("stress_name")
+  status                    PrivateLabelResultStatus
+  formulaVersion            String                   @map("formula_version")
+  currency                  String
+  landedCostPerUnit         Decimal?                 @map("landed_cost_per_unit") @db.Decimal(18, 4)
+  contributionMarginPerUnit Decimal?                 @map("contribution_margin_per_unit") @db.Decimal(18, 4)
+  netProfitPerUnit          Decimal?                 @map("net_profit_per_unit") @db.Decimal(18, 4)
+  roiPercent                Decimal?                 @map("roi_percent") @db.Decimal(12, 4)
+  marginPercent             Decimal?                 @map("margin_percent") @db.Decimal(12, 4)
+  breakEvenSalePrice        Decimal?                 @map("break_even_sale_price") @db.Decimal(18, 4)
+  breakEvenAdSpendPerUnit   Decimal?                 @map("break_even_ad_spend_per_unit") @db.Decimal(18, 4)
+  breakEvenAcosPercent      Decimal?                 @map("break_even_acos_percent") @db.Decimal(12, 4)
+  initialCashRequired       Decimal?                 @map("initial_cash_required") @db.Decimal(20, 4)
+  moqCashExposure           Decimal?                 @map("moq_cash_exposure") @db.Decimal(20, 4)
+  waterfall                 Json
+  uncertainCosts            Json                     @map("uncertain_costs")
+  reasonCodes               Json                     @map("reason_codes")
+  inputSnapshot             Json                     @map("input_snapshot")
+  calculatedAt              DateTime                 @map("calculated_at")
+  createdAt                 DateTime                 @default(now()) @map("created_at")
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  scenario     PrivateLabelQuoteScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@unique([scenarioId, kind, stressName])
+  @@index([organizationId, scenarioId, calculatedAt])
+  @@map("private_label_scenario_results")
 }
 
 model HistoricalMetricSeries {
@@ -2665,23 +2806,23 @@ model HistoricalMetricPoint {
  * from raw provider observations and can be recalculated without mutation.
  */
 model HistoryAnalyticsAssessment {
-  id                     String                 @id @default(cuid())
-  organizationId         String                 @map("organization_id")
-  catalogProductId       String                 @map("catalog_product_id")
-  marketplaceId          String                 @map("marketplace_id")
-  providerKey            String                 @map("provider_key")
-  calculationVersion     String                 @map("calculation_version")
-  inputFingerprint       String                 @map("input_fingerprint")
-  status                 HistoryAnalyticsStatus
-  windowStart            DateTime?              @map("window_start")
-  windowEnd              DateTime               @map("window_end")
-  coveragePercent        Decimal?               @map("coverage_percent") @db.Decimal(9, 4)
-  metrics                Json
-  warnings               String[]               @default([])
-  inputPointReferences   Json                   @map("input_point_references")
-  calculatedAt           DateTime               @map("calculated_at")
-  createdAt              DateTime               @default(now()) @map("created_at")
-  updatedAt              DateTime               @updatedAt @map("updated_at")
+  id                   String                 @id @default(cuid())
+  organizationId       String                 @map("organization_id")
+  catalogProductId     String                 @map("catalog_product_id")
+  marketplaceId        String                 @map("marketplace_id")
+  providerKey          String                 @map("provider_key")
+  calculationVersion   String                 @map("calculation_version")
+  inputFingerprint     String                 @map("input_fingerprint")
+  status               HistoryAnalyticsStatus
+  windowStart          DateTime?              @map("window_start")
+  windowEnd            DateTime               @map("window_end")
+  coveragePercent      Decimal?               @map("coverage_percent") @db.Decimal(9, 4)
+  metrics              Json
+  warnings             String[]               @default([])
+  inputPointReferences Json                   @map("input_point_references")
+  calculatedAt         DateTime               @map("calculated_at")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
 
   organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
@@ -2743,8 +2884,10 @@ model OpportunityReason {
   @@map("opportunity_reasons")
 }
 
-/** Immutable, deterministic niche score snapshot. The MarketDefinition holds
- * the source definition; each assessment preserves its thresholds and inputs. */
+/**
+ * Immutable, deterministic niche score snapshot. The MarketDefinition holds
+ * the source definition; each assessment preserves its thresholds and inputs.
+ */
 model NicheAssessment {
   id                      String                      @id @default(cuid())
   organizationId          String                      @map("organization_id")
@@ -2785,7 +2928,7 @@ model SalesEstimationModel {
   validatedAt            DateTime?                  @map("validated_at")
   createdAt              DateTime                   @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   estimates    SalesEstimate[]
 
   @@unique([organizationId, marketplaceId, categoryReference, version])
@@ -2806,11 +2949,11 @@ model SalesEstimate {
   confidencePercent       Decimal?            @map("confidence_percent") @db.Decimal(9, 4)
   providerKey             String?             @map("provider_key")
   modelId                 String?             @map("model_id")
-  modelVersion            String               @map("model_version")
-  inputFingerprint        String               @map("input_fingerprint")
-  inputEvidenceReferences Json                 @map("input_evidence_references")
-  observedAt              DateTime             @map("observed_at")
-  createdAt               DateTime             @default(now()) @map("created_at")
+  modelVersion            String              @map("model_version")
+  inputFingerprint        String              @map("input_fingerprint")
+  inputEvidenceReferences Json                @map("input_evidence_references")
+  observedAt              DateTime            @map("observed_at")
+  createdAt               DateTime            @default(now()) @map("created_at")
 
   organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   catalogProduct CatalogProduct        @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
@@ -2823,39 +2966,41 @@ model SalesEstimate {
 }
 
 model KeywordRankTrack {
-  id               String   @id @default(cuid())
-  organizationId   String   @map("organization_id")
-  projectId        String?  @map("project_id")
-  keywordId        String   @map("keyword_id")
-  catalogProductId String   @map("catalog_product_id")
-  marketplaceId    String   @map("marketplace_id")
-  cadenceMinutes   Int      @map("cadence_minutes")
-  nextRunAt        DateTime? @map("next_run_at")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  project ResearchProject? @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
-  keyword Keyword @relation(fields: [keywordId, organizationId], references: [id, organizationId], onDelete: Restrict)
-  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
-  observations KeywordRankObservation[]
+  id               String                   @id @default(cuid())
+  organizationId   String                   @map("organization_id")
+  projectId        String?                  @map("project_id")
+  keywordId        String                   @map("keyword_id")
+  catalogProductId String                   @map("catalog_product_id")
+  marketplaceId    String                   @map("marketplace_id")
+  cadenceMinutes   Int                      @map("cadence_minutes")
+  nextRunAt        DateTime?                @map("next_run_at")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
+  organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project          ResearchProject?         @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  keyword          Keyword                  @relation(fields: [keywordId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  catalogProduct   CatalogProduct           @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  observations     KeywordRankObservation[]
+
   @@unique([organizationId, marketplaceId, keywordId, catalogProductId])
   @@index([organizationId, nextRunAt])
   @@map("keyword_rank_tracks")
 }
 
 model KeywordRankObservation {
-  id String @id @default(cuid())
-  organizationId String @map("organization_id")
-  trackId String @map("track_id")
-  providerKey String @map("provider_key")
-  observedAt DateTime @map("observed_at")
-  organicRank Int? @map("organic_rank")
-  sponsoredRank Int? @map("sponsored_rank")
+  id             String                 @id @default(cuid())
+  organizationId String                 @map("organization_id")
+  trackId        String                 @map("track_id")
+  providerKey    String                 @map("provider_key")
+  observedAt     DateTime               @map("observed_at")
+  organicRank    Int?                   @map("organic_rank")
+  sponsoredRank  Int?                   @map("sponsored_rank")
   freshnessState ExternalFreshnessState @map("freshness_state")
-  requestKey String @map("request_key")
-  createdAt DateTime @default(now()) @map("created_at")
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  track KeywordRankTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  requestKey     String                 @map("request_key")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  track          KeywordRankTrack       @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
   @@unique([trackId, requestKey])
   @@index([organizationId, trackId, observedAt])
   @@map("keyword_rank_observations")

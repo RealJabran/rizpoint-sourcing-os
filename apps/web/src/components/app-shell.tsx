@@ -47,6 +47,11 @@ const navigation: NavigationItem[] = [
     icon: "opportunity",
   },
   { label: "Sales estimation", href: "/sales-estimation", icon: "demand" },
+  {
+    label: "Private-label profit",
+    href: "/private-label-profitability",
+    icon: "demand",
+  },
   { label: "Shortlists", href: "/shortlists", icon: "shortlist" },
   {
     label: "Purchase orders",

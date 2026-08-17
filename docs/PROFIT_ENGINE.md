@@ -41,3 +41,36 @@ recommendation.
 `BUY` requires verified match/pack, explicit `ELIGIBLE` seller status, resolved non-prohibited brand policy, complete fresh financial evidence, demand evidence, passing conservative thresholds, and an acceptable stress result. Hard seller restrictions and prohibited brands return `AVOID` before approval checks. Approval-required status routes to review; incomplete, unauthorized, throttled, and unknown eligibility cannot yield `BUY`. Invalid thresholds, costs, fee components/models, scenario prices, or discounts cannot yield `BUY`.
 
 AI may explain evidence but never supplies financial values or executes these formulas.
+
+## Private-label quote scenarios
+
+`private-label-profit/v1` is an additive engine and does not call or modify the
+wholesale `profit-engine/v3` path. Its complete cost register distinguishes
+`PER_UNIT`, `BATCH_TOTAL`, and `PERCENT_OF_PRICE` assumptions. Every category is
+required, including explicit zeroes; `UNKNOWN` amounts block calculation, while
+`ESTIMATED` amounts remain visible in the output.
+
+For an MOQ-sized initial order:
+
+```text
+converted_unit_cost = supplier_unit_cost × observed_fx_rate (only when currencies differ)
+batch_cost_per_unit = batch_total / MOQ
+percentage_cost_per_unit = target_price × percentage / 100
+landed_cost_per_unit = converted_unit_cost + packaging + labeling + inspection
+  + freight + customs/tariffs + insurance + prep + inbound shipping
+contribution_margin_per_unit = target_price - landed_cost - operating costs
+net_profit_per_unit = contribution_margin - allocated samples/tooling/setup
+ROI = net_profit / (landed_cost + allocated one-time costs) × 100
+margin = net_profit / target_price × 100
+break_even_price = fixed_cost_per_unit / (1 - total percentage cost rate)
+break_even_ad_spend = current_ad_allocation + net_profit
+initial_cash = MOQ procurement/landed costs + one-time costs + launch ad budget
+MOQ_cash_exposure = MOQ × landed_cost_per_unit
+```
+
+The engine returns four-decimal exact money/ratio strings; display layers may
+round money to cents. A break-even value is omitted with a reason when its
+denominator is not mathematically valid or no nonnegative ad-spend threshold
+exists. Currency conversion requires source, observation time, direction, and
+Decimal rate. Named stress results modify price and costs without mutating the
+base scenario.

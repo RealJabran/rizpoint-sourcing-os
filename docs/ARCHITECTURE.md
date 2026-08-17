@@ -281,3 +281,13 @@ Shortlist and purchase-order aggregates are organization-scoped PostgreSQL recor
 The local containers use Node 22 and Python 3.13+. Next.js requires Node 20.9 or newer; Prisma supports active/maintenance Node LTS releases. See the official [Next.js installation](https://nextjs.org/docs/app/getting-started/installation) and [Prisma system requirements](https://docs.prisma.io/docs/orm/reference/system-requirements).
 
 Compose pins PostgreSQL, Redis, and MinIO release tags so local rebuilds do not silently float across versions.
+
+## Private-label financial boundary
+
+Private-label quote comparison is isolated in `private-label-profit/v1`, an
+additive module of `@rizpoint/profit-engine`. It accepts Decimal strings and a
+complete typed cost register; it does not reuse supplier-row PackGuard inputs or
+alter `profit-engine/v3` wholesale results. Project-scoped quote, cost, FX, base,
+and stress records are NUMERIC-backed and preserve formula version, source,
+assumption/observation dates, confidence, input snapshot, and reason codes.
+Unknown costs block calculation and estimated costs remain visible.

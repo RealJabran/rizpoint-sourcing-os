@@ -1,5 +1,6 @@
 import { Decimal } from "decimal.js";
 import type { PackGuardStatus } from "@rizpoint/domain";
+export * from "./private-label.js";
 
 Decimal.set({
   precision: 40,
