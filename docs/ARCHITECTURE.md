@@ -291,3 +291,19 @@ alter `profit-engine/v3` wholesale results. Project-scoped quote, cost, FX, base
 and stress records are NUMERIC-backed and preserve formula version, source,
 assumption/observation dates, confidence, input snapshot, and reason codes.
 Unknown costs block calculation and estimated costs remain visible.
+
+## Compliance-risk screening boundary
+
+Compliance screening is a deterministic research projection in
+`packages/database/src/compliance-risk-policy.ts`, not an AI or provider
+conclusion. `ComplianceRuleSet` and `ComplianceRule` are organization-scoped,
+source/date/version-bearing configuration. Creating a version archives the
+prior active ruleset for the same marketplace and jurisdiction; it does not
+edit a rule that an earlier assessment used. `ComplianceRiskAssessment` retains
+the exact ruleset, product/fact/manual input references, input fingerprint, and
+per-domain output for replay. The repository rejects a `LOW` rule without an
+authoritative clearance flag and source. Unmatched domains are explicitly
+`UNKNOWN` and launch-blocking. Existing SP-API listing restrictions can add an
+authorized seller-eligibility observation to the Amazon-restriction domain, but
+`ELIGIBLE` remains `UNKNOWN` for compliance because eligibility is not a legal
+or certification clearance.

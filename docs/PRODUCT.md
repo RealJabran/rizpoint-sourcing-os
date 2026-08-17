@@ -235,3 +235,15 @@ registers, explicit currency conversion observations, MOQ cash exposure,
 landed cost, profit/ROI/margin, mathematical break-even thresholds, waterfall
 allocations, and named price/cost stresses. The wholesale engine and its
 `profit-engine/v3` formulas remain unchanged.
+
+## Compliance Risk Screen
+
+Prompt 25 adds a research-stage Compliance Risk screen driven only by
+organization-scoped, curated, versioned rules. It produces a per-domain
+`LOW`/`REVIEW`/`HIGH`/`UNKNOWN` screen with source links/dates, supplier
+questions, documentation to verify, and an explicit launch hold. An unmatched
+domain stays `UNKNOWN`; no configured coverage is never represented as a safe
+product. Ruleset updates create a new version and preserve past assessments.
+The screen is not legal advice and does not say a certification is unnecessary.
+Authorized Amazon seller-restriction observations are shown only as seller
+eligibility evidence, never as compliance clearance.

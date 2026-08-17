@@ -115,6 +115,16 @@ organization-scoped private-label ResearchProject; cost rows retain allocation,
 currency, source, date, and confidence, while immutable base/stress results
 retain the complete input snapshot and formula version.
 
+Compliance screening adds `ComplianceRuleSet`, `ComplianceRule`, and
+`ComplianceRiskAssessment`. Rulesets are tenant- and marketplace/jurisdiction-
+scoped; each records a version, source title/URL, published date, accessed date,
+and active/archive state. Rules retain match terms, rationale, source/date,
+supplier questions, likely documents, and the narrowly guarded authoritative-
+clearance flag. Assessments are immutable, tenant/project-scoped JSON results
+with their exact input fingerprint/evidence references and calculation time.
+They are screening records, not legal, certification, or seller-eligibility
+determinations.
+
 ## Research foundation entities
 
 | Entity                                                | Purpose                                                                                                                                                                | Tenant/time boundary                                                      |

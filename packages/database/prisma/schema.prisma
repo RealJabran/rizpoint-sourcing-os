@@ -266,6 +266,40 @@ enum ListingRestrictionState {
   UNKNOWN
 }
 
+/// Research-screening outcome. This is deliberately not a legal determination
+/// or a statement of Amazon selling eligibility.
+enum ComplianceRiskLevel {
+  LOW
+  REVIEW
+  HIGH
+  UNKNOWN
+}
+
+enum ComplianceRuleSetStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ComplianceRiskDomain {
+  INGESTIBLE_FOOD_SUPPLEMENT
+  COSMETIC_TOPICAL
+  MEDICAL_HEALTH_CLAIMS
+  CHILDRENS_PRODUCT
+  BATTERY
+  RADIO_WIRELESS
+  ELECTRICAL_MAINS
+  LASER
+  PPE_SAFETY
+  CHEMICAL_HAZARDOUS_MATERIAL
+  FLAMMABLE_AEROSOL
+  AUTOMOTIVE_SAFETY
+  PET_CONSUMABLE
+  TEXTILE_APPAREL_LABELING
+  COUNTRY_ORIGIN_LABELING
+  IP_TRADEMARK_PATENT
+  AMAZON_RESTRICTED_CATEGORY
+}
+
 enum BrandPolicyStatus {
   PROHIBITED
   APPROVAL_REQUIRED
@@ -742,6 +776,8 @@ model Organization {
   privateLabelQuoteScenarios  PrivateLabelQuoteScenario[]
   privateLabelCostAssumptions PrivateLabelCostAssumption[]
   privateLabelScenarioResults PrivateLabelScenarioResult[]
+  complianceRuleSets          ComplianceRuleSet[]
+  complianceRiskAssessments   ComplianceRiskAssessment[]
 
   @@map("organizations")
 }
@@ -1035,6 +1071,7 @@ model CatalogProduct {
   authorizedReviews           AuthorizedReview[]
   reviewThemes                ReviewTheme[]
   listingQualityAssessments   ListingQualityAssessment[]
+  complianceRiskAssessments   ComplianceRiskAssessment[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -2110,6 +2147,7 @@ model ResearchProject {
   assessments                OpportunityAssessment[]
   alertRules                 AlertRule[]
   keywordRankTracks          KeywordRankTrack[]
+  complianceRiskAssessments  ComplianceRiskAssessment[]
 
   @@unique([id, organizationId])
   @@index([organizationId, status, updatedAt])
@@ -2744,6 +2782,86 @@ model PrivateLabelScenarioResult {
   @@unique([scenarioId, kind, stressName])
   @@index([organizationId, scenarioId, calculatedAt])
   @@map("private_label_scenario_results")
+}
+
+/// Versioned, tenant-scoped source material used for research-stage screening.
+/// A ruleset is never a legal conclusion; its source and effective date are
+/// persisted so users can independently verify it.
+model ComplianceRuleSet {
+  id                String                  @id @default(cuid())
+  organizationId    String                  @map("organization_id")
+  marketplaceId     String                  @map("marketplace_id")
+  jurisdiction      String
+  name              String
+  version           String
+  sourceTitle       String                  @map("source_title")
+  sourceUrl         String                  @map("source_url")
+  sourcePublishedAt DateTime                @map("source_published_at")
+  sourceAccessedAt  DateTime                @map("source_accessed_at")
+  status            ComplianceRuleSetStatus @default(ACTIVE)
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  rules        ComplianceRule[]
+  assessments  ComplianceRiskAssessment[]
+
+  @@unique([organizationId, marketplaceId, jurisdiction, version])
+  @@index([organizationId, marketplaceId, jurisdiction, status, updatedAt])
+  @@map("compliance_rule_sets")
+}
+
+/// A curated screening rule. LOW may only be used when its saved source is an
+/// authoritative clearance; the repository enforces that invariant.
+model ComplianceRule {
+  id                       String               @id @default(cuid())
+  ruleSetId                String               @map("rule_set_id")
+  domain                   ComplianceRiskDomain
+  riskLevel                ComplianceRiskLevel  @map("risk_level")
+  matchTerms               Json                 @map("match_terms")
+  rationale                String
+  supplierQuestions        Json                 @map("supplier_questions")
+  likelyDocumentation      Json                 @map("likely_documentation")
+  authoritativeClearance   Boolean              @default(false) @map("authoritative_clearance")
+  ruleSourceTitle          String               @map("rule_source_title")
+  ruleSourceUrl            String               @map("rule_source_url")
+  ruleSourcePublishedAt    DateTime             @map("rule_source_published_at")
+  createdAt                DateTime             @default(now()) @map("created_at")
+  updatedAt                DateTime             @updatedAt @map("updated_at")
+
+  ruleSet ComplianceRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleSetId, domain])
+  @@index([ruleSetId, domain])
+  @@map("compliance_rules")
+}
+
+/// Immutable deterministic research-screening result. The input evidence and
+/// exact ruleset version remain with the result for audit/replay.
+model ComplianceRiskAssessment {
+  id                      String              @id @default(cuid())
+  organizationId          String              @map("organization_id")
+  projectId               String              @map("project_id")
+  catalogProductId        String?             @map("catalog_product_id")
+  ruleSetId               String              @map("rule_set_id")
+  marketplaceId           String              @map("marketplace_id")
+  jurisdiction            String
+  inputText               String              @map("input_text")
+  inputFingerprint        String              @map("input_fingerprint")
+  results                 Json
+  inputEvidenceReferences Json                @map("input_evidence_references")
+  calculatedAt            DateTime            @map("calculated_at")
+  createdAt               DateTime            @default(now()) @map("created_at")
+
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project        ResearchProject    @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  catalogProduct CatalogProduct?    @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  ruleSet        ComplianceRuleSet  @relation(fields: [ruleSetId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, projectId, ruleSetId, inputFingerprint])
+  @@index([organizationId, projectId, calculatedAt])
+  @@index([organizationId, catalogProductId, calculatedAt])
+  @@map("compliance_risk_assessments")
 }
 
 model HistoricalMetricSeries {
