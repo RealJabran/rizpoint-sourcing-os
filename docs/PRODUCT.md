@@ -217,3 +217,12 @@ drafts, and per-section claim/evidence mappings. The deterministic builder uses
 only fact values and supplied keywords. Drafts with unverified claims cannot be
 approved by the API; keyword-stuffing and configured constraints remain visible
 as warnings rather than fabricated content.
+
+## Private-Label Launch Planner
+
+Prompt 23 adds a persisted, dependency-gated launch plan connected to one exact
+ResearchProject evidence snapshot. Plans capture research versions, target
+keywords, known competitor/watches, owners, due dates, budgets, KPIs,
+assumptions, risks, stage evidence, and an append-only change log. Missing
+market-price, PPC, and margin inputs remain unavailable, and the planner makes
+no external purchase or Seller Central change.

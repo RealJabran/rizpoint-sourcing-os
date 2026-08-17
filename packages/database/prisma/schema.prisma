@@ -441,6 +441,36 @@ enum ListingClaimStatus {
   UNVERIFIED
 }
 
+enum LaunchPlanStatus {
+  ACTIVE
+  COMPLETE
+  ARCHIVED
+}
+
+enum LaunchStageKey {
+  NICHE_APPROVED
+  SUPPLIER_SAMPLE
+  COMPLIANCE_VALIDATION
+  FINAL_COST
+  BRAND_TRADEMARK_READINESS
+  PACKAGING_ARTWORK
+  LISTING_ASSETS
+  KEYWORD_PLAN
+  INVENTORY_ORDER
+  SHIPMENT_FBA
+  LAUNCH_DATE
+  ADVERTISING_SETUP
+  RANK_MARKET_MONITORING
+  REVIEW_RETURNS_LEARNING
+}
+
+enum LaunchStageStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETE
+}
+
 enum ResearchObservationType {
   KEYWORD
   PRODUCT_KEYWORD
@@ -657,6 +687,9 @@ model Organization {
   productFacts                ProductFact[]
   listingDrafts               ListingDraft[]
   listingDraftClaims          ListingDraftClaim[]
+  launchPlans                 LaunchPlan[]
+  launchPlanStages            LaunchPlanStage[]
+  launchPlanChanges           LaunchPlanChange[]
 
   @@map("organizations")
 }
@@ -2018,6 +2051,7 @@ model ResearchProject {
   notes             ResearchNote[]
   productFacts      ProductFact[]
   listingDrafts     ListingDraft[]
+  launchPlans       LaunchPlan[]
   productWatches    ProductWatch[]
   marketDefinitions MarketDefinition[]
   assessments       OpportunityAssessment[]
@@ -2505,6 +2539,70 @@ model ListingDraftClaim {
 
   @@index([organizationId, draftId, status])
   @@map("listing_draft_claims")
+}
+
+model LaunchPlan {
+  id              String           @id @default(cuid())
+  organizationId  String           @map("organization_id")
+  projectId       String           @map("project_id")
+  name            String
+  status          LaunchPlanStatus @default(ACTIVE)
+  evidenceSnapshot Json            @map("evidence_snapshot")
+  researchOutputs Json             @map("research_outputs")
+  assumptions     Json
+  risks           Json
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject   @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  stages       LaunchPlanStage[]
+  changes      LaunchPlanChange[]
+
+  @@index([organizationId, projectId, updatedAt])
+  @@map("launch_plans")
+}
+
+model LaunchPlanStage {
+  id             String            @id @default(cuid())
+  organizationId String            @map("organization_id")
+  launchPlanId   String            @map("launch_plan_id")
+  stage          LaunchStageKey
+  status         LaunchStageStatus @default(NOT_STARTED)
+  dependencies   Json
+  ownerLabel     String?           @map("owner_label")
+  dueDate        DateTime?         @map("due_date")
+  budget         Decimal?          @db.Decimal(18, 4)
+  budgetCurrency String?           @map("budget_currency")
+  targetKpis     Json              @map("target_kpis")
+  assumptions    Json
+  risks          Json
+  evidenceRefs   Json              @map("evidence_refs")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  launchPlan   LaunchPlan   @relation(fields: [launchPlanId], references: [id], onDelete: Cascade)
+
+  @@unique([launchPlanId, stage])
+  @@index([organizationId, launchPlanId, status])
+  @@map("launch_plan_stages")
+}
+
+model LaunchPlanChange {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  launchPlanId   String   @map("launch_plan_id")
+  stage          LaunchStageKey?
+  action         String
+  details        Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  launchPlan   LaunchPlan   @relation(fields: [launchPlanId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, launchPlanId, createdAt])
+  @@map("launch_plan_changes")
 }
 
 model HistoricalMetricSeries {
