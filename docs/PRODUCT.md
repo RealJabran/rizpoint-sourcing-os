@@ -161,3 +161,12 @@ authorization failure, exhausted credit window, throttle, outage, or partial
 response is a first-class reason for unavailable data; it is never converted to
 zero. Licensed history, keyword, category, brand, seller, advertising, and
 review providers are not selected or enabled by this foundation.
+
+## Seller Intelligence
+
+Prompt 16 adds an entitlement-gated Seller & Competitor workspace over
+organization-scoped `SellerObservation` records. Seller identity, product count,
+and any provider metrics retain their observation source, timestamp, and
+completeness. No seller storefront scraping or personal-data enrichment is
+performed; absent licensed data leaves this optional workspace unavailable
+without affecting product research.

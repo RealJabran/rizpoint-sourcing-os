@@ -120,6 +120,26 @@ export interface BrandAnalyticsProvider {
   }>;
 }
 
+/** Optional boundary for licensed seller/competitor datasets. It is not a
+ * storefront-scraping contract and may return only permitted business data. */
+export interface SellerIntelligenceProvider {
+  readonly providerKey: string;
+  searchSellers(input: {
+    marketplaceId: string;
+    query: string;
+    limit: number;
+  }): Promise<
+    readonly {
+      sellerReference: string;
+      displayName?: string;
+      knownProductCount?: string;
+      metrics?: Record<string, unknown>;
+      provenance: z.infer<typeof provenanceSchema>;
+      completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+    }[]
+  >;
+}
+
 export const providerOperationalStateSchema = z.enum([
   "NOT_CONFIGURED",
   "CONFIGURED",
