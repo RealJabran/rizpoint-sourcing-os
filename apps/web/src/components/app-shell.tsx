@@ -11,6 +11,7 @@ type IconName =
   | "analysis"
   | "explorer"
   | "category"
+  | "opportunity"
   | "shortlist"
   | "order"
   | "learn"
@@ -38,6 +39,11 @@ const navigation: NavigationItem[] = [
     label: "Category intelligence",
     href: "/category-intelligence",
     icon: "category",
+  },
+  {
+    label: "Opportunity Finder",
+    href: "/opportunity-finder",
+    icon: "opportunity",
   },
   { label: "Shortlists", href: "/shortlists", icon: "shortlist" },
   {
@@ -67,6 +73,9 @@ function Glyph({ name }: { name: IconName }) {
     analysis: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
     explorer: <path d="M4 4h16v16H4zM8 14l3-3 2 2 4-5M8 8h.01" />,
     category: <path d="M4 5h6v5H4zM14 5h6v5h-6zM9 17h6M7 10v3h10v-3M12 13v4" />,
+    opportunity: (
+      <path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.8-5.4 2.8 1-6.1-4.4-4.3 6.1-.9z" />
+    ),
     shortlist: <path d="M5 5h14M5 12h14M5 19h14M2 5h.01M2 12h.01M2 19h.01" />,
     order: <path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h3" />,
     learn: (

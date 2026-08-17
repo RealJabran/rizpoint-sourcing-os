@@ -7,4 +7,6 @@ export * from "./repositories/history-refresh.js";
 export * from "./repositories/history-analytics.js";
 export * from "./repositories/product-explorer.js";
 export * from "./repositories/category-intelligence.js";
+export * from "./repositories/opportunity-finder.js";
+export * from "./opportunity-scoring.js";
 export * from "./generated/prisma/client.js";

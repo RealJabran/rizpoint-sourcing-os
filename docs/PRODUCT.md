@@ -135,6 +135,15 @@ seller concentration, and sales growth are explicitly unavailable. Categories
 can be added to existing research projects or saved as a dynamic
 tracked-universe category watch.
 
+## Opportunity Finder
+
+Prompt 08 adds deterministic niche definitions and immutable score snapshots.
+Niches may use stored keyword evidence, a category, a manual tracked competitor
+set, or an existing market definition. Scores expose every component, thresholds,
+confidence, calculation version, and product/history input reference. Low
+coverage reduces confidence and the final score; unavailable demand, sales,
+sponsored density, seller concentration, and margin inputs stay unavailable.
+
 ## Provider runtime foundation
 
 Every provider capability now has an organization/marketplace-scoped runtime

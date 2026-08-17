@@ -256,6 +256,13 @@ null observations rather than assigning zero. A `MarketDefinition` with a
 boundary. It represents saved intent only and cannot imply provider search or
 Amazon-wide category membership.
 
+## Opportunity Finder
+
+Opportunity Finder stores a niche definition in a versioned `MarketDefinition`
+and writes idempotent immutable `NicheAssessment` snapshots. The pure Decimal
+scorer records thresholds, component outputs, a calculation version, and an
+input fingerprint/reference list. It uses no AI or BSR-to-sales heuristic.
+
 ## Phase 6 workflow and exports
 
 Shortlist and purchase-order aggregates are organization-scoped PostgreSQL records. PO lines snapshot the selected current immutable profit scenario, route, supplier-owned ordering-rule provenance, quantities, pack conversion, MOQ, order-multiple rounding, and Decimal totals. Validation rebuilds line/header totals before transition. The worker owns export generation through the transactional outbox; export jobs are persisted before Redis publication, recover expired running leases, and write checksummed allowlisted CSV/XLSX artifacts to private object storage. Download routes verify the organization and redirect only on an explicit download request, never exposing object keys.

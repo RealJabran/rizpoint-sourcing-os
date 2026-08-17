@@ -600,6 +600,7 @@ model Organization {
   historyAnalyticsAssessments HistoryAnalyticsAssessment[]
   opportunityAssessments      OpportunityAssessment[]
   opportunityReasons          OpportunityReason[]
+  nicheAssessments            NicheAssessment[]
   alertRules                  AlertRule[]
   alertEvents                 AlertEvent[]
   historyRefreshItems         HistoryRefreshItem[]
@@ -2093,6 +2094,7 @@ model MarketDefinition {
   marketObservations        MarketObservation[]
   historicalMetricSeries    HistoricalMetricSeries[]
   opportunityAssessments    OpportunityAssessment[]
+  nicheAssessments          NicheAssessment[]
 
   @@unique([id, organizationId])
   @@unique([organizationId, marketplaceId, name, version])
@@ -2455,6 +2457,33 @@ model OpportunityReason {
   @@unique([assessmentId, ordinal])
   @@index([organizationId, assessmentId])
   @@map("opportunity_reasons")
+}
+
+/** Immutable, deterministic niche score snapshot. The MarketDefinition holds
+ * the source definition; each assessment preserves its thresholds and inputs. */
+model NicheAssessment {
+  id                      String                      @id @default(cuid())
+  organizationId          String                      @map("organization_id")
+  marketDefinitionId      String                      @map("market_definition_id")
+  marketplaceId           String                      @map("marketplace_id")
+  status                  OpportunityAssessmentStatus
+  score                   Decimal?                    @db.Decimal(12, 4)
+  confidencePercent       Decimal?                    @map("confidence_percent") @db.Decimal(9, 4)
+  calculationVersion      String                      @map("calculation_version")
+  inputFingerprint        String                      @map("input_fingerprint")
+  thresholdConfiguration  Json                        @map("threshold_configuration")
+  components              Json                        @map("components")
+  inputEvidenceReferences Json                        @map("input_evidence_references")
+  calculatedAt            DateTime                    @map("calculated_at")
+  createdAt               DateTime                    @default(now()) @map("created_at")
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  marketDefinition MarketDefinition @relation(fields: [marketDefinitionId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, marketDefinitionId, calculationVersion, inputFingerprint], map: "niche_assessments_input_key")
+  @@index([organizationId, marketplaceId, calculatedAt], map: "niche_assessments_org_market_calculated_idx")
+  @@index([marketDefinitionId])
+  @@map("niche_assessments")
 }
 
 model AlertRule {
