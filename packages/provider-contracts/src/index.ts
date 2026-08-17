@@ -168,6 +168,37 @@ export interface ProductRelationshipProvider {
   >;
 }
 
+export const advertisingObservationSchema = z.object({
+  marketplaceId: z.string().min(1),
+  keyword: z.string().min(1),
+  sponsoredAsin: z
+    .string()
+    .regex(/^B[A-Z0-9]{9}$/)
+    .optional(),
+  advertiserReference: z.string().min(1).optional(),
+  sponsoredPosition: z.number().int().positive().optional(),
+  visibilityFrequency: decimalStringSchema.optional(),
+  shareOfVoice: decimalStringSchema.optional(),
+  cpcLow: decimalStringSchema.optional(),
+  cpcHigh: decimalStringSchema.optional(),
+  provenance: provenanceSchema,
+  completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]),
+});
+export type AdvertisingObservation = z.infer<
+  typeof advertisingObservationSchema
+>;
+
+/** Optional licensed or authorized first-party advertising visibility source.
+ * Implementations must never obtain sponsored placements through HTML scraping. */
+export interface AdvertisingIntelligenceProvider {
+  readonly providerKey: string;
+  findSponsoredVisibility(input: {
+    marketplaceId: string;
+    keywords?: readonly string[];
+    asins?: readonly string[];
+  }): Promise<readonly AdvertisingObservation[]>;
+}
+
 export const providerOperationalStateSchema = z.enum([
   "NOT_CONFIGURED",
   "CONFIGURED",

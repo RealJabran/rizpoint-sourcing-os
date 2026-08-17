@@ -177,3 +177,11 @@ Prompt 17 adds a product-neighborhood query and accessible table view. In the
 absence of a licensed relationship provider, it derives only shared-keyword and
 shared-saved-market similarity from organization evidence. Each result is
 explicitly labeled `DERIVED`; no behavioral Amazon relationship is inferred.
+
+## Advertising Intelligence
+
+Prompt 18 provides an optional `AdvertisingIntelligenceProvider` contract and
+capability-gated workspace. Sponsored placement, share-of-voice, and CPC
+metrics are unavailable until an entitled licensed or authorized first-party
+source supplies them; the product never scrapes sponsored placements or shows
+mock observations as live.
