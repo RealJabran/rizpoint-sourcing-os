@@ -161,6 +161,19 @@ Each result retains the universe-source labels. Explorer saved views are
 `AnalysisView` records with null `scan_job_id` and schema version 1; their query
 state is Explorer-specific and cannot be interpreted as scan analysis state.
 
+## Category Intelligence derived projection
+
+Category Intelligence creates no new product or market-size fact table. Its
+category key is the first observed `CatalogProduct.identity_projection`
+`productTypes` value, with a visible uncategorized label when unavailable. The
+projection’s member universe is the same tenant-owned union as Product
+Explorer. Its browser counts and detail aggregate metadata record the query
+generation time, exact matching product count, and deterministic analysis
+window count. Medians, brand HHI, and percentages are Decimal-derived and use
+only rows that carry the named observation. `MarketDefinition.definition.kind`
+may be `CATEGORY_TRACKED_UNIVERSE`; this is a saved dynamic watch definition,
+not provider evidence or a global category census.
+
 ## Phase 6 workflow entities
 
 `Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Supplier ordering rules retain a source and observed timestamp; PO creation blocks without them. Export jobs retain the source revision, checksum, byte size, generator version, private object key, and expiry; raw provider payloads are not exported by default.

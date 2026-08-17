@@ -121,6 +121,20 @@ and private-label profit metrics remain visibly unavailable. Explorer products
 can be compared, saved to projects, watched, exported as a formula-safe
 authorized CSV window, and saved as reusable views.
 
+## Category Intelligence
+
+Prompt 07 adds a Category Intelligence browser and category detail pages over
+the same organization-scoped evidence universe as Product Explorer. Category
+labels are observed product-type values, so the browser is a tracked-universe
+tree rather than a claimed Amazon taxonomy. Pages name their member universe,
+generation time, and bounded deterministic analysis window. They provide
+observed median price/reviews, review barrier, price stability, brand HHI,
+Amazon Retail, listing-age, seasonality, opportunity, and review-growth views.
+No licensed category demand provider is connected: market size, revenue/units,
+seller concentration, and sales growth are explicitly unavailable. Categories
+can be added to existing research projects or saved as a dynamic
+tracked-universe category watch.
+
 ## Provider runtime foundation
 
 Every provider capability now has an organization/marketplace-scoped runtime

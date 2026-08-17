@@ -6,4 +6,5 @@ export * from "./repositories/provider-runtime.js";
 export * from "./repositories/history-refresh.js";
 export * from "./repositories/history-analytics.js";
 export * from "./repositories/product-explorer.js";
+export * from "./repositories/category-intelligence.js";
 export * from "./generated/prisma/client.js";

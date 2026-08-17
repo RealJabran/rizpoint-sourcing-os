@@ -242,6 +242,20 @@ without an organization relationship are never browser results. Explorer views
 reuse the versioned `AnalysisView` persistence pattern with a null scan scope
 and Explorer schema version; they do not change scan analysis views.
 
+## Category Intelligence
+
+Category Intelligence is a server-side read projection in
+`packages/database/src/repositories/category-intelligence.ts`. It first applies
+the same tenant-owned union as Product Explorer, then derives category nodes
+from the catalog identity projection's observed product type. Category lists,
+detail product rows, and aggregate inputs are bounded server windows; details
+return the exact matching tracked count, aggregation-window count, source
+universe, and generation date. Aggregate math uses `decimal.js` and excludes
+null observations rather than assigning zero. A `MarketDefinition` with a
+`CATEGORY_TRACKED_UNIVERSE` definition is the idempotent category-watch
+boundary. It represents saved intent only and cannot imply provider search or
+Amazon-wide category membership.
+
 ## Phase 6 workflow and exports
 
 Shortlist and purchase-order aggregates are organization-scoped PostgreSQL records. PO lines snapshot the selected current immutable profit scenario, route, supplier-owned ordering-rule provenance, quantities, pack conversion, MOQ, order-multiple rounding, and Decimal totals. Validation rebuilds line/header totals before transition. The worker owns export generation through the transactional outbox; export jobs are persisted before Redis publication, recover expired running leases, and write checksummed allowlisted CSV/XLSX artifacts to private object storage. Download routes verify the organization and redirect only on an explicit download request, never exposing object keys.

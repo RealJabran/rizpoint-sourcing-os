@@ -11,6 +11,7 @@ import type {
   CreateMarketDefinitionInput,
   CreateResearchProjectInput,
   CreateProductWatchInput,
+  CreateCategoryWatchInput,
   RecordOpportunityAssessmentInput,
   ResearchRepositoryContract,
 } from "../research-contracts.js";
@@ -316,6 +317,59 @@ export function createResearchRepository(
         },
         update: {
           status: "ACTIVE",
+          ...(input.projectId ? { projectId: input.projectId } : {}),
+        },
+      });
+    },
+
+    async createCategoryWatch(input: CreateCategoryWatchInput) {
+      const categoryReference = requiredText(
+        input.categoryReference,
+        "CATEGORY_REFERENCE_REQUIRED",
+      );
+      const categoryName = requiredText(
+        input.categoryName,
+        "CATEGORY_NAME_REQUIRED",
+      );
+      if (input.projectId) {
+        const project = await client.researchProject.findFirst({
+          where: {
+            id: input.projectId,
+            organizationId: input.organizationId,
+            marketplaceId: input.marketplaceId,
+          },
+          select: { id: true },
+        });
+        if (!project) throw new Error("RESEARCH_PROJECT_NOT_FOUND");
+      }
+      const name = `Category watch: ${categoryName}`;
+      return client.marketDefinition.upsert({
+        where: {
+          organizationId_marketplaceId_name_version: {
+            organizationId: input.organizationId,
+            marketplaceId: requiredText(
+              input.marketplaceId,
+              "MARKETPLACE_REQUIRED",
+            ),
+            name,
+            version: 1,
+          },
+        },
+        create: {
+          organizationId: input.organizationId,
+          projectId: input.projectId ?? null,
+          marketplaceId: input.marketplaceId,
+          name,
+          version: 1,
+          membershipMode: "DYNAMIC",
+          definition: {
+            kind: "CATEGORY_TRACKED_UNIVERSE",
+            categoryReference,
+            categoryName,
+            note: "Membership is bounded to this organization's observed product universe until a licensed category provider is connected.",
+          },
+        },
+        update: {
           ...(input.projectId ? { projectId: input.projectId } : {}),
         },
       });

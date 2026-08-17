@@ -96,6 +96,16 @@ export interface CreateProductWatchInput {
   cadenceMinutes?: number;
 }
 
+/** A saved dynamic category definition. It records intent only; a provider
+ * refresh is still required before it can make market-wide claims. */
+export interface CreateCategoryWatchInput {
+  organizationId: string;
+  projectId?: string | undefined;
+  marketplaceId: string;
+  categoryReference: string;
+  categoryName: string;
+}
+
 export interface AppendKeywordObservationInput {
   envelope: ResearchObservationEnvelopeInput & { type: "KEYWORD" };
   keywordId: string;
@@ -201,6 +211,9 @@ export interface ResearchRepositoryContract {
     input: AddResearchProjectItemInput,
   ): Promise<ResearchProjectItem>;
   createProductWatch(input: CreateProductWatchInput): Promise<ProductWatch>;
+  createCategoryWatch(
+    input: CreateCategoryWatchInput,
+  ): Promise<MarketDefinition>;
   appendKeywordObservation(
     input: AppendKeywordObservationInput,
   ): Promise<ResearchObservation & { keywordObservation: KeywordObservation }>;

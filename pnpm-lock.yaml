@@ -229,6 +229,9 @@ importers:
       '@rizpoint/provider-contracts':
         specifier: workspace:*
         version: link:../provider-contracts
+      decimal.js:
+        specifier: 10.6.0
+        version: 10.6.0
       pg:
         specifier: 8.16.3
         version: 8.16.3
