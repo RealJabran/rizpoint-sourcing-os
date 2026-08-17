@@ -201,3 +201,11 @@ exportable Differentiation Brief. Raw evidence and validation hypotheses remain
 visually and semantically distinct; every hypothesis includes its linked review
 signals and a confidence level. Missing licensed market inputs remain listed as
 unavailable rather than inferred.
+
+## Listing Analyzer
+
+Prompt 21 adds a deterministic Listing Analyzer that compares the catalog's
+authorized current title/known metadata with an editable draft. Versioned,
+saved assessments decompose each checklist score and source references. Keyword
+coverage is a copy-presence check—not an Amazon ranking claim—and SEO
+opportunities are visibly separate from conservative compliance-risk warnings.

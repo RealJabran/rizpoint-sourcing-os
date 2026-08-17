@@ -638,6 +638,7 @@ model Organization {
   historyRefreshItems         HistoryRefreshItem[]
   authorizedReviews           AuthorizedReview[]
   reviewThemes                ReviewTheme[]
+  listingQualityAssessments   ListingQualityAssessment[]
 
   @@map("organizations")
 }
@@ -930,6 +931,7 @@ model CatalogProduct {
   keywordRankTracks          KeywordRankTrack[]
   authorizedReviews          AuthorizedReview[]
   reviewThemes               ReviewTheme[]
+  listingQualityAssessments ListingQualityAssessment[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -2402,6 +2404,25 @@ model ReviewTheme {
   @@unique([organizationId, catalogProductId, kind, label])
   @@index([organizationId, catalogProductId, calculatedAt])
   @@map("review_themes")
+}
+
+model ListingQualityAssessment {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  catalogProductId String   @map("catalog_product_id")
+  ruleVersion      String   @map("rule_version")
+  currentSnapshot  Json     @map("current_snapshot")
+  draftSnapshot    Json     @map("draft_snapshot")
+  report           Json
+  evidenceRefs     Json     @map("evidence_refs")
+  calculatedAt     DateTime @map("calculated_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  catalogProduct CatalogProduct @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, catalogProductId, calculatedAt])
+  @@map("listing_quality_assessments")
 }
 
 model HistoricalMetricSeries {
