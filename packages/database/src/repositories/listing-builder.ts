@@ -205,14 +205,22 @@ export async function reviseListingDraft(input: {
             .filter(Boolean)
         : input.value,
   } as ListingContent;
-  const version = current.version + 1;
   return db.$transaction(async (transaction) =>
     transaction.listingDraft.create({
       data: {
         organizationId: current.organizationId,
         projectId: current.projectId,
         marketplaceId: current.marketplaceId,
-        version,
+        version:
+          ((
+            await transaction.listingDraft.aggregate({
+              where: {
+                organizationId: current.organizationId,
+                projectId: current.projectId,
+              },
+              _max: { version: true },
+            })
+          )._max.version ?? 0) + 1,
         content: revised as Prisma.InputJsonValue,
         keywordRefs: current.keywordRefs as Prisma.InputJsonValue,
         warnings: {

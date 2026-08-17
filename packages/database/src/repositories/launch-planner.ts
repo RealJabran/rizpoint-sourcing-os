@@ -158,6 +158,18 @@ export async function updateLaunchStage(input: {
       })
     )
       throw new Error("LAUNCH_STAGE_DEPENDENCIES_INCOMPLETE");
+    const completionEvidence =
+      input.evidenceRefs ?? stringArray(stage.evidenceRefs);
+    if (input.status === "COMPLETE" && !completionEvidence.length)
+      throw new Error("LAUNCH_STAGE_EVIDENCE_REQUIRED");
+    const planEvidence = plan.evidenceSnapshot as { validation?: unknown };
+    if (
+      input.stage === "NICHE_APPROVED" &&
+      input.status === "COMPLETE" &&
+      planEvidence.validation !== "PURSUE_ASSESSMENT" &&
+      !input.evidenceRefs?.length
+    )
+      throw new Error("NICHE_APPROVAL_EVIDENCE_REQUIRED");
     const updated = await transaction.launchPlanStage.update({
       where: { id: stage.id },
       data: {
