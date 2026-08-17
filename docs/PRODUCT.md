@@ -193,3 +193,11 @@ records. It deduplicates redacted text, stores source/timestamp/rating, and
 builds deterministic, versioned theme summaries with review-ID evidence links.
 Review text is not scraped from Amazon pages; contact and order-like references
 are minimized before persistence.
+
+## Product Differentiation
+
+Prompt 20 turns review themes and available structured catalog evidence into an
+exportable Differentiation Brief. Raw evidence and validation hypotheses remain
+visually and semantically distinct; every hypothesis includes its linked review
+signals and a confidence level. Missing licensed market inputs remain listed as
+unavailable rather than inferred.
