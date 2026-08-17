@@ -174,6 +174,16 @@ only rows that carry the named observation. `MarketDefinition.definition.kind`
 may be `CATEGORY_TRACKED_UNIVERSE`; this is a saved dynamic watch definition,
 not provider evidence or a global category census.
 
+## Sales estimation entities
+
+`SalesEstimationModel` is an organization-, marketplace-, and category-scoped
+registry entry. Validation requires an external reference dataset ID/source,
+positive sample size, versioned parameters, and evaluation metrics.
+`SalesEstimate` is an immutable provider or calibrated-model monthly-unit range
+using NUMERIC values; it records confidence, source/model version, fingerprint,
+evidence references, and observation time. A missing central estimate or
+confidence means it was not supplied, never zero demand.
+
 ## Phase 6 workflow entities
 
 `Shortlist`, `ShortlistItem`, `ShortlistNote`, `PurchaseOrder`, `PurchaseOrderLine`, `ExportJob`, and `WorkflowAuditEvent` are organization-scoped. Purchase-order money is `NUMERIC(18,4)` and quantities are positive integers. Supplier ordering rules retain a source and observed timestamp; PO creation blocks without them. Export jobs retain the source revision, checksum, byte size, generator version, private object key, and expiry; raw provider payloads are not exported by default.

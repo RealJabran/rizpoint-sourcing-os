@@ -462,6 +462,17 @@ enum OpportunityReasonKind {
   UNKNOWN
 }
 
+enum SalesEstimationModelStatus {
+  DRAFT
+  VALIDATED
+  RETIRED
+}
+
+enum SalesEstimateSource {
+  LICENSED_PROVIDER
+  RIZPOINT_CALIBRATED_MODEL
+}
+
 enum AlertRuleStatus {
   ACTIVE
   PAUSED
@@ -601,6 +612,8 @@ model Organization {
   opportunityAssessments      OpportunityAssessment[]
   opportunityReasons          OpportunityReason[]
   nicheAssessments            NicheAssessment[]
+  salesEstimationModels       SalesEstimationModel[]
+  salesEstimates              SalesEstimate[]
   alertRules                  AlertRule[]
   alertEvents                 AlertEvent[]
   historyRefreshItems         HistoryRefreshItem[]
@@ -892,6 +905,7 @@ model CatalogProduct {
   historyRefreshItems        HistoryRefreshItem[]
   historyAnalyticsAssessments HistoryAnalyticsAssessment[]
   opportunityAssessments     OpportunityAssessment[]
+  salesEstimates             SalesEstimate[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -2484,6 +2498,58 @@ model NicheAssessment {
   @@index([organizationId, marketplaceId, calculatedAt], map: "niche_assessments_org_market_calculated_idx")
   @@index([marketDefinitionId])
   @@map("niche_assessments")
+}
+
+model SalesEstimationModel {
+  id                     String                     @id @default(cuid())
+  organizationId         String                     @map("organization_id")
+  marketplaceId          String                     @map("marketplace_id")
+  categoryReference      String                     @map("category_reference")
+  version                String
+  status                 SalesEstimationModelStatus
+  referenceDatasetId     String                     @map("reference_dataset_id")
+  referenceDatasetSource String                     @map("reference_dataset_source")
+  referenceSampleSize    Int                        @map("reference_sample_size")
+  parameters             Json
+  evaluationMetrics      Json                       @map("evaluation_metrics")
+  validatedAt            DateTime?                  @map("validated_at")
+  createdAt              DateTime                   @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  estimates    SalesEstimate[]
+
+  @@unique([organizationId, marketplaceId, categoryReference, version])
+  @@index([organizationId, marketplaceId, categoryReference, status])
+  @@map("sales_estimation_models")
+}
+
+model SalesEstimate {
+  id                      String              @id @default(cuid())
+  organizationId          String              @map("organization_id")
+  catalogProductId        String              @map("catalog_product_id")
+  marketplaceId           String              @map("marketplace_id")
+  categoryReference       String?             @map("category_reference")
+  source                  SalesEstimateSource
+  monthlyUnitsLow         Decimal             @map("monthly_units_low") @db.Decimal(20, 4)
+  monthlyUnitsCentral     Decimal?            @map("monthly_units_central") @db.Decimal(20, 4)
+  monthlyUnitsHigh        Decimal             @map("monthly_units_high") @db.Decimal(20, 4)
+  confidencePercent       Decimal?            @map("confidence_percent") @db.Decimal(9, 4)
+  providerKey             String?             @map("provider_key")
+  modelId                 String?             @map("model_id")
+  modelVersion            String               @map("model_version")
+  inputFingerprint        String               @map("input_fingerprint")
+  inputEvidenceReferences Json                 @map("input_evidence_references")
+  observedAt              DateTime             @map("observed_at")
+  createdAt               DateTime             @default(now()) @map("created_at")
+
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  catalogProduct CatalogProduct        @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  model          SalesEstimationModel? @relation(fields: [modelId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, catalogProductId, source, modelVersion, inputFingerprint])
+  @@index([organizationId, catalogProductId, observedAt])
+  @@index([modelId])
+  @@map("sales_estimates")
 }
 
 model AlertRule {

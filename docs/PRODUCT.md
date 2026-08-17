@@ -144,6 +144,15 @@ confidence, calculation version, and product/history input reference. Low
 coverage reduces confidence and the final score; unavailable demand, sales,
 sponsored density, seller concentration, and margin inputs stay unavailable.
 
+## Sales estimation
+
+Prompt 09 adds monthly-unit ranges from either a licensed provider or an exact
+marketplace/category calibration backed by a named reference dataset. Provider
+and RizPoint-modeled estimates remain distinct. Every stored result includes a
+source, model version, confidence/range, input fingerprint, provenance
+references, and observation time. With no validated runtime calibration or
+licensed estimate, the UI returns an explicit unavailable reason.
+
 ## Provider runtime foundation
 
 Every provider capability now has an organization/marketplace-scoped runtime

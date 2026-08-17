@@ -12,6 +12,7 @@ type IconName =
   | "explorer"
   | "category"
   | "opportunity"
+  | "demand"
   | "shortlist"
   | "order"
   | "learn"
@@ -45,6 +46,7 @@ const navigation: NavigationItem[] = [
     href: "/opportunity-finder",
     icon: "opportunity",
   },
+  { label: "Sales estimation", href: "/sales-estimation", icon: "demand" },
   { label: "Shortlists", href: "/shortlists", icon: "shortlist" },
   {
     label: "Purchase orders",
@@ -76,6 +78,7 @@ function Glyph({ name }: { name: IconName }) {
     opportunity: (
       <path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.8-5.4 2.8 1-6.1-4.4-4.3 6.1-.9z" />
     ),
+    demand: <path d="M4 19V9M10 19V5M16 19v-7M22 19H2M4 9l6-4 6 7 5-6" />,
     shortlist: <path d="M5 5h14M5 12h14M5 19h14M2 5h.01M2 12h.01M2 19h.01" />,
     order: <path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h3" />,
     learn: (

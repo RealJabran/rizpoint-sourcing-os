@@ -44,6 +44,48 @@ export const providerCapabilitySchema = z.enum([
 ]);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 
+export const salesEstimateProviderRequestSchema = z.object({
+  marketplaceId: z.string().min(1),
+  asin: z.string().regex(/^B[A-Z0-9]{9}$/),
+  categoryReference: z.string().min(1).optional(),
+});
+export type SalesEstimateProviderRequest = z.infer<
+  typeof salesEstimateProviderRequestSchema
+>;
+
+export const salesEstimateProviderResultSchema = z
+  .object({
+    status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
+    monthlyUnitsLow: decimalStringSchema.optional(),
+    monthlyUnitsHigh: decimalStringSchema.optional(),
+    monthlyUnitsCentral: decimalStringSchema.optional(),
+    confidencePercent: decimalStringSchema.optional(),
+    modelVersion: z.string().min(1).optional(),
+    reasonCode: z.string().min(1).optional(),
+    provenance: provenanceSchema,
+  })
+  .superRefine((value, context) => {
+    if (
+      value.status === "AVAILABLE" &&
+      (!value.monthlyUnitsLow || !value.monthlyUnitsHigh || !value.modelVersion)
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "Available sales estimates require a range and provider model version.",
+      });
+  });
+export type SalesEstimateProviderResult = z.infer<
+  typeof salesEstimateProviderResultSchema
+>;
+
+export interface SalesEstimateProvider {
+  readonly providerKey: string;
+  estimateMonthlyUnits(
+    request: SalesEstimateProviderRequest,
+  ): Promise<SalesEstimateProviderResult>;
+}
+
 export const providerOperationalStateSchema = z.enum([
   "NOT_CONFIGURED",
   "CONFIGURED",
