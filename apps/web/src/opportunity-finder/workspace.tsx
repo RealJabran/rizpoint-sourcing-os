@@ -1,32 +1,41 @@
 "use client";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Button,
-  Card,
   SelectControl,
   TextInput,
   useToast,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
-type Niche = {
-  id: string;
-  name: string;
-  marketplaceId: string;
-  sourceType: string;
-  score: string | null;
-  confidencePercent: string | null;
-  status: string;
-  calculatedAt: string | null;
-};
+import { DateWindowControl, FilterBar } from "@/src/components/research-ui";
+import { NicheResults, type NicheSummary } from "./niche-results";
 export function OpportunityFinder() {
   const { notify } = useToast();
-  const [rows, setRows] = useState<Niche[]>([]);
+  const [rows, setRows] = useState<NicheSummary[]>([]);
   const [name, setName] = useState("");
   const [marketplaceId, setMarketplaceId] = useState("");
   const [sourceType, setSourceType] = useState("CATEGORY");
   const [value, setValue] = useState("");
+  const [window, setWindow] = useState("365d");
+  const [view, setView] = useState<"table" | "chart">("table");
+  const visibleRows = useMemo(() => {
+    const days = Number.parseInt(window, 10);
+    const anchor = rows.reduce(
+      (latest, row) =>
+        Math.max(
+          latest,
+          row.calculatedAt ? new Date(row.calculatedAt).getTime() : 0,
+        ),
+      0,
+    );
+    const cutoff = anchor - days * 86_400_000;
+    return rows.filter(
+      (row) =>
+        row.calculatedAt === null ||
+        new Date(row.calculatedAt).getTime() >= cutoff,
+    );
+  }, [rows, window]);
   const load = async () => {
     const response = await fetch("/api/opportunity-finder");
     if (response.ok) setRows((await response.json()).rows);
@@ -70,88 +79,55 @@ export function OpportunityFinder() {
         sponsored density, and margin are unavailable until
         licensed/assumption-backed inputs exist.
       </Alert>
-      <Card className="explorer-controls">
-        <h2>Define a niche</h2>
-        <div className="explorer-filter-grid">
-          <TextInput
-            placeholder="Niche name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <TextInput
-            placeholder="Marketplace ID"
-            value={marketplaceId}
-            onChange={(e) => setMarketplaceId(e.target.value)}
-          />
-          <SelectControl
-            value={sourceType}
-            onChange={(e) => setSourceType(e.target.value)}
-          >
-            {[
-              "CATEGORY",
-              "SEED_KEYWORD",
-              "KEYWORD_CLUSTER",
-              "MANUAL_COMPETITORS",
-              "MARKET_DEFINITION",
-            ].map((type) => (
-              <option key={type}>{type}</option>
-            ))}
-          </SelectControl>
-          <TextInput
-            placeholder="Category, keyword(s), product IDs, or market ID"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-          <Button onClick={() => void create()}>Create & calculate</Button>
-        </div>
-        <p>
-          Keyword clusters and manual competitor IDs use comma-separated values.
-          Only stored/authorized products can become score inputs.
-        </p>
-      </Card>
-      <Card>
-        <h2>Saved niches</h2>
-        {rows.length ? (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Niche</th>
-                  <th>Source</th>
-                  <th>Score</th>
-                  <th>Confidence</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((niche) => (
-                  <tr key={niche.id}>
-                    <td>
-                      <Link href={`/opportunity-finder/${niche.id}`}>
-                        {niche.name}
-                      </Link>
-                      <small>{niche.marketplaceId}</small>
-                    </td>
-                    <td>{niche.sourceType}</td>
-                    <td>{niche.score ?? "Not calculated"}</td>
-                    <td>
-                      {niche.confidencePercent === null
-                        ? "—"
-                        : `${niche.confidencePercent}%`}
-                    </td>
-                    <td>{niche.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <FilterBar
+        label="Define a niche"
+        actions={<DateWindowControl value={window} onChange={setWindow} />}
+      >
+        <div className="explorer-controls">
+          <h2>Define a niche</h2>
+          <div className="explorer-filter-grid">
+            <TextInput
+              aria-label="Niche name"
+              placeholder="Niche name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <TextInput
+              aria-label="Marketplace ID"
+              placeholder="Marketplace ID"
+              value={marketplaceId}
+              onChange={(e) => setMarketplaceId(e.target.value)}
+            />
+            <SelectControl
+              aria-label="Niche source type"
+              value={sourceType}
+              onChange={(e) => setSourceType(e.target.value)}
+            >
+              {[
+                "CATEGORY",
+                "SEED_KEYWORD",
+                "KEYWORD_CLUSTER",
+                "MANUAL_COMPETITORS",
+                "MARKET_DEFINITION",
+              ].map((type) => (
+                <option key={type}>{type}</option>
+              ))}
+            </SelectControl>
+            <TextInput
+              aria-label="Niche source value"
+              placeholder="Category, keyword(s), product IDs, or market ID"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+            <Button onClick={() => void create()}>Create & calculate</Button>
           </div>
-        ) : (
           <p>
-            No niches yet. Define one from your tracked category, keyword
-            evidence, competitor set, or market definition.
+            Keyword clusters and manual competitor IDs use comma-separated
+            values. Only stored/authorized products can become score inputs.
           </p>
-        )}
-      </Card>
+        </div>
+      </FilterBar>
+      <NicheResults rows={visibleRows} view={view} onViewChange={setView} />
     </main>
   );
 }

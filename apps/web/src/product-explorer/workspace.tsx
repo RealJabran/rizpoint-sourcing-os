@@ -3,59 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Badge,
   Button,
-  Card,
   SelectControl,
   TextInput,
   useToast,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { CompareTray, FilterBar } from "@/src/components/research-ui";
 import { PRODUCT_EXPLORER_PRESETS } from "./contracts";
-
-type ExplorerRow = {
-  id: string;
-  asin: string | null;
-  title: string;
-  brand: string | null;
-  marketplaceId: string | null;
-  category: string | null;
-  sources: string[];
-  price: string | null;
-  currency: string | null;
-  rating: string | null;
-  reviewCount: string | null;
-  salesRank: string | null;
-  offerCount: number | null;
-  fbaOfferCount: number | null;
-  fbmOfferCount: number | null;
-  amazonRetailPresence: string | null;
-  priceVolatilityPercent: string | null;
-  reviewGrowth: string | null;
-  listingAgeDays: string | null;
-  seasonalityStatus: string | null;
-  historyStatus: string | null;
-  historyCoveragePercent: string | null;
-  freshnessState: string | null;
-  observedAt: string | null;
-};
-type Project = { id: string; name: string; marketplaceId: string };
-type ExplorerView = { id: string; name: string; queryState: Filters };
-type Filters = Record<string, string>;
-
-function apiQuery(filters: Filters, offset = 0) {
-  const params = new URLSearchParams({ offset: String(offset), limit: "50" });
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value) params.set(key, value);
-  });
-  return params;
-}
-function sourceLabel(source: string) {
-  return source.replaceAll("_", " ").toLocaleLowerCase("en-US");
-}
-function metric(value: string | number | null, suffix = "") {
-  return value === null ? "—" : `${value}${suffix}`;
-}
+import { explorerQuery } from "./query";
+import { ExplorerResultsTable } from "./results-table";
+import type { ExplorerRow, ExplorerView, Filters, Project } from "./types";
 
 export function ProductExplorerWorkspace() {
   const { notify } = useToast();
@@ -78,7 +36,7 @@ export function ProductExplorerWorkspace() {
       await Promise.resolve();
       setLoading(true);
       const response = await fetch(
-        `/api/product-explorer?${apiQuery(nextFilters)}`,
+        `/api/product-explorer?${explorerQuery(nextFilters)}`,
         { cache: "no-store" },
       );
       const payload = await response.json().catch(() => null);
@@ -103,7 +61,9 @@ export function ProductExplorerWorkspace() {
   }, []);
   useEffect(() => {
     let cancelled = false;
-    void fetch(`/api/product-explorer?${apiQuery({})}`, { cache: "no-store" })
+    void fetch(`/api/product-explorer?${explorerQuery({})}`, {
+      cache: "no-store",
+    })
       .then(async (response) => ({
         response,
         payload: await response.json().catch(() => null),
@@ -249,130 +209,141 @@ export function ProductExplorerWorkspace() {
         active watches, market members, and refreshed-history products. This is
         not a global Amazon catalog; unavailable metrics remain blank.
       </Alert>
-      <Card className="explorer-controls">
-        <div className="explorer-filter-grid">
-          <TextInput
-            aria-label="Search ASIN title or brand"
-            placeholder="ASIN, title, or brand"
-            value={filters.search ?? ""}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                search: event.target.value,
-              }))
-            }
-          />
-          <TextInput
-            aria-label="Marketplace"
-            placeholder="Marketplace ID"
-            value={filters.marketplaceId ?? ""}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                marketplaceId: event.target.value,
-              }))
-            }
-          />
-          <TextInput
-            aria-label="Brand"
-            placeholder="Brand"
-            value={filters.brand ?? ""}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                brand: event.target.value,
-              }))
-            }
-          />
-          <TextInput
-            aria-label="Maximum review count"
-            type="number"
-            min="0"
-            placeholder="Max reviews"
-            value={filters.maxReviewCount ?? ""}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                maxReviewCount: event.target.value,
-              }))
-            }
-          />
-          <TextInput
-            aria-label="Maximum 90 day price volatility"
-            inputMode="decimal"
-            placeholder="Max 90d volatility %"
-            value={filters.maxPriceVolatilityPercent ?? ""}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                maxPriceVolatilityPercent: event.target.value,
-              }))
-            }
-          />
-          <Button type="button" onClick={() => void load()}>
-            Apply filters
-          </Button>
-        </div>
-        <div className="explorer-presets" aria-label="Explorer presets">
-          {PRODUCT_EXPLORER_PRESETS.map((preset) => (
-            <Button
-              key={preset.id}
-              type="button"
-              variant="secondary"
-              size="sm"
-              title={preset.explanation}
-              onClick={() => applyPreset(preset.state)}
-            >
-              {preset.label}
-            </Button>
-          ))}
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            onClick={() => {
-              setFilters({});
-              void load({});
-            }}
-          >
-            Clear
-          </Button>
-        </div>
-        <div className="explorer-saved-views">
-          <SelectControl
-            aria-label="Saved Product Explorer view"
-            defaultValue=""
-            onChange={(event) => {
-              const view = views.find((item) => item.id === event.target.value);
-              if (view) {
-                setFilters(view.queryState);
-                void load(view.queryState);
+      <FilterBar
+        label="Explore the private product universe"
+        actions={
+          <span className="filter-count">
+            {total.toLocaleString()} matching products
+          </span>
+        }
+      >
+        <div className="explorer-controls">
+          <div className="explorer-filter-grid">
+            <TextInput
+              aria-label="Search ASIN title or brand"
+              placeholder="ASIN, title, or brand"
+              value={filters.search ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  search: event.target.value,
+                }))
               }
-            }}
-          >
-            <option value="">Saved views</option>
-            {views.map((view) => (
-              <option key={view.id} value={view.id}>
-                {view.name}
-              </option>
+            />
+            <TextInput
+              aria-label="Marketplace"
+              placeholder="Marketplace ID"
+              value={filters.marketplaceId ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  marketplaceId: event.target.value,
+                }))
+              }
+            />
+            <TextInput
+              aria-label="Brand"
+              placeholder="Brand"
+              value={filters.brand ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  brand: event.target.value,
+                }))
+              }
+            />
+            <TextInput
+              aria-label="Maximum review count"
+              type="number"
+              min="0"
+              placeholder="Max reviews"
+              value={filters.maxReviewCount ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  maxReviewCount: event.target.value,
+                }))
+              }
+            />
+            <TextInput
+              aria-label="Maximum 90 day price volatility"
+              inputMode="decimal"
+              placeholder="Max 90d volatility %"
+              value={filters.maxPriceVolatilityPercent ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  maxPriceVolatilityPercent: event.target.value,
+                }))
+              }
+            />
+            <Button type="button" onClick={() => void load()}>
+              Apply filters
+            </Button>
+          </div>
+          <div className="explorer-presets" aria-label="Explorer presets">
+            {PRODUCT_EXPLORER_PRESETS.map((preset) => (
+              <Button
+                key={preset.id}
+                type="button"
+                variant="secondary"
+                size="sm"
+                title={preset.explanation}
+                onClick={() => applyPreset(preset.state)}
+              >
+                {preset.label}
+              </Button>
             ))}
-          </SelectControl>
-          <TextInput
-            aria-label="Save current Explorer view as"
-            placeholder="Save current view as"
-            value={viewName}
-            onChange={(event) => setViewName(event.target.value)}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="quiet"
-            onClick={() => void saveView()}
-          >
-            Save view
-          </Button>
+            <Button
+              type="button"
+              variant="quiet"
+              size="sm"
+              onClick={() => {
+                setFilters({});
+                void load({});
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+          <div className="explorer-saved-views">
+            <SelectControl
+              aria-label="Saved Product Explorer view"
+              defaultValue=""
+              onChange={(event) => {
+                const view = views.find(
+                  (item) => item.id === event.target.value,
+                );
+                if (view) {
+                  setFilters(view.queryState);
+                  void load(view.queryState);
+                }
+              }}
+            >
+              <option value="">Saved views</option>
+              {views.map((view) => (
+                <option key={view.id} value={view.id}>
+                  {view.name}
+                </option>
+              ))}
+            </SelectControl>
+            <TextInput
+              aria-label="Save current Explorer view as"
+              placeholder="Save current view as"
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="quiet"
+              onClick={() => void saveView()}
+            >
+              Save view
+            </Button>
+          </div>
         </div>
-      </Card>
+      </FilterBar>
       <section
         className="explorer-actions"
         aria-label="Product Explorer actions"
@@ -412,7 +383,7 @@ export function ProductExplorerWorkspace() {
           </Button>
           <a
             className="rp-button rp-button--quiet rp-button--sm"
-            href={`/api/product-explorer/export?${apiQuery(filters)}`}
+            href={`/api/product-explorer/export?${explorerQuery(filters)}`}
           >
             Export visible CSV
           </a>
@@ -434,121 +405,25 @@ export function ProductExplorerWorkspace() {
           </Button>
         </div>
       </section>
-      {compare.length ? (
-        <Card className="explorer-compare">
-          <strong>Compare ({compare.length}/4)</strong>
-          {rows
-            .filter((row) => compare.includes(row.id))
-            .map((row) => (
-              <span key={row.id}>
-                {row.asin ?? row.title}:{" "}
-                {metric(row.price, row.currency ? ` ${row.currency}` : "")} ·{" "}
-                {metric(row.reviewCount)} reviews ·{" "}
-                {metric(row.priceVolatilityPercent, "% volatility")}
-              </span>
-            ))}
-        </Card>
-      ) : null}
-      <Card className="explorer-results">
-        {loading ? (
-          <p role="status">Loading a 50-product server window…</p>
-        ) : rows.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-state__eyebrow">
-              No eligible product evidence yet
-            </span>
-            <h2>There are no products in this filtered private universe.</h2>
-            <p>
-              Import/match a supplier catalog, save products to a research
-              project, or run an authorized history refresh. Product Explorer
-              never invents a wider Amazon universe.
-            </p>
-          </div>
-        ) : (
-          <div className="explorer-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Select</th>
-                  <th>Product</th>
-                  <th>Evidence-backed metrics</th>
-                  <th>Source universe</th>
-                  <th>Compare</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <input
-                        aria-label={`Select ${row.title}`}
-                        type="checkbox"
-                        checked={selected.includes(row.id)}
-                        onChange={() => toggleSelected(row.id)}
-                      />
-                    </td>
-                    <td>
-                      <strong>{row.title}</strong>
-                      <small>
-                        {row.asin ?? "ASIN unavailable"} ·{" "}
-                        {row.brand ?? "Brand unavailable"}
-                        {row.category ? ` · ${row.category}` : ""}
-                      </small>
-                    </td>
-                    <td>
-                      <span title="Latest observed featured price; blank means no licensed price observation.">
-                        {metric(
-                          row.price,
-                          row.currency ? ` ${row.currency}` : "",
-                        )}
-                      </span>
-                      <span title="Latest normalized historical review count; this is not a review estimate.">
-                        {metric(row.reviewCount)} reviews
-                      </span>
-                      <span title="Latest licensed historical rating; blank means the provider did not return it.">
-                        {metric(row.rating, " stars")}
-                      </span>
-                      <span title="90-day historical price volatility from deterministic history analytics; lower is more stable.">
-                        {metric(row.priceVolatilityPercent, "% 90d volatility")}
-                      </span>
-                      <span title="Historical data coverage and status. Missing data is never treated as zero.">
-                        {row.historyStatus ?? "History unavailable"}{" "}
-                        {row.historyCoveragePercent
-                          ? `(${row.historyCoveragePercent}% coverage)`
-                          : ""}
-                      </span>
-                      <span title="The observed offer sample is partial unless its underlying provider evidence says otherwise.">
-                        {metric(row.offerCount)} offers ·{" "}
-                        {metric(row.fbaOfferCount)} FBA ·{" "}
-                        {metric(row.fbmOfferCount)} FBM · Amazon Retail{" "}
-                        {row.amazonRetailPresence ?? "unknown"}
-                      </span>
-                    </td>
-                    <td>
-                      {row.sources.map((source) => (
-                        <Badge key={source} tone="neutral">
-                          {sourceLabel(source)}
-                        </Badge>
-                      ))}
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Compare ${row.title}`}
-                        type="checkbox"
-                        checked={compare.includes(row.id)}
-                        disabled={
-                          !compare.includes(row.id) && compare.length >= 4
-                        }
-                        onChange={() => toggleCompare(row.id)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      <CompareTray
+        count={compare.length}
+        maximum={4}
+        onClear={() => setCompare([])}
+      >
+        {rows
+          .filter((row) => compare.includes(row.id))
+          .map((row) => (
+            <span key={row.id}>{row.asin ?? row.title}</span>
+          ))}
+      </CompareTray>
+      <ExplorerResultsTable
+        rows={rows}
+        loading={loading}
+        selected={selected}
+        compare={compare}
+        onSelect={toggleSelected}
+        onCompare={toggleCompare}
+      />
       <p className="explorer-footnote">
         Only filters with stored, typed evidence are active. Monthly
         units/revenue, seller or brand concentration, variation counts,

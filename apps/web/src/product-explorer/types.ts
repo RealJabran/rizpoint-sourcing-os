@@ -1,0 +1,30 @@
+export type ExplorerRow = {
+  id: string;
+  asin: string | null;
+  title: string;
+  brand: string | null;
+  marketplaceId: string | null;
+  category: string | null;
+  sources: string[];
+  price: string | null;
+  currency: string | null;
+  rating: string | null;
+  reviewCount: string | null;
+  salesRank: string | null;
+  offerCount: number | null;
+  fbaOfferCount: number | null;
+  fbmOfferCount: number | null;
+  amazonRetailPresence: string | null;
+  priceVolatilityPercent: string | null;
+  reviewGrowth: string | null;
+  listingAgeDays: string | null;
+  seasonalityStatus: string | null;
+  historyStatus: string | null;
+  historyCoveragePercent: string | null;
+  freshnessState: string | null;
+  observedAt: string | null;
+};
+
+export type Project = { id: string; name: string; marketplaceId: string };
+export type Filters = Record<string, string>;
+export type ExplorerView = { id: string; name: string; queryState: Filters };

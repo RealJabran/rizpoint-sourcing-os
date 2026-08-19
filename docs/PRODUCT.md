@@ -26,6 +26,13 @@ Research Copilot answers are bounded to cited internal evidence. Until an
 approved explanation-model provider is configured, it runs in deterministic
 retrieval mode and explicitly says when records or metrics are unavailable.
 
+The application information architecture groups wholesale, product research,
+niches, keywords, markets, competitive entities, projects, monitoring, and
+launch workflows without changing their domain boundaries. Research metrics use
+shared source, window, observation-time, freshness, partial, missing, and
+unsupported presentation patterns; keyboard navigation and responsive table,
+filter, comparison, and evidence interactions are first-class.
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

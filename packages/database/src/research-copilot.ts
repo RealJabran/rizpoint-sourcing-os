@@ -16,6 +16,7 @@ export type CopilotAnswer = {
 };
 
 /** Removes instructions from untrusted text; retrieval never executes its text. */
+/* eslint-disable no-control-regex -- ASCII control characters are deliberately removed. */
 export function sanitizeCopilotQuestion(value: string) {
   return value
     .normalize("NFKC")
@@ -28,6 +29,7 @@ export function sanitizeCopilotQuestion(value: string) {
     .trim()
     .slice(0, 800);
 }
+/* eslint-enable no-control-regex */
 export function selectCopilotOperation(question: string): CopilotOperation {
   const normalized = sanitizeCopilotQuestion(question).toLowerCase();
   if (/assumption|go\/?no-go|decision|reverse.*decision/.test(normalized))

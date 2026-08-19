@@ -218,6 +218,11 @@ handlers; Prompt 02 adds no live provider behavior.
 Sparse history is stored as `HistoricalMetricSeries` plus append-only points.
 Each point has exactly one typed value and references the observation that
 retrieved it. A btree supports tenant/series/time reads and a BRIN index supports
+time-based retention scans. Series default to 730 days; provider rights may
+require a shorter period. Retention deletes expired points in bounded batches,
+never invents interpolation, and keeps PostgreSQL partition-ready. A separate
+time-series database or partitioning is deferred until scale measurements prove
+the need.
 
 ### Research Project decision hub
 
@@ -254,11 +259,17 @@ The marketplace registry carries locale, language, currency, timezone, category
 and fee-model version, and capability metadata per marketplace. US remains the
 unchanged default. Cross-market comparisons are prohibited until a currency and
 metric-definition normalization observation is explicitly supplied.
-time-based retention scans. Series default to 730 days; provider rights may
-require a shorter period. Retention deletes expired points in bounded batches,
-never invents interpolation, and keeps PostgreSQL partition-ready. A separate
-time-series database or partitioning is deferred until scale measurements prove
-the need.
+
+### Research UI architecture
+
+The application shell owns grouped navigation metadata and a keyboard command
+palette; domain workspaces do not duplicate global navigation. Shared research
+primitives provide filters, saved-view-compatible controls, date windows,
+table/chart toggles, source and color-independent data-state badges, metric
+context, compare trays, and keyboard-dismissable evidence drawers. Product
+Explorer separates query/types and results from orchestration as the reference
+composition. Existing wholesale routes and the scan analysis workspace remain
+in the Wholesale group and retain their behavior.
 
 `OpportunityAssessment` and its ordered reasons are immutable derived records.
 They store a calculation version, `calculated_at`, and explicit input observation
