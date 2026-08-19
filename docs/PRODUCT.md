@@ -247,3 +247,15 @@ product. Ruleset updates create a new version and preserve past assessments.
 The screen is not legal advice and does not say a certification is unnecessary.
 Authorized Amazon seller-restriction observations are shown only as seller
 eligibility evidence, never as compliance clearance.
+
+## Portfolio & Cash Allocation
+
+Prompt 26 adds an explainable portfolio optimizer for project-owned candidate
+products. It allocates integer MOQ/case-pack quantities under cash, ASIN, brand,
+category, demand, economics, confidence, seasonality, compliance, volatility,
+competition, lead-time, and inventory-day constraints. Every exclusion and
+constraint result is visible. Base and five explicit stress modes produce a
+recommended portfolio plus alternatives, expected profit ranges,
+diversification, and risk concentration. The bounded Decimal branch-and-bound
+solver is deterministic and fails closed when it cannot prove optimality; an
+LLM never selects or calculates the portfolio.

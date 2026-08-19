@@ -300,6 +300,23 @@ enum ComplianceRiskDomain {
   AMAZON_RESTRICTED_CATEGORY
 }
 
+enum PortfolioOptimizationStatus {
+  CALCULATED
+  PARTIAL_SUCCESS
+  NO_FEASIBLE_PORTFOLIO
+  SOLVER_FAILED
+  INVALID_INPUT
+}
+
+enum PortfolioOptimizationScenario {
+  BASE
+  DEMAND_DOWN_20
+  PRICE_DOWN_10
+  FEE_UP_5
+  DELAYED_REPLENISHMENT
+  AD_COST_INCREASE
+}
+
 enum BrandPolicyStatus {
   PROHIBITED
   APPROVAL_REQUIRED
@@ -778,6 +795,9 @@ model Organization {
   privateLabelScenarioResults PrivateLabelScenarioResult[]
   complianceRuleSets          ComplianceRuleSet[]
   complianceRiskAssessments   ComplianceRiskAssessment[]
+  portfolioOptimizationRuns   PortfolioOptimizationRun[]
+  portfolioOptimizationResults PortfolioOptimizationResult[]
+  portfolioAllocations        PortfolioAllocation[]
 
   @@map("organizations")
 }
@@ -1072,6 +1092,7 @@ model CatalogProduct {
   reviewThemes                ReviewTheme[]
   listingQualityAssessments   ListingQualityAssessment[]
   complianceRiskAssessments   ComplianceRiskAssessment[]
+  portfolioAllocations        PortfolioAllocation[]
 
   @@unique([provider, providerReference])
   @@index([provider, asin])
@@ -2148,6 +2169,7 @@ model ResearchProject {
   alertRules                 AlertRule[]
   keywordRankTracks          KeywordRankTrack[]
   complianceRiskAssessments  ComplianceRiskAssessment[]
+  portfolioOptimizationRuns  PortfolioOptimizationRun[]
 
   @@unique([id, organizationId])
   @@index([organizationId, status, updatedAt])
@@ -2862,6 +2884,101 @@ model ComplianceRiskAssessment {
   @@index([organizationId, projectId, calculatedAt])
   @@index([organizationId, catalogProductId, calculatedAt])
   @@map("compliance_risk_assessments")
+}
+
+/// Immutable input snapshot and solver outcome for one project portfolio run.
+model PortfolioOptimizationRun {
+  id                String                      @id @default(cuid())
+  organizationId    String                      @map("organization_id")
+  projectId         String                      @map("project_id")
+  name              String
+  status            PortfolioOptimizationStatus
+  solverVersion     String                      @map("solver_version")
+  inputHash         String                      @map("input_hash")
+  currency          String
+  cashBudget        Decimal                     @map("cash_budget") @db.Decimal(20, 4)
+  constraints       Json
+  stressAssumptions Json                        @map("stress_assumptions")
+  inputSnapshot     Json                        @map("input_snapshot")
+  reasonCodes       Json                        @map("reason_codes")
+  calculatedAt      DateTime                    @map("calculated_at")
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+
+  organization Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject               @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  results      PortfolioOptimizationResult[]
+
+  @@unique([id, organizationId])
+  @@unique([organizationId, projectId, inputHash])
+  @@index([organizationId, projectId, calculatedAt])
+  @@map("portfolio_optimization_runs")
+}
+
+/// One recommended or alternative portfolio for one named stress scenario.
+/// Failure scenarios persist rank zero with no financial output/allocation.
+model PortfolioOptimizationResult {
+  id                   String                        @id @default(cuid())
+  organizationId       String                        @map("organization_id")
+  runId                String                        @map("run_id")
+  scenario             PortfolioOptimizationScenario
+  rank                 Int
+  status               PortfolioOptimizationStatus
+  exactOptimal         Boolean                       @map("exact_optimal")
+  searchNodes          Int                           @map("search_nodes")
+  cashUsed             Decimal?                      @map("cash_used") @db.Decimal(20, 4)
+  cashRemaining        Decimal?                      @map("cash_remaining") @db.Decimal(20, 4)
+  expectedProfitLow    Decimal?                      @map("expected_profit_low") @db.Decimal(20, 4)
+  expectedProfitHigh   Decimal?                      @map("expected_profit_high") @db.Decimal(20, 4)
+  productCount         Int?                          @map("product_count")
+  diversificationScore Decimal?                      @map("diversification_score") @db.Decimal(12, 4)
+  riskConcentration    Json                          @map("risk_concentration")
+  constraintAudit      Json                          @map("constraint_audit")
+  excludedProducts     Json                          @map("excluded_products")
+  assumptions          Json
+  reasonCodes          Json                          @map("reason_codes")
+  createdAt            DateTime                      @default(now()) @map("created_at")
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  run          PortfolioOptimizationRun @relation(fields: [runId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  allocations  PortfolioAllocation[]
+
+  @@unique([id, organizationId])
+  @@unique([runId, scenario, rank])
+  @@index([organizationId, runId, scenario, rank])
+  @@map("portfolio_optimization_results")
+}
+
+model PortfolioAllocation {
+  id                    String   @id @default(cuid())
+  organizationId        String   @map("organization_id")
+  resultId              String   @map("result_id")
+  catalogProductId      String   @map("catalog_product_id")
+  candidateKey          String   @map("candidate_key")
+  asin                  String
+  brand                 String
+  category              String
+  quantity              Int
+  casePack              Int      @map("case_pack")
+  moq                   Int
+  unitCost              Decimal  @map("unit_cost") @db.Decimal(18, 4)
+  cashAllocated         Decimal  @map("cash_allocated") @db.Decimal(20, 4)
+  expectedProfitLow     Decimal  @map("expected_profit_low") @db.Decimal(20, 4)
+  expectedProfitHigh    Decimal  @map("expected_profit_high") @db.Decimal(20, 4)
+  expectedUnitsSoldLow  Decimal  @map("expected_units_sold_low") @db.Decimal(20, 4)
+  expectedUnitsSoldHigh Decimal  @map("expected_units_sold_high") @db.Decimal(20, 4)
+  coverageDays          Int      @map("coverage_days")
+  evidenceReferences    Json     @map("evidence_references")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  result         PortfolioOptimizationResult @relation(fields: [resultId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  catalogProduct CatalogProduct              @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+
+  @@unique([resultId, candidateKey])
+  @@index([organizationId, resultId])
+  @@index([organizationId, catalogProductId])
+  @@map("portfolio_allocations")
 }
 
 model HistoricalMetricSeries {

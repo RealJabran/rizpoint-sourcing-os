@@ -307,3 +307,21 @@ authoritative clearance flag and source. Unmatched domains are explicitly
 authorized seller-eligibility observation to the Amazon-restriction domain, but
 `ELIGIBLE` remains `UNKNOWN` for compliance because eligibility is not a legal
 or certification clearance.
+
+## Portfolio optimization boundary
+
+`@rizpoint/portfolio-optimizer` is a pure Decimal integer branch-and-bound
+engine with stable sorting and tie breaks. It accepts explicit candidate
+economics/evidence, hard risk and concentration policy, cash budget, and stored
+stress magnitudes. Each scenario is solved independently and returns only an
+exactly proven result. Candidate/option/node bounds protect runtime; exceeding a
+bound produces `SOLVER_FAILED` with no partial recommendation.
+
+The database repository verifies every candidate is a CatalogProduct in the
+organization's selected ResearchProject and that ASIN identity is consistent.
+`PortfolioOptimizationRun` idempotently keys the canonical input hash;
+`PortfolioOptimizationResult` stores scenario/rank, NUMERIC totals, assumptions,
+constraint audit, exclusions, concentration, and exactness; and
+`PortfolioAllocation` stores NUMERIC cash/profit rows plus MOQ/case and evidence
+references. These derived records never mutate source profit, compliance,
+demand, or provider observations. See [Portfolio optimizer](PORTFOLIO_OPTIMIZER.md).

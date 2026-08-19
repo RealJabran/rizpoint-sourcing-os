@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@rizpoint/order-engine": "workspace:*",
+    "@rizpoint/portfolio-optimizer": "workspace:*",
     "@rizpoint/profit-engine": "workspace:*",
     "@rizpoint/provider-contracts": "workspace:*",
     "@rizpoint/sales-estimation": "workspace:*",

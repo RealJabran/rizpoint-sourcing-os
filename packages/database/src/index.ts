@@ -29,4 +29,22 @@ export * from "./repositories/launch-planner.js";
 export * from "./repositories/private-label-profitability.js";
 export * from "./compliance-risk-policy.js";
 export * from "./repositories/compliance-risk.js";
+export * from "./repositories/portfolio-optimizer.js";
+export {
+  DEFAULT_PORTFOLIO_STRESS_ASSUMPTIONS,
+  PORTFOLIO_OPTIMIZER_VERSION,
+  PORTFOLIO_SCENARIOS,
+  optimizePortfolio,
+} from "@rizpoint/portfolio-optimizer";
+export type {
+  ComplianceRisk,
+  PortfolioCandidateInput,
+  PortfolioConstraints,
+  PortfolioOptimizationOutput,
+  PortfolioScenario,
+  PortfolioScenarioOutput,
+  PortfolioSolution,
+  PortfolioStressAssumptions,
+  RiskBand,
+} from "@rizpoint/portfolio-optimizer";
 export * from "./generated/prisma/client.js";

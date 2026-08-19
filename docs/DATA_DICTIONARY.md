@@ -125,6 +125,17 @@ with their exact input fingerprint/evidence references and calculation time.
 They are screening records, not legal, certification, or seller-eligibility
 determinations.
 
+Portfolio allocation adds `PortfolioOptimizationRun`,
+`PortfolioOptimizationResult`, and `PortfolioAllocation`. Runs retain one
+project-scoped canonical input hash, solver version, cash budget, constraints,
+stress assumptions, full candidate snapshot, status, and calculation time.
+Results retain scenario/rank, exact-optimal flag, search count, assumptions,
+audit/exclusions, concentration, and NUMERIC cash/profit/diversification
+outputs. Allocation rows retain integer MOQ/case quantities, product identity,
+evidence references, and NUMERIC unit cost, cash, expected profit range, and
+expected unit range. Failed solver results have null financial outputs and no
+allocations; null never means zero.
+
 ## Research foundation entities
 
 | Entity                                                | Purpose                                                                                                                                                                | Tenant/time boundary                                                      |
