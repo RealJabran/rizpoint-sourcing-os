@@ -3,12 +3,14 @@ import { Decimal } from "decimal.js";
 import {
   claimHistoryRefreshRun,
   claimProviderRequestLease,
+  batchWindows,
   completeHistoryRefreshItem,
   completeHistoryRefreshRun,
   completeProviderRequestLease,
   createResearchRepository,
   findActiveProviderRateBudget,
   getProviderCacheEntry,
+  HISTORY_POINT_WRITE_BATCH_SIZE,
   putProviderCacheEntry,
   recordProviderRequestTelemetry,
   reserveProviderBudget,
@@ -25,9 +27,19 @@ import {
 import { DEFAULT_PROVIDER_FRESHNESS_POLICIES } from "@rizpoint/provider-contracts/runtime-policy";
 import { createMarketHistoryProvider } from "./market-history-provider.js";
 import { calculateHistoryAnalytics } from "./history-analytics.js";
+import { mapWithConcurrency } from "./bounded-concurrency.js";
 import { providerError, providerRetryDeadline } from "./enrichment-policy.js";
 
 const policy = DEFAULT_PROVIDER_FRESHNESS_POLICIES.MARKET_HISTORY;
+export const HISTORY_PROVIDER_BATCH_LIMIT = 100;
+export const HISTORY_PERSIST_CONCURRENCY = 4;
+
+export function planHistoryProviderBatch(asins: readonly string[]) {
+  const unique = [...new Set(asins)].sort();
+  if (!unique.length || unique.length > HISTORY_PROVIDER_BATCH_LIMIT)
+    throw new Error("HISTORY_PROVIDER_BATCH_LIMIT");
+  return unique;
+}
 
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -131,13 +143,20 @@ async function persistProduct(input: {
       ...(series.currency ? { currency: series.currency } : {}),
       retentionDays: 730,
     });
-    for (const point of series.points)
-      await repository.appendHistoricalMetricPoint({
+    for (const window of batchWindows(
+      series.points.length,
+      HISTORY_POINT_WRITE_BATCH_SIZE,
+    ))
+      await repository.appendHistoricalMetricPoints({
         organizationId: input.organizationId,
         seriesId: persisted.id,
         sourceObservationId: observation.id,
-        metricAt: new Date(point.observedAt),
-        value: pointValue(point),
+        points: series.points
+          .slice(window.offset, window.offset + window.limit)
+          .map((point) => ({
+            metricAt: new Date(point.observedAt),
+            value: pointValue(point),
+          })),
       });
   }
   await completeHistoryRefreshItem({
@@ -161,7 +180,7 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
     marketplaceId: run.marketplaceId,
     region: "NA" as const,
   };
-  const asins = run.items.map((item) => item.asin);
+  const asins = planHistoryProviderBatch(run.items.map((item) => item.asin));
   const requestInputs = historyRequest(asins, run.historyDays);
   const requestHash = hash(requestInputs);
   const now = new Date();
@@ -491,36 +510,40 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
   const products = new Map(
     history.value.products.map((product) => [product.asin, product]),
   );
-  for (const item of run.items) {
-    const product = products.get(item.asin);
-    if (!product) {
-      await completeHistoryRefreshItem({
+  await mapWithConcurrency(
+    run.items,
+    HISTORY_PERSIST_CONCURRENCY,
+    async (item) => {
+      const product = products.get(item.asin);
+      if (!product) {
+        await completeHistoryRefreshItem({
+          organizationId: run.organizationId,
+          itemId: item.id,
+          status: "PARTIAL",
+          errorCode: "HISTORY_NOT_RETURNED",
+        });
+        return;
+      }
+      await persistProduct({
         organizationId: run.organizationId,
-        itemId: item.id,
-        status: "PARTIAL",
-        errorCode: "HISTORY_NOT_RETURNED",
-      });
-      continue;
-    }
-    await persistProduct({
-      organizationId: run.organizationId,
-      item,
-      product,
-      requestHash,
-      requestInputs,
-      providerKey: bundle.providerKey,
-      observedAt: new Date(history.provenance.observedAt),
-      freshUntil,
-      ...(rawEvidenceReference ? { rawEvidenceReference } : {}),
-    });
-    if (item.catalogProductId)
-      await calculateHistoryAnalytics({
-        organizationId: run.organizationId,
-        catalogProductId: item.catalogProductId,
-        marketplaceId: run.marketplaceId,
+        item,
+        product,
+        requestHash,
+        requestInputs,
         providerKey: bundle.providerKey,
-        calculatedAt: new Date(history.provenance.observedAt),
+        observedAt: new Date(history.provenance.observedAt),
+        freshUntil,
+        ...(rawEvidenceReference ? { rawEvidenceReference } : {}),
       });
-  }
+      if (item.catalogProductId)
+        await calculateHistoryAnalytics({
+          organizationId: run.organizationId,
+          catalogProductId: item.catalogProductId,
+          marketplaceId: run.marketplaceId,
+          providerKey: bundle.providerKey,
+          calculatedAt: new Date(history.provenance.observedAt),
+        });
+    },
+  );
   await completeHistoryRefreshRun({ runId: run.id });
 }

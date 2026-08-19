@@ -16,6 +16,20 @@ Redis is not backed up as business state. Restore PostgreSQL and object versions
 
 Exports receive a seven-day expiry. `RIZPOINT_RETENTION_MODE=report` only records candidates. Set it to `delete` only after reviewing the report and a successful restore drill; deletion removes expired private export objects and records an audit event. Uploaded originals, financial evidence, and audit history remain retained until a separate approved data-deletion feature exists.
 
+Historical metric points use each series' explicit retention period. The same
+retention worker reports or deletes at most 1,000 expired points per run,
+revalidates expiry transactionally, and records organization-scoped deletion
+audit events. Automatic downsampling is disabled because raw normalized points
+are replay evidence.
+
+## Research scale verification
+
+Run `pnpm test:research-scale` against the local Compose PostgreSQL service for
+the transaction-local 10k/100k/500k scaled benchmark. Set
+`RIZPOINT_SCALE_PROFILE=full` to exercise 100k/1M/5M rows during a dedicated
+capacity run. Compare results with `docs/PERFORMANCE.md`; do not change database
+technology from an unmeasured assumption.
+
 ## Alerts
 
 Alert on failed-final jobs, queue age, outbox publish/reconciliation errors, provider throttling, scan partial-success spikes, dependency readiness failures, ClamAV unavailability, backup age, restore failure, and any Sev-1 calculation or data-integrity incident. Configure `RIZPOINT_ERROR_TRACKING_WEBHOOK_URL` to a private HTTPS collector. Logs and telemetry must carry IDs only, never workbook cells, tokens, supplier prices, or refresh credentials.

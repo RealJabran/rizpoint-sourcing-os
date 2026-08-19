@@ -33,6 +33,12 @@ shared source, window, observation-time, freshness, partial, missing, and
 unsupported presentation patterns; keyboard navigation and responsive table,
 filter, comparison, and evidence interactions are first-class.
 
+Large research datasets remain on the measured PostgreSQL architecture. User
+pages read bounded normalized windows under a query timeout and never make
+provider calls. History refreshes use cached/coalesced provider batches,
+priority-aware background jobs, bounded persistence concurrency, durable retry
+scheduling, and explicit retention policy. See [Performance](PERFORMANCE.md).
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

@@ -64,6 +64,46 @@ describe("research domain foundation", () => {
     ).rejects.toThrow("RESEARCH_ITEM_SUBJECT_INVALID");
   });
 
+  it("persists history points in one bounded bulk write without hiding conflicts", async () => {
+    const findSeries = vi.fn().mockResolvedValue({ id: "series-1" });
+    const findObservation = vi.fn().mockResolvedValue({ id: "observation-1" });
+    const findPoints = vi.fn().mockResolvedValue([]);
+    const createMany = vi.fn().mockResolvedValue({ count: 2 });
+    const repository = createResearchRepository({
+      historicalMetricSeries: { findFirst: findSeries },
+      researchObservation: { findFirst: findObservation },
+      historicalMetricPoint: { findMany: findPoints, createMany },
+    } as never);
+    const first = new Date("2026-08-01T00:00:00.000Z");
+    const second = new Date("2026-08-02T00:00:00.000Z");
+    await expect(
+      repository.appendHistoricalMetricPoints({
+        organizationId: "org-a",
+        seriesId: "series-1",
+        sourceObservationId: "observation-1",
+        points: [
+          { metricAt: first, value: { decimalValue: "19.990" } },
+          { metricAt: first, value: { decimalValue: "19.99" } },
+          { metricAt: second, value: { decimalValue: "20.00" } },
+        ],
+      }),
+    ).resolves.toEqual({ insertedCount: 2, existingCount: 0 });
+    expect(createMany).toHaveBeenCalledOnce();
+    expect(createMany.mock.calls[0]?.[0].data).toHaveLength(2);
+
+    await expect(
+      repository.appendHistoricalMetricPoints({
+        organizationId: "org-a",
+        seriesId: "series-1",
+        sourceObservationId: "observation-1",
+        points: [
+          { metricAt: first, value: { decimalValue: "19.99" } },
+          { metricAt: first, value: { decimalValue: "21.00" } },
+        ],
+      }),
+    ).rejects.toThrow("HISTORICAL_POINT_IDEMPOTENCY_CONFLICT");
+  });
+
   it("defines tenant, provenance, derived-lineage, and time-series policies in schema", async () => {
     const schema = await readFile(
       new URL("../prisma/schema.prisma", import.meta.url),

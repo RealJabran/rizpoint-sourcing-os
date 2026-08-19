@@ -1,5 +1,8 @@
 import { db } from "../client.js";
 
+export const REVERSE_ASIN_OBSERVATION_WINDOW = 10_000;
+export const REVERSE_ASIN_KEYWORD_WINDOW = 1_000;
+
 export async function reverseAsinKeywordGap(input: {
   organizationId: string;
   asins: string[];
@@ -17,9 +20,16 @@ export async function reverseAsinKeywordGap(input: {
       keyword: true,
       observation: true,
     },
+    orderBy: [{ observation: { observedAt: "desc" } }, { id: "desc" }],
+    take: REVERSE_ASIN_OBSERVATION_WINDOW,
   });
+  const latest = new Map<string, (typeof observations)[number]>();
+  for (const item of observations) {
+    const key = `${item.catalogProductId}:${item.keywordId}`;
+    if (!latest.has(key)) latest.set(key, item);
+  }
   const groups = new Map<string, typeof observations>();
-  for (const item of observations)
+  for (const item of latest.values())
     groups.set(item.keywordId, [...(groups.get(item.keywordId) ?? []), item]);
   return [...groups.values()]
     .map((items) => {
@@ -69,5 +79,6 @@ export async function reverseAsinKeywordGap(input: {
         searchVolume: null,
       };
     })
-    .sort((a, b) => b.rankingAsinCount - a.rankingAsinCount);
+    .sort((a, b) => b.rankingAsinCount - a.rankingAsinCount)
+    .slice(0, REVERSE_ASIN_KEYWORD_WINDOW);
 }

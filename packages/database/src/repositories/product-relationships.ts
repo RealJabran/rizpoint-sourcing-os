@@ -1,5 +1,8 @@
 import { db } from "../client.js";
 
+export const RELATIONSHIP_SEED_WINDOW = 500;
+export const RELATIONSHIP_OBSERVATION_WINDOW = 10_000;
+
 export type DerivedProductRelationship = {
   catalogProductId: string;
   asin: string | null;
@@ -28,6 +31,7 @@ export async function derivedProductRelationships(input: {
       },
       select: { keywordId: true },
       distinct: ["keywordId"],
+      take: RELATIONSHIP_SEED_WINDOW,
     });
     if (seed.length) {
       const neighbors = await db.productKeywordObservation.findMany({
@@ -40,6 +44,8 @@ export async function derivedProductRelationships(input: {
           catalogProduct: { select: { asin: true, title: true } },
           observation: true,
         },
+        orderBy: [{ observation: { observedAt: "desc" } }, { id: "desc" }],
+        take: RELATIONSHIP_OBSERVATION_WINDOW,
       });
       const grouped = new Map<string, typeof neighbors>();
       for (const row of neighbors)
@@ -75,6 +81,7 @@ export async function derivedProductRelationships(input: {
       },
       select: { marketDefinitionId: true },
       distinct: ["marketDefinitionId"],
+      take: RELATIONSHIP_SEED_WINDOW,
     });
     if (membership.length) {
       const neighbors = await db.marketMember.findMany({
@@ -87,6 +94,8 @@ export async function derivedProductRelationships(input: {
           leftAt: null,
         },
         include: { catalogProduct: { select: { asin: true, title: true } } },
+        orderBy: [{ joinedAt: "desc" }, { id: "desc" }],
+        take: RELATIONSHIP_OBSERVATION_WINDOW,
       });
       const grouped = new Map<string, typeof neighbors>();
       for (const row of neighbors)

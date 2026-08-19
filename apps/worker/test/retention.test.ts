@@ -5,6 +5,8 @@ const acknowledgeExpiredExportObject = vi.fn();
 const recordExpiredExportRetentionReport = vi.fn();
 const listExpiredProviderEvidence = vi.fn();
 const acknowledgeExpiredProviderEvidence = vi.fn();
+const listExpiredHistoricalMetricPoints = vi.fn();
+const deleteExpiredHistoricalMetricPoints = vi.fn();
 const deletePrivateObject = vi.fn();
 
 vi.mock("@rizpoint/database", () => ({
@@ -13,6 +15,8 @@ vi.mock("@rizpoint/database", () => ({
   recordExpiredExportRetentionReport,
   listExpiredProviderEvidence,
   acknowledgeExpiredProviderEvidence,
+  listExpiredHistoricalMetricPoints,
+  deleteExpiredHistoricalMetricPoints,
 }));
 vi.mock("@rizpoint/object-storage", () => ({ deletePrivateObject }));
 
@@ -31,10 +35,14 @@ describe("export retention", () => {
       },
     ]);
     listExpiredProviderEvidence.mockResolvedValue([]);
+    listExpiredHistoricalMetricPoints.mockResolvedValue([
+      { id: "point_1", organizationId: "org_1" },
+    ]);
     const { runRetentionOnce } = await import("../src/retention.js");
-    await expect(runRetentionOnce(new Date())).resolves.toBe(1);
+    await expect(runRetentionOnce(new Date())).resolves.toBe(2);
     expect(recordExpiredExportRetentionReport).toHaveBeenCalledOnce();
     expect(deletePrivateObject).not.toHaveBeenCalled();
+    expect(deleteExpiredHistoricalMetricPoints).not.toHaveBeenCalled();
   });
 
   it("deletes then acknowledges only when explicitly enabled", async () => {
@@ -47,12 +55,20 @@ describe("export retention", () => {
       },
     ]);
     listExpiredProviderEvidence.mockResolvedValue([]);
+    listExpiredHistoricalMetricPoints.mockResolvedValue([
+      { id: "point_1", organizationId: "org_1" },
+    ]);
+    deleteExpiredHistoricalMetricPoints.mockResolvedValue(1);
     const { runRetentionOnce } = await import("../src/retention.js");
     await runRetentionOnce(new Date());
     expect(deletePrivateObject).toHaveBeenCalledWith("exports/org_1/a.csv");
     expect(acknowledgeExpiredExportObject).toHaveBeenCalledWith(
       "export_1",
       "org_1",
+    );
+    expect(deleteExpiredHistoricalMetricPoints).toHaveBeenCalledWith(
+      [{ id: "point_1", organizationId: "org_1" }],
+      expect.any(Date),
     );
   });
 });

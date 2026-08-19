@@ -151,6 +151,13 @@ export interface AppendHistoricalMetricPointInput {
   value: HistoricalMetricValue;
 }
 
+export interface AppendHistoricalMetricPointsInput {
+  organizationId: string;
+  seriesId: string;
+  sourceObservationId: string;
+  points: Array<{ metricAt: Date; value: HistoricalMetricValue }>;
+}
+
 export interface OpportunityReasonInput {
   code: string;
   kind: OpportunityReasonKind;
@@ -226,6 +233,9 @@ export interface ResearchRepositoryContract {
   appendHistoricalMetricPoint(
     input: AppendHistoricalMetricPointInput,
   ): Promise<HistoricalMetricPoint>;
+  appendHistoricalMetricPoints(
+    input: AppendHistoricalMetricPointsInput,
+  ): Promise<{ insertedCount: number; existingCount: number }>;
   recordOpportunityAssessment(
     input: RecordOpportunityAssessmentInput,
   ): Promise<OpportunityAssessment & { reasons: OpportunityReason[] }>;

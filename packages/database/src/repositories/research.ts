@@ -3,6 +3,7 @@ import { db } from "../client.js";
 import type {
   AddResearchProjectItemInput,
   AppendHistoricalMetricPointInput,
+  AppendHistoricalMetricPointsInput,
   AppendKeywordObservationInput,
   RecordHistoryObservationInput,
   CreateAlertRuleInput,
@@ -15,6 +16,7 @@ import type {
   RecordOpportunityAssessmentInput,
   ResearchRepositoryContract,
 } from "../research-contracts.js";
+import { HISTORY_POINT_WRITE_BATCH_SIZE } from "../research-performance.js";
 
 type ResearchDatabase = Pick<
   PrismaClient,
@@ -110,6 +112,17 @@ function canonicalDecimalText(value: string): string {
   const fraction = (match[3] ?? "").replace(/0+$/, "");
   const unsigned = fraction ? `${integer}.${fraction}` : integer;
   return match[1] === "-" && unsigned !== "0" ? `-${unsigned}` : unsigned;
+}
+
+function pointInputValueKey(
+  value: AppendHistoricalMetricPointInput["value"],
+): string {
+  if ("decimalValue" in value)
+    return `decimal:${canonicalDecimalText(value.decimalValue)}`;
+  if ("integerValue" in value)
+    return `integer:${BigInt(value.integerValue).toString()}`;
+  if ("booleanValue" in value) return `boolean:${String(value.booleanValue)}`;
+  return `text:${value.textValue}`;
 }
 
 export function createResearchRepository(
@@ -644,6 +657,100 @@ export function createResearchRepository(
       if (!pointMatchesValue(point, input.value))
         throw new Error("HISTORICAL_POINT_IDEMPOTENCY_CONFLICT");
       return point;
+    },
+
+    async appendHistoricalMetricPoints(
+      input: AppendHistoricalMetricPointsInput,
+    ) {
+      if (
+        input.points.length < 1 ||
+        input.points.length > HISTORY_POINT_WRITE_BATCH_SIZE
+      )
+        throw new Error("HISTORICAL_POINT_BATCH_LIMIT");
+      const unique = new Map<
+        string,
+        AppendHistoricalMetricPointsInput["points"][number]
+      >();
+      for (const point of input.points) {
+        const key = point.metricAt.toISOString();
+        const previous = unique.get(key);
+        if (
+          previous &&
+          pointInputValueKey(previous.value) !== pointInputValueKey(point.value)
+        )
+          throw new Error("HISTORICAL_POINT_IDEMPOTENCY_CONFLICT");
+        unique.set(key, point);
+      }
+      const [series, observation] = await Promise.all([
+        client.historicalMetricSeries.findFirst({
+          where: { id: input.seriesId, organizationId: input.organizationId },
+          select: { id: true },
+        }),
+        client.researchObservation.findFirst({
+          where: {
+            id: input.sourceObservationId,
+            organizationId: input.organizationId,
+          },
+          select: { id: true },
+        }),
+      ]);
+      if (!series) throw new Error("HISTORICAL_SERIES_NOT_FOUND");
+      if (!observation) throw new Error("SOURCE_OBSERVATION_NOT_FOUND");
+      const points = [...unique.values()];
+      const existing = await client.historicalMetricPoint.findMany({
+        where: {
+          organizationId: input.organizationId,
+          seriesId: input.seriesId,
+          sourceObservationId: input.sourceObservationId,
+          metricAt: { in: points.map((point) => point.metricAt) },
+        },
+      });
+      const requestedByTime = new Map(
+        points.map((point) => [point.metricAt.toISOString(), point]),
+      );
+      for (const point of existing) {
+        const requested = requestedByTime.get(point.metricAt.toISOString());
+        if (!requested || !pointMatchesValue(point, requested.value))
+          throw new Error("HISTORICAL_POINT_IDEMPOTENCY_CONFLICT");
+        requestedByTime.delete(point.metricAt.toISOString());
+      }
+      const missing = [...requestedByTime.values()];
+      let insertedCount = 0;
+      if (missing.length)
+        insertedCount = (
+          await client.historicalMetricPoint.createMany({
+            data: missing.map((point) => ({
+              organizationId: input.organizationId,
+              seriesId: input.seriesId,
+              sourceObservationId: input.sourceObservationId,
+              metricAt: point.metricAt,
+              ...pointValueData(point.value),
+            })),
+            skipDuplicates: true,
+          })
+        ).count;
+      if (insertedCount !== missing.length) {
+        const concurrent = await client.historicalMetricPoint.findMany({
+          where: {
+            organizationId: input.organizationId,
+            seriesId: input.seriesId,
+            sourceObservationId: input.sourceObservationId,
+            metricAt: { in: missing.map((point) => point.metricAt) },
+          },
+        });
+        const concurrentByTime = new Map(
+          concurrent.map((point) => [point.metricAt.toISOString(), point]),
+        );
+        for (const point of missing) {
+          const persisted = concurrentByTime.get(point.metricAt.toISOString());
+          if (!persisted || !pointMatchesValue(persisted, point.value))
+            throw new Error("HISTORICAL_POINT_IDEMPOTENCY_CONFLICT");
+        }
+      }
+      return {
+        insertedCount,
+        existingCount: existing.length,
+      };
     },
 
     async recordOpportunityAssessment(input: RecordOpportunityAssessmentInput) {

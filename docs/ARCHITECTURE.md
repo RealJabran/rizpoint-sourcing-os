@@ -271,6 +271,27 @@ Explorer separates query/types and results from orchestration as the reference
 composition. Existing wholesale routes and the scan analysis workspace remain
 in the Wholesale group and retain their behavior.
 
+### Research scale boundary
+
+Interactive Product Explorer and Category Intelligence queries execute on one
+database connection with an 8-second PostgreSQL statement timeout. Their
+tenant-universe lateral reads are backed by composite organization/product and
+latest-observation indexes. History providers receive one deduplicated batch of
+at most 100 ASINs; normalized points are persisted in batches of at most 1,000
+with four-product concurrency rather than one insert request per point.
+
+Retryable history runs are re-armed by a minute scheduler through
+attempt-specific transactional outbox events. BullMQ priority classes keep
+scheduled refreshes below interactive ingestion, calculation, and exports.
+Provider cache freshness/stale/expiry, request leases, and rate budgets remain
+the provider-call control plane.
+
+Time-series retention is an oldest-first, organization-scoped batch of at most
+1,000 points. The worker rechecks each series' `retentionDays` inside the delete
+transaction and defaults to report-only. No automatic downsampling,
+partitioning, materialized view, or new database is introduced without the
+measurement triggers in [Performance](PERFORMANCE.md).
+
 `OpportunityAssessment` and its ordered reasons are immutable derived records.
 They store a calculation version, `calculated_at`, and explicit input observation
 references. They cannot update or replace the raw observation envelope. The

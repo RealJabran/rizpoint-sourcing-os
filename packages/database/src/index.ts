@@ -5,6 +5,7 @@ export * from "./repositories/research.js";
 export * from "./repositories/provider-runtime.js";
 export * from "./repositories/history-refresh.js";
 export * from "./repositories/history-analytics.js";
+export * from "./repositories/research-retention.js";
 export * from "./repositories/product-explorer.js";
 export * from "./repositories/category-intelligence.js";
 export * from "./repositories/opportunity-finder.js";
@@ -34,6 +35,7 @@ export * from "./repositories/project-hub.js";
 export * from "./research-copilot.js";
 export * from "./alert-evaluator.js";
 export * from "./marketplace-registry.js";
+export * from "./research-performance.js";
 export {
   DEFAULT_PORTFOLIO_STRESS_ASSUMPTIONS,
   PORTFOLIO_OPTIMIZER_VERSION,

@@ -4,7 +4,11 @@ import {
   recoverPublishedOutboxEvents,
   resetOutboxEvent,
 } from "@rizpoint/database";
-import { mockScanQueueJobId, type UploadJobKind } from "./job-policy.js";
+import {
+  mockScanQueueJobId,
+  queuePriorityForKind,
+  type UploadJobKind,
+} from "./job-policy.js";
 import { mockScanQueue } from "./queue.js";
 import { outboxPublished, outboxReconciled } from "./observability.js";
 
@@ -39,6 +43,7 @@ export async function dispatchOutboxOnce(): Promise<number> {
               ),
         attempts: 3,
         backoff: { type: "exponential", delay: 1_000, jitter: 0.25 },
+        priority: queuePriorityForKind(payload.kind ?? "MOCK"),
         ...(Number.isFinite(notBefore) && notBefore > Date.now()
           ? { delay: notBefore - Date.now() }
           : {}),

@@ -163,7 +163,10 @@ text columns. Money and money-derived ratios use the decimal column; identifier
 values remain strings. Points are append-only per series, source observation,
 and metric timestamp. The default retention is 730 days, with a btree on
 organization/series/time and a BRIN index on time. Provider license/rights may
-shorten retention. Partitioning is deferred until measured volume justifies it.
+shorten retention. Writes use idempotency-checked 1,000-point batches; retention
+selects and transactionally rechecks at most 1,000 oldest expired points per
+run. Automatic downsampling is disabled. Partitioning is deferred until the
+measured thresholds in `docs/PERFORMANCE.md` justify it.
 
 Opportunity scores and reason weights are `NUMERIC(12,4)`. Every assessment
 stores `calculation_version`, `input_observation_references`, and

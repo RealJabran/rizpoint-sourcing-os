@@ -16,6 +16,60 @@ export type QueueHistoryRefreshInput = {
   historyDays?: number;
 };
 
+/** Re-arms only due retryable history runs. The attempt-specific outbox key,
+ * row-state predicate, and existing provider request lease make concurrent
+ * scheduler ticks safe and idempotent. */
+export async function requeueDueHistoryRefreshRuns(
+  now = new Date(),
+  limit = 25,
+) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+    throw new Error("HISTORY_RETRY_BATCH_LIMIT_INVALID");
+  const due = await db.historyRefreshRun.findMany({
+    where: { status: "FAILED_RETRYABLE", retryAt: { lte: now } },
+    select: {
+      id: true,
+      organizationId: true,
+      scanJobId: true,
+      attemptCount: true,
+    },
+    orderBy: [{ retryAt: "asc" }, { id: "asc" }],
+    take: limit,
+  });
+  let queued = 0;
+  for (const run of due) {
+    const claimed = await db.$transaction(async (transaction) => {
+      const updated = await transaction.historyRefreshRun.updateMany({
+        where: {
+          id: run.id,
+          organizationId: run.organizationId,
+          status: "FAILED_RETRYABLE",
+          retryAt: { lte: now },
+        },
+        data: { status: "PENDING", retryAt: null },
+      });
+      if (!updated.count) return false;
+      const nextAttempt = run.attemptCount + 1;
+      await transaction.outboxEvent.create({
+        data: {
+          organizationId: run.organizationId,
+          scanJobId: run.scanJobId,
+          eventType: `scan.history.retry.${run.id}.${nextAttempt}`,
+          payload: {
+            scanJobId: run.scanJobId,
+            runId: run.id,
+            runAttempt: nextAttempt,
+            kind: "HISTORY_REFRESH",
+          },
+        },
+      });
+      return true;
+    });
+    if (claimed) queued += 1;
+  }
+  return queued;
+}
+
 /** Creates one durable, bounded refresh run. ASINs must be products already
  * accepted in the caller's scan, preventing cross-tenant arbitrary lookups. */
 export async function queueHistoryRefresh(input: QueueHistoryRefreshInput) {

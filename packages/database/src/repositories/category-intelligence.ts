@@ -1,6 +1,6 @@
 import { Decimal } from "decimal.js";
 import { Prisma } from "../generated/prisma/client.js";
-import { db } from "../client.js";
+import { withInteractiveResearchQuery } from "../research-performance.js";
 
 export const CATEGORY_PAGE_LIMIT = 100;
 export const CATEGORY_ANALYSIS_WINDOW_LIMIT = 1000;
@@ -253,14 +253,17 @@ export async function listCategoryIntelligence(input: {
   const marketplace = input.marketplaceId
     ? Prisma.sql`WHERE "marketplaceId" = ${input.marketplaceId}`
     : Prisma.empty;
-  const [rows, total] = await Promise.all([
-    db.$queryRaw<CategorySummaryRow[]>(
-      Prisma.sql`${base} SELECT category, "marketplaceId", count(*)::bigint AS "productCount" FROM category_data ${marketplace} GROUP BY category, "marketplaceId" ORDER BY "productCount" DESC, category ASC LIMIT ${limit} OFFSET ${input.offset}`,
-    ),
-    db.$queryRaw<Array<{ count: bigint }>>(
-      Prisma.sql`${base} SELECT count(*)::bigint AS count FROM (SELECT DISTINCT category, "marketplaceId" FROM category_data ${marketplace}) categories`,
-    ),
-  ]);
+  const [rows, total] = await withInteractiveResearchQuery(
+    async (transaction) =>
+      Promise.all([
+        transaction.$queryRaw<CategorySummaryRow[]>(
+          Prisma.sql`${base} SELECT category, "marketplaceId", count(*)::bigint AS "productCount" FROM category_data ${marketplace} GROUP BY category, "marketplaceId" ORDER BY "productCount" DESC, category ASC LIMIT ${limit} OFFSET ${input.offset}`,
+        ),
+        transaction.$queryRaw<Array<{ count: bigint }>>(
+          Prisma.sql`${base} SELECT count(*)::bigint AS count FROM (SELECT DISTINCT category, "marketplaceId" FROM category_data ${marketplace}) categories`,
+        ),
+      ]),
+  );
   return {
     total: Number(total[0]?.count ?? 0),
     generatedAt: new Date().toISOString(),
@@ -288,17 +291,20 @@ export async function getCategoryIntelligence(input: {
   const where = input.marketplaceId
     ? Prisma.sql`WHERE category = ${category} AND "marketplaceId" = ${input.marketplaceId}`
     : Prisma.sql`WHERE category = ${category}`;
-  const [count, rows, analysisRows] = await Promise.all([
-    db.$queryRaw<Array<{ count: bigint }>>(
-      Prisma.sql`${base} SELECT count(*)::bigint AS count FROM category_data ${where}`,
-    ),
-    db.$queryRaw<CategoryAggregateRow[]>(
-      Prisma.sql`${base} SELECT * FROM category_data ${where} ORDER BY title ASC, id ASC LIMIT ${limit} OFFSET ${input.offset}`,
-    ),
-    db.$queryRaw<CategoryAggregateRow[]>(
-      Prisma.sql`${base} SELECT * FROM category_data ${where} ORDER BY title ASC, id ASC LIMIT ${CATEGORY_ANALYSIS_WINDOW_LIMIT}`,
-    ),
-  ]);
+  const [count, rows, analysisRows] = await withInteractiveResearchQuery(
+    async (transaction) =>
+      Promise.all([
+        transaction.$queryRaw<Array<{ count: bigint }>>(
+          Prisma.sql`${base} SELECT count(*)::bigint AS count FROM category_data ${where}`,
+        ),
+        transaction.$queryRaw<CategoryAggregateRow[]>(
+          Prisma.sql`${base} SELECT * FROM category_data ${where} ORDER BY title ASC, id ASC LIMIT ${limit} OFFSET ${input.offset}`,
+        ),
+        transaction.$queryRaw<CategoryAggregateRow[]>(
+          Prisma.sql`${base} SELECT * FROM category_data ${where} ORDER BY title ASC, id ASC LIMIT ${CATEGORY_ANALYSIS_WINDOW_LIMIT}`,
+        ),
+      ]),
+  );
   const total = Number(count[0]?.count ?? 0);
   return {
     categoryReference: category,

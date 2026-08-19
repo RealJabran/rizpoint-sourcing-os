@@ -1,5 +1,6 @@
 import { Prisma } from "../generated/prisma/client.js";
 import { db } from "../client.js";
+import { withInteractiveResearchQuery } from "../research-performance.js";
 
 export const PRODUCT_EXPLORER_VIEW_SCHEMA_VERSION = 1;
 export const PRODUCT_EXPLORER_PAGE_LIMIT = 100;
@@ -233,14 +234,17 @@ export async function listProductExplorer(input: {
   const base = baseQuery(input.organizationId);
   const where = filterQuery(input.filters);
   const limit = Math.min(Math.max(input.limit, 1), PRODUCT_EXPLORER_PAGE_LIMIT);
-  const [rows, count] = await Promise.all([
-    db.$queryRaw<RawExplorerRow[]>(Prisma.sql`${base}
-      SELECT * FROM explorer_data ${where}
-      ORDER BY title ASC, id ASC
-      LIMIT ${limit} OFFSET ${input.offset}`),
-    db.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`${base}
-      SELECT count(*)::bigint AS count FROM explorer_data ${where}`),
-  ]);
+  const [rows, count] = await withInteractiveResearchQuery(
+    async (transaction) =>
+      Promise.all([
+        transaction.$queryRaw<RawExplorerRow[]>(Prisma.sql`${base}
+          SELECT * FROM explorer_data ${where}
+          ORDER BY title ASC, id ASC
+          LIMIT ${limit} OFFSET ${input.offset}`),
+        transaction.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`${base}
+          SELECT count(*)::bigint AS count FROM explorer_data ${where}`),
+      ]),
+  );
   return { total: Number(count[0]?.count ?? 0), rows: rows.map(project) };
 }
 

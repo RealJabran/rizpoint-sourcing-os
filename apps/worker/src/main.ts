@@ -1,5 +1,6 @@
 import { db } from "@rizpoint/database";
 import { evaluateDueAlertRules } from "@rizpoint/database";
+import { requeueDueHistoryRefreshRuns } from "@rizpoint/database";
 import { storageReady } from "@rizpoint/object-storage";
 import { createServer } from "node:http";
 import { dispatchOutboxOnce } from "./dispatcher.js";
@@ -24,6 +25,7 @@ function redactError(error: unknown): string {
 }
 
 let stopping = false;
+let scheduling = false;
 
 async function tick(): Promise<void> {
   if (stopping) return;
@@ -41,8 +43,30 @@ async function tick(): Promise<void> {
   }
 }
 
+async function scheduleDueResearchWork(): Promise<void> {
+  if (stopping || scheduling) return;
+  scheduling = true;
+  try {
+    const queued = await requeueDueHistoryRefreshRuns();
+    if (queued)
+      logger.info({ event: "history_retries_scheduled", jobCount: queued });
+  } catch (error) {
+    logger.error({
+      event: "history_retry_scheduler_failed",
+      message: redactError(error),
+    });
+  } finally {
+    scheduling = false;
+  }
+}
+
 const interval = setInterval(() => void tick(), 250);
 void tick();
+const researchScheduleInterval = setInterval(
+  () => void scheduleDueResearchWork(),
+  60_000,
+);
+void scheduleDueResearchWork();
 const retentionInterval = setInterval(
   () => {
     void runRetentionOnce().catch((error) => {
@@ -118,6 +142,7 @@ async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   clearInterval(interval);
+  clearInterval(researchScheduleInterval);
   clearInterval(retentionInterval);
   clearInterval(alertInterval);
   healthServer.close();

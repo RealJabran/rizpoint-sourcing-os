@@ -607,7 +607,12 @@ export async function getProviderCacheEntry(
 
 /** Raw evidence has a shorter provider-cache retention than its normalized
  * series. The caller deletes the private object before clearing this reference. */
-export async function listExpiredProviderEvidence(now = new Date()) {
+export async function listExpiredProviderEvidence(
+  now = new Date(),
+  limit = 250,
+) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1_000)
+    throw new Error("PROVIDER_RETENTION_BATCH_LIMIT_INVALID");
   return db.providerCacheEntry.findMany({
     where: {
       capability: "MARKET_HISTORY",
@@ -615,6 +620,8 @@ export async function listExpiredProviderEvidence(now = new Date()) {
       rawEvidenceReference: { not: null },
     },
     select: { id: true, rawEvidenceReference: true },
+    orderBy: { retainUntil: "asc" },
+    take: limit,
   });
 }
 

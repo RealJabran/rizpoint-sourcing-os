@@ -1168,6 +1168,7 @@ model ListingCandidate {
 
   @@unique([supplierRowId, catalogProductId, source])
   @@index([organizationId, supplierRowId])
+  @@index([organizationId, catalogProductId], map: "listing_candidates_org_product_idx")
   @@map("listing_candidates")
 }
 
@@ -1534,6 +1535,7 @@ model HistoryRefreshRun {
   @@unique([organizationId, idempotencyKey], map: "history_refresh_runs_org_idempotency_key")
   @@unique([id, organizationId], map: "history_refresh_runs_id_organization_id_key")
   @@index([organizationId, scanJobId, status, updatedAt], map: "history_refresh_runs_org_scan_status_updated_idx")
+  @@index([status, retryAt, id], map: "history_refresh_runs_due_retry_idx")
   @@map("history_refresh_runs")
 }
 
@@ -1559,6 +1561,7 @@ model HistoryRefreshItem {
   @@unique([historyRefreshRunId, asin], map: "history_refresh_items_run_asin_key")
   @@index([organizationId, status, updatedAt], map: "history_refresh_items_org_status_updated_idx")
   @@index([catalogProductId], map: "history_refresh_items_catalog_product_idx")
+  @@index([organizationId, catalogProductId], map: "history_refresh_items_org_product_idx")
   @@map("history_refresh_items")
 }
 
@@ -1621,6 +1624,7 @@ model ProviderObservation {
   @@index([metricType, amazonRetailPresence])
   @@index([metricType, completeness])
   @@index([metricType, restrictionState])
+  @@index([enrichmentItemId, metricType, observationStatus, observedAt], map: "provider_observations_item_metric_status_observed_idx")
   @@map("provider_observations")
 }
 
@@ -2248,6 +2252,7 @@ model ResearchProjectItem {
   @@unique([id, organizationId])
   @@unique([projectId, kind, subjectKey])
   @@index([organizationId, kind, updatedAt])
+  @@index([organizationId, kind, catalogProductId], map: "research_project_items_org_kind_product_idx")
   @@index([catalogProductId])
   @@index([marketDefinitionId])
   @@index([keywordId])
@@ -2431,6 +2436,7 @@ model MarketMember {
 
   @@unique([marketDefinitionId, catalogProductId, joinedAt])
   @@index([organizationId, marketDefinitionId, leftAt])
+  @@index([organizationId, leftAt, catalogProductId], map: "market_members_org_active_product_idx")
   @@index([catalogProductId])
   @@map("market_members")
 }
@@ -2535,6 +2541,7 @@ model ProductKeywordObservation {
   @@unique([observationId, organizationId])
   @@index([organizationId, keywordId, organicRank])
   @@index([catalogProductId])
+  @@index([organizationId, catalogProductId, keywordId], map: "product_keyword_observations_org_product_keyword_idx")
   @@map("product_keyword_observations")
 }
 
@@ -3111,6 +3118,7 @@ model HistoricalMetricSeries {
   @@unique([id, organizationId])
   @@unique([organizationId, marketplaceId, subjectType, subjectKey, metricKey, providerKey])
   @@index([organizationId, marketplaceId, subjectType, subjectKey])
+  @@index([organizationId, catalogProductId, metricKey], map: "historical_metric_series_org_product_metric_idx")
   @@index([catalogProductId])
   @@index([keywordId])
   @@index([marketDefinitionId])
@@ -3198,6 +3206,7 @@ model OpportunityAssessment {
   @@unique([id, organizationId])
   @@index([organizationId, projectId, calculatedAt])
   @@index([organizationId, recommendation, calculatedAt])
+  @@index([organizationId, catalogProductId, calculatedAt], map: "opportunity_assessments_org_product_calculated_idx")
   @@index([catalogProductId])
   @@index([marketDefinitionId])
   @@map("opportunity_assessments")

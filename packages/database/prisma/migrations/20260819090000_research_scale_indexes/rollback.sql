@@ -1,0 +1,9 @@
+DROP INDEX IF EXISTS "opportunity_assessments_org_product_calculated_idx";
+DROP INDEX IF EXISTS "historical_metric_series_org_product_metric_idx";
+DROP INDEX IF EXISTS "product_keyword_observations_org_product_keyword_idx";
+DROP INDEX IF EXISTS "market_members_org_active_product_idx";
+DROP INDEX IF EXISTS "research_project_items_org_kind_product_idx";
+DROP INDEX IF EXISTS "provider_observations_item_metric_status_observed_idx";
+DROP INDEX IF EXISTS "history_refresh_items_org_product_idx";
+DROP INDEX IF EXISTS "history_refresh_runs_due_retry_idx";
+DROP INDEX IF EXISTS "listing_candidates_org_product_idx";
