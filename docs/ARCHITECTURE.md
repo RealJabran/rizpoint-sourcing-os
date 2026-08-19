@@ -218,6 +218,17 @@ handlers; Prompt 02 adds no live provider behavior.
 Sparse history is stored as `HistoricalMetricSeries` plus append-only points.
 Each point has exactly one typed value and references the observation that
 retrieved it. A btree supports tenant/series/time reads and a BRIN index supports
+
+### Research Project decision hub
+
+`ProjectEvidenceReference` stores a private, authorized pointer rather than
+duplicating attachment bytes. `ProjectAssumption` records a dated input and is
+append-only in practice. `DecisionMemo` and `DecisionMemoSource` are immutable:
+creation captures source IDs and compact evidence snapshots, while later data
+refreshes create new assessments rather than changing a prior go/no-go memo.
+Project comparisons are tenant-scoped, limited to ten project members, and use
+only stored, labeled metrics; their deterministic explanations are not an
+opaque composite score.
 time-based retention scans. Series default to 730 days; provider rights may
 require a shorter period. Retention deletes expired points in bounded batches,
 never invents interpolation, and keeps PostgreSQL partition-ready. A separate

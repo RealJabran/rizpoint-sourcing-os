@@ -432,6 +432,14 @@ enum ResearchProjectStatus {
   ARCHIVED
 }
 
+/// A recorded decision is immutable; a later decision is a new memo rather
+/// than a rewrite of the evidence used for the earlier one.
+enum DecisionMemoOutcome {
+  GO
+  NO_GO
+  HOLD
+}
+
 enum ResearchItemKind {
   PRODUCT
   MARKET
@@ -798,6 +806,10 @@ model Organization {
   portfolioOptimizationRuns   PortfolioOptimizationRun[]
   portfolioOptimizationResults PortfolioOptimizationResult[]
   portfolioAllocations        PortfolioAllocation[]
+  projectEvidenceReferences   ProjectEvidenceReference[]
+  projectAssumptions          ProjectAssumption[]
+  decisionMemos               DecisionMemo[]
+  decisionMemoSources         DecisionMemoSource[]
 
   @@map("organizations")
 }
@@ -2170,6 +2182,9 @@ model ResearchProject {
   keywordRankTracks          KeywordRankTrack[]
   complianceRiskAssessments  ComplianceRiskAssessment[]
   portfolioOptimizationRuns  PortfolioOptimizationRun[]
+  evidenceReferences         ProjectEvidenceReference[]
+  assumptions                ProjectAssumption[]
+  decisionMemos              DecisionMemo[]
 
   @@unique([id, organizationId])
   @@index([organizationId, status, updatedAt])
@@ -2256,6 +2271,95 @@ model ResearchNote {
   @@index([organizationId, projectId, createdAt])
   @@index([projectItemId])
   @@map("research_notes")
+}
+
+/// A durable pointer to authorized evidence. Files stay in their existing
+/// private storage boundary; this record deliberately stores no file payload.
+model ProjectEvidenceReference {
+  id                String   @id @default(cuid())
+  organizationId    String   @map("organization_id")
+  projectId         String   @map("project_id")
+  label             String
+  evidenceType      String   @map("evidence_type")
+  sourceReference   String   @map("source_reference")
+  sourceDescription String?  @map("source_description")
+  observedAt        DateTime? @map("observed_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject  @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  memoSources  DecisionMemoSource[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, projectId, createdAt])
+  @@map("project_evidence_references")
+}
+
+/// Explicit, dated assumptions used by a project. Superseding an assumption
+/// creates a new record so historical decision snapshots remain replayable.
+model ProjectAssumption {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  projectId       String   @map("project_id")
+  label           String
+  value           String
+  sourceReference String?  @map("source_reference")
+  assumedAt       DateTime @map("assumed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([id, organizationId])
+  @@index([organizationId, projectId, assumedAt])
+  @@map("project_assumptions")
+}
+
+/// Immutable launch/research decision snapshot. `sections` and
+/// `sourceSnapshot` are written once at creation and deliberately have no
+/// update workflow.
+model DecisionMemo {
+  id             String              @id @default(cuid())
+  organizationId String              @map("organization_id")
+  projectId      String              @map("project_id")
+  title          String
+  thesis         String
+  outcome        DecisionMemoOutcome
+  decisionOwner  String              @map("decision_owner")
+  decidedAt      DateTime            @map("decided_at")
+  sections       Json
+  sourceSnapshot Json                @map("source_snapshot")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project      ResearchProject      @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  sources      DecisionMemoSource[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, projectId, decidedAt])
+  @@map("decision_memos")
+}
+
+/// Identifiers and compact snapshots of exactly the evidence linked when a
+/// memo was made. Original research can change without altering this record.
+model DecisionMemoSource {
+  id                  String   @id @default(cuid())
+  organizationId      String   @map("organization_id")
+  decisionMemoId      String   @map("decision_memo_id")
+  evidenceReferenceId String?  @map("evidence_reference_id")
+  sourceType          String   @map("source_type")
+  sourceId            String   @map("source_id")
+  snapshot            Json
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  decisionMemo      DecisionMemo              @relation(fields: [decisionMemoId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  evidenceReference ProjectEvidenceReference? @relation(fields: [evidenceReferenceId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  @@unique([decisionMemoId, sourceType, sourceId])
+  @@index([organizationId, decisionMemoId])
+  @@index([organizationId, evidenceReferenceId])
+  @@map("decision_memo_sources")
 }
 
 model ProductWatch {

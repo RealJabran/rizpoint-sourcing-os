@@ -12,6 +12,11 @@ Research does not manufacture supplier rows and never replaces the wholesale
 workflow. Both modes share catalog identity, tenant boundaries, provenance,
 freshness, private evidence, and deterministic calculation rules.
 
+Research Projects are the decision hub: they retain candidate products and
+markets, saved evidence references, dated assumptions, linked research outputs,
+and immutable Decision Memos. A memo snapshots its source IDs when created, so
+later observations do not silently rewrite a historic go/no-go decision.
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

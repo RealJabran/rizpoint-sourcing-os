@@ -1,0 +1,533 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { Alert, Badge, Button, Card, TextInput } from "@/src/components/ui";
+import { PageHeader } from "@/src/components/page-header";
+
+type Project = {
+  id: string;
+  name: string;
+  marketplaceId: string;
+  status: string;
+  version: number;
+  projectTags: Array<{ tag: { id: string; label: string } }>;
+  items: Array<{
+    id: string;
+    kind: string;
+    displayLabel: string | null;
+    catalogProductId: string | null;
+    marketDefinitionId: string | null;
+    catalogProduct: {
+      id: string;
+      title: string;
+      asin: string | null;
+      brand: string | null;
+    } | null;
+    marketDefinition: { id: string; name: string } | null;
+    keyword: { phrase: string } | null;
+  }>;
+  notes: Array<{ id: string; body: string; updatedAt: string }>;
+  evidenceReferences: Array<{
+    id: string;
+    label: string;
+    evidenceType: string;
+    sourceReference: string;
+    observedAt: string | null;
+  }>;
+  assumptions: Array<{
+    id: string;
+    label: string;
+    value: string;
+    assumedAt: string;
+  }>;
+  decisionMemos: Array<{
+    id: string;
+    title: string;
+    thesis: string;
+    outcome: string;
+    decisionOwner: string;
+    decidedAt: string;
+    sourceSnapshot: { evidenceIds?: string[]; assessmentIds?: string[] };
+    sources: Array<{ id: string; sourceType: string; sourceId: string }>;
+  }>;
+  productFacts: unknown[];
+  listingDrafts: unknown[];
+  launchPlans: unknown[];
+  privateLabelQuoteScenarios: unknown[];
+  productWatches: unknown[];
+  marketDefinitions: unknown[];
+  assessments: unknown[];
+  complianceRiskAssessments: unknown[];
+  portfolioOptimizationRuns: unknown[];
+};
+type Comparison = {
+  candidates: Array<{
+    id: string;
+    label: string;
+    asin?: string | null;
+    brand?: string | null;
+    opportunityScore: string | null;
+    unitsLow?: string | null;
+    unitsHigh?: string | null;
+    confidencePercent: string | null;
+    complianceRisk?: string | null;
+  }>;
+  comparisons: Array<{ leftId: string; rightId: string; reasons: string[] }>;
+};
+
+async function request(url: string, init?: RequestInit) {
+  const response = await fetch(url, init);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "REQUEST_FAILED");
+  return payload;
+}
+function itemLabel(item: Project["items"][number]) {
+  return (
+    item.displayLabel ??
+    item.catalogProduct?.title ??
+    item.marketDefinition?.name ??
+    item.keyword?.phrase ??
+    item.kind
+  );
+}
+function countCard(label: string, value: number) {
+  return (
+    <Card key={label}>
+      <p className="eyebrow">{label}</p>
+      <strong className="metric-value">{value}</strong>
+    </Card>
+  );
+}
+
+export function ProjectHubWorkspace() {
+  const [projectId, setProjectId] = useState("");
+  const [project, setProject] = useState<Project | null>(null);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedNiches, setSelectedNiches] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setProject(
+        await request(
+          `/api/project-hub?projectId=${encodeURIComponent(projectId)}`,
+        ),
+      );
+      setComparison(null);
+      setSelectedProducts([]);
+      setSelectedNiches([]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "PROJECT_LOAD_FAILED");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>, action: string) => {
+    event.preventDefault();
+    if (!project) return;
+    const form = new FormData(event.currentTarget);
+    const payload: Record<string, unknown> = { action, projectId: project.id };
+    form.forEach((value, key) => {
+      if (key === "evidenceReferenceIds") return;
+      payload[key] = value;
+    });
+    if (action === "memo") {
+      payload.sections = {
+        evidence: String(form.get("evidence") ?? ""),
+        economics: String(form.get("economics") ?? ""),
+        demand: String(form.get("demand") ?? ""),
+        competition: String(form.get("competition") ?? ""),
+        risks: String(form.get("risks") ?? ""),
+        unresolvedQuestions: String(form.get("unresolvedQuestions") ?? ""),
+      };
+      payload.evidenceReferenceIds = form
+        .getAll("evidenceReferenceIds")
+        .map(String);
+    }
+    try {
+      setBusy(true);
+      await request("/api/project-hub", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await load();
+      event.currentTarget.reset();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "PROJECT_SAVE_FAILED");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggle = (
+    id: string,
+    set: (items: string[]) => void,
+    values: string[],
+  ) =>
+    set(
+      values.includes(id)
+        ? values.filter((item) => item !== id)
+        : values.length < 10
+          ? [...values, id]
+          : values,
+    );
+  const compare = async (kind: "products" | "niches", ids: string[]) => {
+    if (!project || !ids.length) return;
+    try {
+      setBusy(true);
+      setComparison(
+        await request(
+          `/api/project-hub?projectId=${encodeURIComponent(project.id)}&compare=${kind}&ids=${ids.map(encodeURIComponent).join(",")}`,
+        ),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "COMPARISON_FAILED");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Research workflow"
+        title="Research Projects"
+        description="Evidence-backed project boards, deterministic comparisons, and immutable decision snapshots."
+      />
+      <Card>
+        <div className="form-grid">
+          <TextInput
+            label="Research project ID"
+            value={projectId}
+            onChange={(event) => setProjectId(event.target.value)}
+            placeholder="Project ID from Product Explorer"
+          />
+          <Button
+            type="button"
+            onClick={load}
+            disabled={busy || !projectId.trim()}
+          >
+            {busy ? "Loading…" : "Open project"}
+          </Button>
+        </div>
+      </Card>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {!project ? (
+        <Card>
+          <h2>Open a project board</h2>
+          <p>
+            Projects keep candidates, evidence, assumptions, linked research
+            outputs, and historical decisions together. No project data is shown
+            until a tenant-scoped project ID is supplied.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <Card>
+            <div className="split-row">
+              <div>
+                <h2>{project.name}</h2>
+                <p>
+                  {project.marketplaceId} · version {project.version}
+                </p>
+              </div>
+              <Badge tone="neutral">{project.status}</Badge>
+            </div>
+            <p>
+              {project.projectTags.map((item) => item.tag.label).join(", ") ||
+                "No tags"}
+            </p>
+          </Card>
+          <div className="metric-grid">
+            {[
+              ["Candidates", project.items.length],
+              ["Evidence", project.evidenceReferences.length],
+              ["Assumptions", project.assumptions.length],
+              ["Memos", project.decisionMemos.length],
+              ["Watches", project.productWatches.length],
+              ["Launch plans", project.launchPlans.length],
+            ].map(([label, value]) => countCard(String(label), Number(value)))}
+          </div>
+          <div className="two-column">
+            <Card>
+              <h2>Candidate products</h2>
+              {project.items.filter((item) => item.kind === "PRODUCT")
+                .length ? (
+                project.items
+                  .filter((item) => item.kind === "PRODUCT")
+                  .map((item) => (
+                    <label key={item.id} className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.includes(
+                          item.catalogProductId ?? "",
+                        )}
+                        onChange={() =>
+                          item.catalogProductId &&
+                          toggle(
+                            item.catalogProductId,
+                            setSelectedProducts,
+                            selectedProducts,
+                          )
+                        }
+                      />{" "}
+                      <span>
+                        {itemLabel(item)}{" "}
+                        <small>
+                          {item.catalogProduct?.asin ?? "No ASIN"} ·{" "}
+                          {item.catalogProduct?.brand ?? "Brand unavailable"}
+                        </small>
+                      </span>
+                    </label>
+                  ))
+              ) : (
+                <p>No product candidates saved yet.</p>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!selectedProducts.length || busy}
+                onClick={() => compare("products", selectedProducts)}
+              >
+                Compare selected (max 10)
+              </Button>
+            </Card>
+            <Card>
+              <h2>Candidate niches</h2>
+              {project.items.filter((item) => item.kind === "MARKET").length ? (
+                project.items
+                  .filter((item) => item.kind === "MARKET")
+                  .map((item) => (
+                    <label key={item.id} className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={selectedNiches.includes(
+                          item.marketDefinitionId ?? "",
+                        )}
+                        onChange={() =>
+                          item.marketDefinitionId &&
+                          toggle(
+                            item.marketDefinitionId,
+                            setSelectedNiches,
+                            selectedNiches,
+                          )
+                        }
+                      />{" "}
+                      <span>{itemLabel(item)}</span>
+                    </label>
+                  ))
+              ) : (
+                <p>No niche/market candidates saved yet.</p>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!selectedNiches.length || busy}
+                onClick={() => compare("niches", selectedNiches)}
+              >
+                Compare selected (max 10)
+              </Button>
+            </Card>
+          </div>
+          {comparison ? (
+            <Card>
+              <h2>Normalized comparison</h2>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Candidate</th>
+                      <th>Opportunity</th>
+                      <th>Demand range</th>
+                      <th>Confidence</th>
+                      <th>Compliance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparison.candidates.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.label}</td>
+                        <td>{item.opportunityScore ?? "Unavailable"}</td>
+                        <td>
+                          {item.unitsLow && item.unitsHigh
+                            ? `${item.unitsLow}–${item.unitsHigh}`
+                            : "Unavailable"}
+                        </td>
+                        <td>{item.confidencePercent ?? "Unavailable"}</td>
+                        <td>{item.complianceRisk ?? "Unavailable"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <h3>Why one candidate is stronger</h3>
+              {comparison.comparisons.map((pair) => (
+                <p key={`${pair.leftId}-${pair.rightId}`}>
+                  {pair.reasons.join(" ")}
+                </p>
+              ))}
+            </Card>
+          ) : null}
+          <div className="two-column">
+            <Card>
+              <h2>Add evidence reference</h2>
+              <form
+                className="page-stack"
+                onSubmit={(event) => submit(event, "evidence")}
+              >
+                <TextInput name="label" label="Label" required />
+                <TextInput
+                  name="evidenceType"
+                  label="Type"
+                  placeholder="provider observation, attachment reference"
+                  required
+                />
+                <TextInput
+                  name="sourceReference"
+                  label="Authorized source/reference"
+                  required
+                />
+                <TextInput
+                  name="sourceDescription"
+                  label="Description (optional)"
+                />
+                <Button disabled={busy}>Save evidence</Button>
+              </form>
+              <ul>
+                {project.evidenceReferences.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.label}</strong> — {item.evidenceType}:{" "}
+                    {item.sourceReference}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+            <Card>
+              <h2>Record assumption</h2>
+              <form
+                className="page-stack"
+                onSubmit={(event) => submit(event, "assumption")}
+              >
+                <TextInput name="label" label="Assumption" required />
+                <TextInput name="value" label="Value" required />
+                <TextInput
+                  name="sourceReference"
+                  label="Source reference (optional)"
+                />
+                <Button disabled={busy}>Save assumption</Button>
+              </form>
+              <ul>
+                {project.assumptions.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.label}:</strong> {item.value}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </div>
+          <Card>
+            <h2>Decision memo</h2>
+            <p>
+              A memo stores its source IDs and compact snapshot at creation. It
+              is not overwritten when live research changes.
+            </p>
+            <form
+              className="page-stack"
+              onSubmit={(event) => submit(event, "memo")}
+            >
+              <div className="form-grid">
+                <TextInput name="title" label="Title" required />
+                <TextInput
+                  name="decisionOwner"
+                  label="Decision owner"
+                  required
+                />
+                <label>
+                  Decision
+                  <select
+                    className="rp-input"
+                    name="outcome"
+                    defaultValue="HOLD"
+                  >
+                    <option>GO</option>
+                    <option>NO_GO</option>
+                    <option>HOLD</option>
+                  </select>
+                </label>
+              </div>
+              <TextInput name="thesis" label="Thesis" required />
+              <textarea
+                className="rp-input"
+                name="evidence"
+                placeholder="Evidence"
+              />
+              <textarea
+                className="rp-input"
+                name="economics"
+                placeholder="Economics"
+              />
+              <textarea
+                className="rp-input"
+                name="demand"
+                placeholder="Demand"
+              />
+              <textarea
+                className="rp-input"
+                name="competition"
+                placeholder="Competition"
+              />
+              <textarea className="rp-input" name="risks" placeholder="Risks" />
+              <textarea
+                className="rp-input"
+                name="unresolvedQuestions"
+                placeholder="Unresolved questions"
+              />
+              <fieldset>
+                <legend>Evidence included in snapshot</legend>
+                {project.evidenceReferences.map((item) => (
+                  <label className="check-row" key={item.id}>
+                    <input
+                      type="checkbox"
+                      name="evidenceReferenceIds"
+                      value={item.id}
+                    />{" "}
+                    {item.label}
+                  </label>
+                ))}
+              </fieldset>
+              <Button disabled={busy}>Create immutable memo</Button>
+            </form>
+            {project.decisionMemos.map((memo) => (
+              <article key={memo.id} className="inset-card">
+                <div className="split-row">
+                  <strong>{memo.title}</strong>
+                  <Badge tone="neutral">{memo.outcome}</Badge>
+                </div>
+                <p>{memo.thesis}</p>
+                <small>
+                  {memo.decisionOwner} ·{" "}
+                  {new Date(memo.decidedAt).toLocaleString()} ·{" "}
+                  {memo.sources.length} stored source IDs
+                </small>
+              </article>
+            ))}
+          </Card>
+          <Card>
+            <h2>Linked research outputs</h2>
+            <p>
+              {project.productFacts.length} facts ·{" "}
+              {project.listingDrafts.length} listing drafts ·{" "}
+              {project.privateLabelQuoteScenarios.length} supplier quote
+              scenarios · {project.complianceRiskAssessments.length} compliance
+              checks · {project.assessments.length} opportunity assessments ·{" "}
+              {project.portfolioOptimizationRuns.length} portfolio runs ·{" "}
+              {project.notes.length} notes.
+            </p>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}

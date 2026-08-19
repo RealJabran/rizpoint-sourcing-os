@@ -1,0 +1,14 @@
+ALTER TABLE "decision_memo_sources" DROP CONSTRAINT IF EXISTS "decision_memo_sources_evidence_reference_id_organization_id_fkey";
+ALTER TABLE "decision_memo_sources" DROP CONSTRAINT IF EXISTS "decision_memo_sources_decision_memo_id_organization_id_fkey";
+ALTER TABLE "decision_memo_sources" DROP CONSTRAINT IF EXISTS "decision_memo_sources_organization_id_fkey";
+ALTER TABLE "decision_memos" DROP CONSTRAINT IF EXISTS "decision_memos_project_id_organization_id_fkey";
+ALTER TABLE "decision_memos" DROP CONSTRAINT IF EXISTS "decision_memos_organization_id_fkey";
+ALTER TABLE "project_assumptions" DROP CONSTRAINT IF EXISTS "project_assumptions_project_id_organization_id_fkey";
+ALTER TABLE "project_assumptions" DROP CONSTRAINT IF EXISTS "project_assumptions_organization_id_fkey";
+ALTER TABLE "project_evidence_references" DROP CONSTRAINT IF EXISTS "project_evidence_references_project_id_organization_id_fkey";
+ALTER TABLE "project_evidence_references" DROP CONSTRAINT IF EXISTS "project_evidence_references_organization_id_fkey";
+DROP TABLE IF EXISTS "decision_memo_sources";
+DROP TABLE IF EXISTS "decision_memos";
+DROP TABLE IF EXISTS "project_assumptions";
+DROP TABLE IF EXISTS "project_evidence_references";
+DROP TYPE IF EXISTS "DecisionMemoOutcome";

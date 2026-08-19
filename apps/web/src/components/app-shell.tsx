@@ -47,6 +47,7 @@ const navigation: NavigationItem[] = [
     icon: "opportunity",
   },
   { label: "Sales estimation", href: "/sales-estimation", icon: "demand" },
+  { label: "Research projects", href: "/research-projects", icon: "analysis" },
   { label: "Compliance risk", href: "/compliance-risk", icon: "settings" },
   {
     label: "Portfolio optimizer",

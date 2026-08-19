@@ -30,6 +30,7 @@ export * from "./repositories/private-label-profitability.js";
 export * from "./compliance-risk-policy.js";
 export * from "./repositories/compliance-risk.js";
 export * from "./repositories/portfolio-optimizer.js";
+export * from "./repositories/project-hub.js";
 export {
   DEFAULT_PORTFOLIO_STRESS_ASSUMPTIONS,
   PORTFOLIO_OPTIMIZER_VERSION,
