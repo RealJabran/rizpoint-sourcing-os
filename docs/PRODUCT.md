@@ -22,6 +22,10 @@ It extracts a marketplace and ASIN from the current Amazon URL, then asks the
 authorized RizPoint backend for any rich research metrics; it is never an
 Amazon HTML scraping or provider-credential surface.
 
+Research Copilot answers are bounded to cited internal evidence. Until an
+approved explanation-model provider is configured, it runs in deterministic
+retrieval mode and explicitly says when records or metrics are unavailable.
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

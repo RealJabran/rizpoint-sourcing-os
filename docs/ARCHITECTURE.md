@@ -229,6 +229,15 @@ refreshes create new assessments rather than changing a prior go/no-go memo.
 Project comparisons are tenant-scoped, limited to ten project members, and use
 only stored, labeled metrics; their deterministic explanations are not an
 opaque composite score.
+
+### Research Copilot boundary
+
+The Research Copilot is a read-only, tenant-scoped allowlist of retrieval
+operations. It cannot produce SQL, call mutations, expose raw provider
+payloads, or calculate financial outputs. Every returned fact carries the
+internal assessment/memo/assumption ID that supplied it; derived text and
+hypotheses are explicitly separated. Imported text is treated as untrusted and
+instruction-shaped content is redacted before operation selection.
 time-based retention scans. Series default to 730 days; provider rights may
 require a shorter period. Retention deletes expired points in bounded batches,
 never invents interpolation, and keeps PostgreSQL partition-ready. A separate
