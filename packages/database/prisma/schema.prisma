@@ -3377,6 +3377,7 @@ model AlertEvent {
   alertRuleId           String           @map("alert_rule_id")
   dedupeKey             String           @map("dedupe_key")
   status                AlertEventStatus @default(OPEN)
+  severity              String           @default("INFO")
   sourceObservationRefs Json             @map("source_observation_refs")
   observedAt            DateTime         @map("observed_at")
   triggeredAt           DateTime         @default(now()) @map("triggered_at")

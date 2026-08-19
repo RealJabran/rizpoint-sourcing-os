@@ -32,6 +32,7 @@ export * from "./repositories/compliance-risk.js";
 export * from "./repositories/portfolio-optimizer.js";
 export * from "./repositories/project-hub.js";
 export * from "./research-copilot.js";
+export * from "./alert-evaluator.js";
 export {
   DEFAULT_PORTFOLIO_STRESS_ASSUMPTIONS,
   PORTFOLIO_OPTIMIZER_VERSION,

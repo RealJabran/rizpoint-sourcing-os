@@ -1,0 +1,1 @@
+ALTER TABLE "alert_events" ADD COLUMN "severity" TEXT NOT NULL DEFAULT 'INFO';

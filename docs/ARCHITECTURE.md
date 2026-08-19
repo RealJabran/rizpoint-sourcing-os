@@ -238,6 +238,15 @@ payloads, or calculate financial outputs. Every returned fact carries the
 internal assessment/memo/assumption ID that supplied it; derived text and
 hypotheses are explicitly separated. Imported text is treated as untrusted and
 instruction-shaped content is redacted before operation selection.
+
+### Alerts and change detection
+
+Alert rules evaluate only a matching stored historical observation. Missing,
+stale, or unsupported provider values skip evaluation rather than becoming zero.
+Events preserve observed time, trigger inputs, source observation IDs, and a
+stable rule/observation/value dedupe key. The worker's five-minute evaluator
+also honors per-rule cooldowns; notification delivery is in-app only until an
+authorized delivery provider is configured.
 time-based retention scans. Series default to 730 days; provider rights may
 require a shorter period. Retention deletes expired points in bounded batches,
 never invents interpolation, and keeps PostgreSQL partition-ready. A separate

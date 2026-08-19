@@ -1,4 +1,5 @@
 import { db } from "@rizpoint/database";
+import { evaluateDueAlertRules } from "@rizpoint/database";
 import { storageReady } from "@rizpoint/object-storage";
 import { createServer } from "node:http";
 import { dispatchOutboxOnce } from "./dispatcher.js";
@@ -53,6 +54,17 @@ const retentionInterval = setInterval(
   },
   6 * 60 * 60_000,
 );
+const alertInterval = setInterval(
+  () =>
+    void evaluateDueAlertRules().catch((error) =>
+      logger.error({
+        event: "alert_evaluation_failed",
+        message: redactError(error),
+      }),
+    ),
+  5 * 60_000,
+);
+void evaluateDueAlertRules().catch(() => undefined);
 
 const healthServer = createServer(async (request, response) => {
   if (request.url === "/health") {
@@ -107,6 +119,7 @@ async function shutdown(signal: string): Promise<void> {
   stopping = true;
   clearInterval(interval);
   clearInterval(retentionInterval);
+  clearInterval(alertInterval);
   healthServer.close();
   logger.info({ event: "worker_shutdown", signal });
   await mockScanWorker.close();
