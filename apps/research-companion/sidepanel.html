@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>RizPoint</title>
+    <style>
+      body {
+        font: 14px system-ui;
+        margin: 16px;
+        max-width: 340px;
+      }
+      input,
+      button {
+        box-sizing: border-box;
+        width: 100%;
+        margin: 6px 0;
+        padding: 8px;
+      }
+      pre {
+        white-space: pre-wrap;
+        background: #f4f4f4;
+        padding: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>RizPoint</h1>
+    <p id="target">Reading current URL…</p>
+    <input
+      id="baseUrl"
+      placeholder="https://rizpoint.example"
+      aria-label="RizPoint backend URL"
+    /><input
+      id="token"
+      type="password"
+      placeholder="15-minute companion session token"
+      aria-label="Companion session token"
+    /><input
+      id="projectId"
+      placeholder="Project ID for save/watch"
+      aria-label="Research project ID"
+    /><button id="analyze">Analyze in RizPoint</button
+    ><button id="save">Save to Project</button
+    ><button id="watch">Add to Watchlist</button>
+    <pre id="result">
+Rich metrics are requested only from RizPoint backend APIs.</pre>
+    <script type="module" src="dist/sidepanel.js"></script>
+  </body>
+</html>

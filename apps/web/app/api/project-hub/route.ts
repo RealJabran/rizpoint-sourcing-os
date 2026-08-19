@@ -98,7 +98,9 @@ export async function POST(request: NextRequest) {
           evidenceType: text(body, "evidenceType"),
           sourceReference: text(body, "sourceReference"),
           sourceDescription: text(body, "sourceDescription"),
-          observedAt: text(body, "observedAt") || undefined,
+          ...(text(body, "observedAt")
+            ? { observedAt: text(body, "observedAt") }
+            : {}),
         }),
         { status: 201 },
       );
@@ -110,7 +112,9 @@ export async function POST(request: NextRequest) {
           label: text(body, "label"),
           value: text(body, "value"),
           sourceReference: text(body, "sourceReference"),
-          assumedAt: text(body, "assumedAt") || undefined,
+          ...(text(body, "assumedAt")
+            ? { assumedAt: text(body, "assumedAt") }
+            : {}),
         }),
         { status: 201 },
       );
@@ -126,7 +130,9 @@ export async function POST(request: NextRequest) {
           thesis: text(body, "thesis"),
           outcome: outcome as "GO" | "NO_GO" | "HOLD",
           decisionOwner: text(body, "decisionOwner"),
-          decidedAt: text(body, "decidedAt") || undefined,
+          ...(text(body, "decidedAt")
+            ? { decidedAt: text(body, "decidedAt") }
+            : {}),
           sections: sections(body.sections),
           evidenceReferenceIds: strings(body.evidenceReferenceIds),
         }),

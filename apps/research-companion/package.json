@@ -1,0 +1,20 @@
+{
+  "name": "@rizpoint/research-companion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/chrome": "0.0.300",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.63.0",
+    "vitest": "4.1.10"
+  }
+}

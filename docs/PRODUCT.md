@@ -17,6 +17,11 @@ markets, saved evidence references, dated assumptions, linked research outputs,
 and immutable Decision Memos. A memo snapshots its source IDs when created, so
 later observations do not silently rewrite a historic go/no-go decision.
 
+The optional Chrome/Chromium Research Companion is a URL-target handoff only.
+It extracts a marketplace and ASIN from the current Amazon URL, then asks the
+authorized RizPoint backend for any rich research metrics; it is never an
+Amazon HTML scraping or provider-credential surface.
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

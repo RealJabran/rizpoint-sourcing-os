@@ -82,6 +82,20 @@ controls and reports `RATE_BUDGET_NOT_CONFIGURED`; it never guesses token cost.
 
 ## Phase 7 private-production controls
 
+## Research Companion extension security review
+
+- The Manifest V3 companion requests only `activeTab`, `storage`, and
+  `sidePanel`, plus four explicit Amazon marketplace host patterns. It has no
+  `tabs`, wildcard-host, clipboard, identity, or provider permissions.
+- Its content script transmits URL-derived host/ASIN context only; it does not
+  read Amazon DOM, page text, cookies, search results, or sponsored placements.
+- The extension contains no provider, database, or signing secret. A RizPoint
+  web session mints a signed companion token valid for fifteen minutes; backend
+  enrichment verifies that token server-side and stays tenant-scoped.
+- Backend responses are limited to normalized stored evidence and nulls for
+  unavailable metrics. Offline, expired-token, and provider/backend failures
+  never cause a fallback scrape.
+
 - Private production validates the signed Auth.js session against the active owner membership and session epoch on every protected request. Demo mode is local-only; a production request rejects it before routing.
 - Production configuration is fail-closed for placeholders, weak session secrets, non-TLS database/Redis/storage endpoints, disabled malware scanning, missing private organization context, and missing storage encryption/versioning/lifecycle declarations.
 - Worker logs redact credential-shaped text and payload-bearing fields. Private production requires an HTTPS error-tracking collector and sends it only allowlisted IDs, release, event code, and redacted message. Metrics use IDs and counters only; supplier sheets, price rows, tokens, and raw provider payloads are never sent.

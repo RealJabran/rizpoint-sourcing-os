@@ -192,14 +192,13 @@ export function ProjectHubWorkspace() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Research workflow"
         title="Research Projects"
         description="Evidence-backed project boards, deterministic comparisons, and immutable decision snapshots."
       />
       <Card>
         <div className="form-grid">
           <TextInput
-            label="Research project ID"
+            aria-label="Research project ID"
             value={projectId}
             onChange={(event) => setProjectId(event.target.value)}
             placeholder="Project ID from Product Explorer"
@@ -213,7 +212,11 @@ export function ProjectHubWorkspace() {
           </Button>
         </div>
       </Card>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <Alert tone="danger" title="Project workspace error">
+          {error}
+        </Alert>
+      ) : null}
       {!project ? (
         <Card>
           <h2>Open a project board</h2>
@@ -377,21 +380,21 @@ export function ProjectHubWorkspace() {
                 className="page-stack"
                 onSubmit={(event) => submit(event, "evidence")}
               >
-                <TextInput name="label" label="Label" required />
+                <TextInput name="label" aria-label="Label" required />
                 <TextInput
                   name="evidenceType"
-                  label="Type"
+                  aria-label="Type"
                   placeholder="provider observation, attachment reference"
                   required
                 />
                 <TextInput
                   name="sourceReference"
-                  label="Authorized source/reference"
+                  aria-label="Authorized source/reference"
                   required
                 />
                 <TextInput
                   name="sourceDescription"
-                  label="Description (optional)"
+                  aria-label="Description (optional)"
                 />
                 <Button disabled={busy}>Save evidence</Button>
               </form>
@@ -410,11 +413,11 @@ export function ProjectHubWorkspace() {
                 className="page-stack"
                 onSubmit={(event) => submit(event, "assumption")}
               >
-                <TextInput name="label" label="Assumption" required />
-                <TextInput name="value" label="Value" required />
+                <TextInput name="label" aria-label="Assumption" required />
+                <TextInput name="value" aria-label="Value" required />
                 <TextInput
                   name="sourceReference"
-                  label="Source reference (optional)"
+                  aria-label="Source reference (optional)"
                 />
                 <Button disabled={busy}>Save assumption</Button>
               </form>
@@ -438,10 +441,10 @@ export function ProjectHubWorkspace() {
               onSubmit={(event) => submit(event, "memo")}
             >
               <div className="form-grid">
-                <TextInput name="title" label="Title" required />
+                <TextInput name="title" aria-label="Title" required />
                 <TextInput
                   name="decisionOwner"
-                  label="Decision owner"
+                  aria-label="Decision owner"
                   required
                 />
                 <label>
@@ -457,7 +460,7 @@ export function ProjectHubWorkspace() {
                   </select>
                 </label>
               </div>
-              <TextInput name="thesis" label="Thesis" required />
+              <TextInput name="thesis" aria-label="Thesis" required />
               <textarea
                 className="rp-input"
                 name="evidence"
