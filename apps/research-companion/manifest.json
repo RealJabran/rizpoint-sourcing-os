@@ -3,7 +3,7 @@
   "name": "RizPoint Research Companion",
   "version": "0.1.0",
   "description": "Send Amazon URL and ASIN targets to your authorized RizPoint backend.",
-  "permissions": ["storage", "activeTab", "sidePanel"],
+  "permissions": ["storage", "sidePanel"],
   "host_permissions": [
     "https://www.amazon.com/*",
     "https://www.amazon.co.uk/*",

@@ -1,6 +1,7 @@
 import {
   acknowledgeExpiredExportObject,
   acknowledgeExpiredProviderEvidence,
+  deleteExpiredApiRateLimitBuckets,
   deleteExpiredHistoricalMetricPoints,
   listExpiredHistoricalMetricPoints,
   listExpiredProviderEvidence,
@@ -15,6 +16,7 @@ export async function runRetentionOnce(now = new Date()): Promise<number> {
   const expired = await listExpiredExportObjects(now);
   const providerEvidence = await listExpiredProviderEvidence(now);
   const historicalPoints = await listExpiredHistoricalMetricPoints(now);
+  const apiRateLimitBucketCount = await deleteExpiredApiRateLimitBuckets(now);
   if (process.env.RIZPOINT_RETENTION_MODE !== "delete") {
     await recordExpiredExportRetentionReport(expired, now);
     logger.info({
@@ -22,8 +24,14 @@ export async function runRetentionOnce(now = new Date()): Promise<number> {
       exportObjectCount: expired.length,
       providerEvidenceCount: providerEvidence.length,
       historicalPointCount: historicalPoints.length,
+      apiRateLimitBucketCount,
     });
-    return expired.length + providerEvidence.length + historicalPoints.length;
+    return (
+      expired.length +
+      providerEvidence.length +
+      historicalPoints.length +
+      apiRateLimitBucketCount
+    );
   }
   for (const item of expired) {
     if (!item.objectKey) continue;
@@ -44,6 +52,12 @@ export async function runRetentionOnce(now = new Date()): Promise<number> {
     exportObjectCount: expired.length,
     providerEvidenceCount: providerEvidence.length,
     historicalPointCount,
+    apiRateLimitBucketCount,
   });
-  return expired.length + providerEvidence.length + historicalPointCount;
+  return (
+    expired.length +
+    providerEvidence.length +
+    historicalPointCount +
+    apiRateLimitBucketCount
+  );
 }

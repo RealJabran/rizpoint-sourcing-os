@@ -11,6 +11,7 @@ import {
   type PersistedOrderLine,
 } from "@rizpoint/order-engine";
 import { db } from "./client.js";
+import { syntheticFixtureDataRights } from "./repositories/provider-data-rights.js";
 
 export const PHASE_ZERO_ORGANIZATION_SLUG = "rizpoint-demo";
 export const PRIVATE_ORGANIZATION_SLUG =
@@ -1436,6 +1437,7 @@ async function ensureAmazonCapabilityRows(
           : null;
   const checkedAt =
     connection.lastValidatedAt ?? connection.lastSuccessAt ?? new Date();
+  const mockRights = mock ? syntheticFixtureDataRights(checkedAt) : null;
   const capabilities = mock
     ? MOCK_AMAZON_CAPABILITIES
     : LIVE_AMAZON_CAPABILITIES;
@@ -1480,6 +1482,18 @@ async function ensureAmazonCapabilityRows(
           retryAt: null,
           completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
           checkedAt,
+          ...(mockRights
+            ? {
+                dataUsageScope: mockRights.usageScope,
+                exportPolicy: mockRights.exportPolicy,
+                exportableFields: mockRights.exportableFields,
+                dataRetentionDays: mockRights.retentionDays ?? 730,
+                termsReference: mockRights.termsReference,
+                termsVersion: mockRights.termsVersion,
+                termsReviewedAt: mockRights.termsReviewedAt,
+                rightsEffectiveAt: mockRights.effectiveAt,
+              }
+            : {}),
           ...(state === "HEALTHY" || state === "AUTHORIZED"
             ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
             : {}),
@@ -1492,6 +1506,18 @@ async function ensureAmazonCapabilityRows(
           retryAt: null,
           completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
           checkedAt,
+          ...(mockRights
+            ? {
+                dataUsageScope: mockRights.usageScope,
+                exportPolicy: mockRights.exportPolicy,
+                exportableFields: mockRights.exportableFields,
+                dataRetentionDays: mockRights.retentionDays ?? 730,
+                termsReference: mockRights.termsReference,
+                termsVersion: mockRights.termsVersion,
+                termsReviewedAt: mockRights.termsReviewedAt,
+                rightsEffectiveAt: mockRights.effectiveAt,
+              }
+            : {}),
           ...(state === "HEALTHY" || state === "AUTHORIZED"
             ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
             : {}),
@@ -3981,6 +4007,19 @@ export async function queueExport(input: {
   idempotencyKey: string;
 }) {
   return db.$transaction(async (transaction) => {
+    const hasOnlySource =
+      input.kind === "ANALYSIS_VIEW"
+        ? Boolean(
+            input.scanJobId && !input.shortlistId && !input.purchaseOrderId,
+          )
+        : input.kind === "SHORTLIST"
+          ? Boolean(
+              input.shortlistId && !input.scanJobId && !input.purchaseOrderId,
+            )
+          : Boolean(
+              input.purchaseOrderId && !input.scanJobId && !input.shortlistId,
+            );
+    if (!hasOnlySource) throw new Error("EXPORT_SOURCE_INVALID");
     const sourceId =
       input.purchaseOrderId ?? input.shortlistId ?? input.scanJobId;
     if (!sourceId) throw new Error("EXPORT_SOURCE_REQUIRED");
@@ -3994,6 +4033,30 @@ export async function queueExport(input: {
       });
       if (!scan) throw new Error("ANALYSIS_EXPORT_SCAN_NOT_FOUND");
       sourceRevision = scan.attemptCount;
+    } else if (input.kind === "SHORTLIST") {
+      const shortlist = await transaction.shortlist.findFirst({
+        where: {
+          id: input.shortlistId!,
+          organizationId: input.organizationId,
+        },
+        select: { revision: true },
+      });
+      if (!shortlist) throw new Error("SHORTLIST_EXPORT_SOURCE_NOT_FOUND");
+      if (sourceRevision !== shortlist.revision)
+        throw new Error("EXPORT_SOURCE_STALE");
+    } else {
+      const order = await transaction.purchaseOrder.findFirst({
+        where: {
+          id: input.purchaseOrderId!,
+          organizationId: input.organizationId,
+        },
+        select: { revision: true, status: true },
+      });
+      if (!order) throw new Error("PURCHASE_ORDER_EXPORT_SOURCE_NOT_FOUND");
+      if (!["VALIDATED", "EXPORTED"].includes(order.status))
+        throw new Error("PURCHASE_ORDER_NOT_VALIDATED");
+      if (sourceRevision !== order.revision)
+        throw new Error("EXPORT_SOURCE_STALE");
     }
     if (sourceRevision === undefined)
       throw new Error("EXPORT_SOURCE_REVISION_REQUIRED");

@@ -13,6 +13,7 @@ vi.mock("@rizpoint/database", () => ({
   recordProviderRequestTelemetry: vi.fn(),
   reserveProviderBudget: vi.fn(),
   settleProviderBudgetReservation: vi.fn(),
+  syntheticFixtureDataRights: vi.fn(),
   upsertProviderEntitlement: vi.fn(),
 }));
 vi.mock("@rizpoint/object-storage", () => ({ putPrivateObject: vi.fn() }));

@@ -5,6 +5,7 @@ import {
   sanitizeCopilotQuestion,
 } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
+import { enforceApiRateLimit } from "@/src/api-rate-limit";
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   const denied = requirePrivateAccess(request);
@@ -25,10 +26,19 @@ export async function POST(request: NextRequest) {
   const projectId =
     typeof body?.projectId === "string" ? body.projectId : undefined;
   try {
+    const organization = await ensurePhaseZeroOrganization();
+    const limited = await enforceApiRateLimit({
+      request,
+      organizationId: organization.id,
+      scope: "research.copilot",
+      limit: 30,
+      windowSeconds: 60,
+    });
+    if (limited) return limited;
     return NextResponse.json({
       providerState: "NOT_CONFIGURED",
       answer: await retrieveCopilotAnswer({
-        organizationId: (await ensurePhaseZeroOrganization()).id,
+        organizationId: organization.id,
         question,
         ...(projectId ? { projectId } : {}),
       }),

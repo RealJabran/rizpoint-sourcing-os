@@ -581,7 +581,7 @@ export function createResearchRepository(
         });
         if (!market) throw new Error("MARKET_DEFINITION_NOT_FOUND");
       }
-      const series = await client.historicalMetricSeries.upsert({
+      let series = await client.historicalMetricSeries.upsert({
         where: {
           organizationId_marketplaceId_subjectType_subjectKey_metricKey_providerKey:
             {
@@ -614,10 +614,15 @@ export function createResearchRepository(
         series.keywordId !== (input.keywordId ?? null) ||
         series.marketDefinitionId !== (input.marketDefinitionId ?? null) ||
         series.unit !== input.unit ||
-        series.currency !== (input.currency ?? null) ||
-        series.retentionDays !== (input.retentionDays ?? 730)
+        series.currency !== (input.currency ?? null)
       )
         throw new Error("HISTORICAL_SERIES_IDEMPOTENCY_CONFLICT");
+      const requestedRetentionDays = input.retentionDays ?? 730;
+      if (series.retentionDays > requestedRetentionDays)
+        series = await client.historicalMetricSeries.update({
+          where: { id: series.id },
+          data: { retentionDays: requestedRetentionDays },
+        });
       return series;
     },
 

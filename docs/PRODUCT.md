@@ -39,6 +39,12 @@ provider calls. History refreshes use cached/coalesced provider batches,
 priority-aware background jobs, bounded persistence concurrency, durable retry
 scheduling, and explicit retention policy. See [Performance](PERFORMANCE.md).
 
+Provider access and provider redistribution are separate decisions. Capability
+entitlements now retain reviewed terms metadata, contractual retention,
+internal-use versus redistributable scope, and an effective field-level export
+policy. Unknown or expired rights fail closed; Product Explorer redacts blocked
+provider fields instead of treating internal display access as export consent.
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

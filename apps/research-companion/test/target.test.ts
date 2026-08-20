@@ -10,6 +10,6 @@ it("keeps extension permissions narrowly scoped", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("../manifest.json", import.meta.url), "utf8"),
   ) as { permissions: string[]; host_permissions: string[] };
-  expect(manifest.permissions).toEqual(["storage", "activeTab", "sidePanel"]);
+  expect(manifest.permissions).toEqual(["storage", "sidePanel"]);
   expect(manifest.host_permissions).not.toContain("*://*/*");
 });

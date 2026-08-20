@@ -15,6 +15,7 @@ import {
   recordProviderRequestTelemetry,
   reserveProviderBudget,
   settleProviderBudgetReservation,
+  syntheticFixtureDataRights,
   upsertProviderEntitlement,
 } from "@rizpoint/database";
 import { putPrivateObject } from "@rizpoint/object-storage";
@@ -105,6 +106,7 @@ async function persistProduct(input: {
   observedAt: Date;
   freshUntil: Date;
   rawEvidenceReference?: string;
+  retentionDays: number;
 }) {
   if (!input.item.catalogProductId)
     throw new Error("HISTORY_CATALOG_PRODUCT_MISSING");
@@ -141,7 +143,7 @@ async function persistProduct(input: {
       providerKey: input.providerKey,
       unit: series.unit,
       ...(series.currency ? { currency: series.currency } : {}),
-      retentionDays: 730,
+      retentionDays: input.retentionDays,
     });
     for (const window of batchWindows(
       series.points.length,
@@ -188,7 +190,7 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
   const staleUntil = new Date(
     freshUntil.getTime() + policy.staleWhileRevalidateSeconds * 1_000,
   );
-  const retainUntil = new Date(now.getTime() + policy.retainForSeconds * 1_000);
+  let retainUntil = new Date(now.getTime() + policy.retainForSeconds * 1_000);
   let bundle: Awaited<ReturnType<typeof createMarketHistoryProvider>>;
   try {
     bundle = await createMarketHistoryProvider({
@@ -214,7 +216,7 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
     });
     return;
   }
-  await upsertProviderEntitlement({
+  const capabilityState = await upsertProviderEntitlement({
     organizationId: run.organizationId,
     providerKey: bundle.providerKey,
     marketplaceId: run.marketplaceId,
@@ -223,7 +225,41 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
     state: "AUTHORIZED",
     completeness: "UNKNOWN",
     checkedAt: now,
+    ...(bundle.mode === "MOCK"
+      ? { dataRights: syntheticFixtureDataRights(now) }
+      : {}),
   });
+  const retentionDays = capabilityState.dataRights?.retentionDays;
+  if (!retentionDays) {
+    for (const item of run.items)
+      await completeHistoryRefreshItem({
+        organizationId: run.organizationId,
+        itemId: item.id,
+        status: "UNAVAILABLE",
+        errorCode: "DATA_RIGHTS_NOT_CONFIGURED",
+      });
+    await upsertProviderEntitlement({
+      organizationId: run.organizationId,
+      providerKey: bundle.providerKey,
+      marketplaceId: run.marketplaceId,
+      capability: "MARKET_HISTORY",
+      mode: bundle.mode,
+      state: "CONFIGURED",
+      reason: "DATA_RIGHTS_NOT_CONFIGURED",
+      completeness: "UNKNOWN",
+      checkedAt: new Date(),
+    });
+    await completeHistoryRefreshRun({
+      runId: run.id,
+      errorCode: "DATA_RIGHTS_NOT_CONFIGURED",
+    });
+    return;
+  }
+  const contractualRetainUntil = new Date(
+    now.getTime() + retentionDays * 24 * 60 * 60_000,
+  );
+  if (contractualRetainUntil < retainUntil)
+    retainUntil = contractualRetainUntil;
   const cacheKey = {
     organizationId: run.organizationId,
     providerKey: bundle.providerKey,
@@ -531,6 +567,7 @@ export async function processHistoryRefresh(runId: string): Promise<void> {
         requestHash,
         requestInputs,
         providerKey: bundle.providerKey,
+        retentionDays,
         observedAt: new Date(history.provenance.observedAt),
         freshUntil,
         ...(rawEvidenceReference ? { rawEvidenceReference } : {}),

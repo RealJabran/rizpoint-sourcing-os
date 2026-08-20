@@ -1,5 +1,12 @@
 # Security
 
+The expanded research-platform audit and ownership boundaries are documented in
+[SECURITY_AUDIT.md](SECURITY_AUDIT.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
+Data handling follows [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md), while
+provider redistribution policy and retention are defined in
+[PROVIDER_DATA_RIGHTS.md](PROVIDER_DATA_RIGHTS.md) and
+[PRIVACY_RETENTION.md](PRIVACY_RETENTION.md).
+
 ## Shared provider credentials and telemetry
 
 Provider secrets remain server-side. Generic licensed-provider credentials are
@@ -39,7 +46,10 @@ The browser is untrusted. Web routes enforce an organization context before quer
 - Replace the temporary private-access token with identity-aware, organization membership authorization and roles before any multi-user release.
 - Keep formula-injection export tests in CI. Textual export cells beginning with `=`, `+`, `-`, `@`, tab, carriage return, or newline are already escaped.
 - Provider refresh tokens are encrypted at rest with AES-256-GCM and versioned `PROVIDER_CREDENTIAL_KEY_V1`; this key is server/worker-only and must be supplied by the deployment secret manager. Browser APIs expose connection status only, never token material.
-- Add authentication, authorization tests, audit logging, retention/deletion controls, and operational incident procedures.
+- Add role-based administration and a formal self-service tenant deletion
+  workflow before any multi-user commercial release. Current private-owner
+  authentication, authorization tests, audit logging, bounded retention, and
+  incident procedures are implemented.
 
 ## Amazon SP-API private-application onboarding
 
@@ -84,14 +94,15 @@ controls and reports `RATE_BUDGET_NOT_CONFIGURED`; it never guesses token cost.
 
 ## Research Companion extension security review
 
-- The Manifest V3 companion requests only `activeTab`, `storage`, and
-  `sidePanel`, plus four explicit Amazon marketplace host patterns. It has no
+- The Manifest V3 companion requests only `storage` and `sidePanel`, plus four
+  explicit Amazon marketplace host patterns. It has no `activeTab`,
   `tabs`, wildcard-host, clipboard, identity, or provider permissions.
 - Its content script transmits URL-derived host/ASIN context only; it does not
   read Amazon DOM, page text, cookies, search results, or sponsored placements.
 - The extension contains no provider, database, or signing secret. A RizPoint
   web session mints a signed companion token valid for fifteen minutes; backend
-  enrichment verifies that token server-side and stays tenant-scoped.
+  enrichment verifies its audience/version/times server-side and stays
+  tenant-scoped. The extension keeps that token in session—not local—storage.
 - Backend responses are limited to normalized stored evidence and nulls for
   unavailable metrics. Offline, expired-token, and provider/backend failures
   never cause a fallback scrape.

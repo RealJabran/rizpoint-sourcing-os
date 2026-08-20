@@ -21,7 +21,7 @@
     "typecheck": "turbo run typecheck",
     "check:private-assets": "node scripts/check-private-assets.mjs",
     "check:production-hardening": "node scripts/check-production-hardening.mjs",
-    "verify": "pnpm check:private-assets && pnpm check:production-hardening && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "verify": "pnpm check:private-assets && pnpm check:production-hardening && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:private-assets",
     "db:generate": "pnpm --filter @rizpoint/database prisma:generate",
     "db:migrate": "pnpm --filter @rizpoint/database prisma:migrate",
     "sp-api:connect": "tsx scripts/sp-api-connect.ts"

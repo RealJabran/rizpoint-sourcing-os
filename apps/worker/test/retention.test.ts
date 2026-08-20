@@ -7,6 +7,7 @@ const listExpiredProviderEvidence = vi.fn();
 const acknowledgeExpiredProviderEvidence = vi.fn();
 const listExpiredHistoricalMetricPoints = vi.fn();
 const deleteExpiredHistoricalMetricPoints = vi.fn();
+const deleteExpiredApiRateLimitBuckets = vi.fn();
 const deletePrivateObject = vi.fn();
 
 vi.mock("@rizpoint/database", () => ({
@@ -17,6 +18,7 @@ vi.mock("@rizpoint/database", () => ({
   acknowledgeExpiredProviderEvidence,
   listExpiredHistoricalMetricPoints,
   deleteExpiredHistoricalMetricPoints,
+  deleteExpiredApiRateLimitBuckets,
 }));
 vi.mock("@rizpoint/object-storage", () => ({ deletePrivateObject }));
 
@@ -38,8 +40,9 @@ describe("export retention", () => {
     listExpiredHistoricalMetricPoints.mockResolvedValue([
       { id: "point_1", organizationId: "org_1" },
     ]);
+    deleteExpiredApiRateLimitBuckets.mockResolvedValue(3);
     const { runRetentionOnce } = await import("../src/retention.js");
-    await expect(runRetentionOnce(new Date())).resolves.toBe(2);
+    await expect(runRetentionOnce(new Date())).resolves.toBe(5);
     expect(recordExpiredExportRetentionReport).toHaveBeenCalledOnce();
     expect(deletePrivateObject).not.toHaveBeenCalled();
     expect(deleteExpiredHistoricalMetricPoints).not.toHaveBeenCalled();
@@ -59,6 +62,7 @@ describe("export retention", () => {
       { id: "point_1", organizationId: "org_1" },
     ]);
     deleteExpiredHistoricalMetricPoints.mockResolvedValue(1);
+    deleteExpiredApiRateLimitBuckets.mockResolvedValue(2);
     const { runRetentionOnce } = await import("../src/retention.js");
     await runRetentionOnce(new Date());
     expect(deletePrivateObject).toHaveBeenCalledWith("exports/org_1/a.csv");

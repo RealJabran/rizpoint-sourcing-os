@@ -22,6 +22,18 @@ revalidates expiry transactionally, and records organization-scoped deletion
 audit events. Automatic downsampling is disabled because raw normalized points
 are replay evidence.
 
+Live provider history cannot start until an owner records reviewed provider
+terms and contractual retention for that organization, marketplace, and
+capability. Rights default to internal-only and blocked export. Use the private
+`/api/providers/data-rights` owner endpoint only after contract review; policy
+changes are audit events. A shorter revised retention period may shorten an
+existing series but a later request cannot silently lengthen it. Provider cache
+and raw-evidence deadlines are also capped by the contractual period.
+
+Durable API rate-limit buckets contain a scope and SHA-256 principal hash, not
+the bearer/session value. Expired buckets are removed in bounded retention
+runs. Maintain an edge/WAF rate limit as a separate production control.
+
 ## Research scale verification
 
 Run `pnpm test:research-scale` against the local Compose PostgreSQL service for
@@ -29,6 +41,15 @@ the transaction-local 10k/100k/500k scaled benchmark. Set
 `RIZPOINT_SCALE_PROFILE=full` to exercise 100k/1M/5M rows during a dedicated
 capacity run. Compare results with `docs/PERFORMANCE.md`; do not change database
 technology from an unmeasured assumption.
+
+## Security release checks
+
+Run `pnpm check:private-assets` after building. It checks tracked/untracked
+private files, credential-shaped literals, and the generated web/extension
+browser output for server-only credential markers. Run
+`pnpm check:production-hardening` to enforce the Research Companion permission
+allowlist and existing container/deployment controls. See
+`docs/SECURITY_AUDIT.md` for the full audit mapping.
 
 ## Alerts
 

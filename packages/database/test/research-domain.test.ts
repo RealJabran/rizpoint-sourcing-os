@@ -104,6 +104,55 @@ describe("research domain foundation", () => {
     ).rejects.toThrow("HISTORICAL_POINT_IDEMPOTENCY_CONFLICT");
   });
 
+  it("can only shorten an existing provider retention period", async () => {
+    const update = vi.fn().mockResolvedValue({
+      id: "series-1",
+      catalogProductId: "product-1",
+      keywordId: null,
+      marketDefinitionId: null,
+      unit: "USD",
+      currency: "USD",
+      retentionDays: 90,
+    });
+    const repository = createResearchRepository({
+      catalogProduct: {
+        findUnique: vi.fn().mockResolvedValue({
+          marketplaceId: "ATVPDKIKX0DER",
+        }),
+      },
+      historicalMetricSeries: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "series-1",
+          catalogProductId: "product-1",
+          keywordId: null,
+          marketDefinitionId: null,
+          unit: "USD",
+          currency: "USD",
+          retentionDays: 730,
+        }),
+        update,
+      },
+    } as never);
+    await expect(
+      repository.createHistoricalMetricSeries({
+        organizationId: "org-a",
+        marketplaceId: "ATVPDKIKX0DER",
+        subjectType: "PRODUCT",
+        subjectKey: "B000000001",
+        catalogProductId: "product-1",
+        metricKey: "AMAZON_PRICE",
+        providerKey: "licensed-provider",
+        unit: "USD",
+        currency: "USD",
+        retentionDays: 90,
+      }),
+    ).resolves.toMatchObject({ retentionDays: 90 });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "series-1" },
+      data: { retentionDays: 90 },
+    });
+  });
+
   it("defines tenant, provenance, derived-lineage, and time-series policies in schema", async () => {
     const schema = await readFile(
       new URL("../prisma/schema.prisma", import.meta.url),

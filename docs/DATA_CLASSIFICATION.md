@@ -1,0 +1,21 @@
+# Data classification
+
+Last reviewed: 2026-08-20
+
+| Class                    | Examples                                                                                  | Browser/API treatment                                   | Storage/log treatment                                                                          | Export default                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Public                   | RizPoint UI copy, marketplace labels, documentation                                       | May be public                                           | Normal repository/log handling                                                                 | Allowed                                                               |
+| Tenant confidential      | Projects, notes, supplier identities, costs, assumptions, decisions, launch plans         | Authenticated tenant only                               | Organization-scoped database rows; identifiers only in logs                                    | Allowed to the tenant through an approved exporter                    |
+| Restricted personal      | User email, membership, minimally retained imported review identifiers                    | Minimum necessary display                               | Never include in provider payloads or routine logs; review text is redacted before persistence | Excluded unless an explicit privacy workflow authorizes it            |
+| Secret                   | Password hashes, session/signing secrets, SP-API/Keepa credentials, storage/database keys | Never returned to browser                               | Encrypted envelope or deployment secret manager; never logged                                  | Never                                                                 |
+| Private binary/evidence  | Supplier uploads, exports, raw provider responses, review imports                         | Short-lived tenant-authorized signed URL only           | Private encrypted object storage, tenant-prefixed key, checksum and deadline                   | Only normalized allowlisted output; raw evidence excluded             |
+| Provider internal-use    | Licensed metrics whose terms do not permit redistribution or whose rights are unknown     | Tenant display only when capability/entitlement permits | Provenance, rights metadata, observation time, and retention deadline required                 | Blocked                                                               |
+| Provider redistributable | Specifically licensed normalized fields                                                   | Tenant display with provider/source context             | Same as provider internal-use plus reviewed terms reference/version/effective date             | Only `ALLOW` or named `FIELD_ALLOWLIST` fields                        |
+| Derived sensitive        | Opportunity scores, modeled sales, financial outputs derived from provider observations   | Tenant only, with inputs/version/confidence             | Preserve source IDs and calculation version                                                    | Treat as blocked when its required provider inputs are not exportable |
+| Audit/security           | Workflow audit events, request hashes, rate-limit buckets, security findings              | Owner/admin surfaces only                               | Append-only where practical; principals stored as SHA-256 hashes                               | Not part of business exports                                          |
+
+Classification follows the strictest contributing input. Removing the source
+label or transforming a metric does not create redistribution rights. Mock and
+recorded test fixtures are classified separately and carry the explicit
+`rizpoint:synthetic-fixtures` rights record; they must never be presented as
+live provider data.

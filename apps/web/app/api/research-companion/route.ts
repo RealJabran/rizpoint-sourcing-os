@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, researchRepository } from "@rizpoint/database";
 import { verifyResearchCompanionSession } from "@/src/research-companion-session";
+import { enforceApiRateLimit } from "@/src/api-rate-limit";
 export const runtime = "nodejs";
 const marketplaces: Record<string, string> = {
   "amazon.com": "ATVPDKIKX0DER",
@@ -25,6 +26,14 @@ export async function POST(request: NextRequest) {
       { error: "COMPANION_SESSION_INVALID_OR_EXPIRED" },
       { status: 401 },
     );
+  const limited = await enforceApiRateLimit({
+    request,
+    organizationId: session.organizationId,
+    scope: "research.companion",
+    limit: 60,
+    windowSeconds: 60,
+  });
+  if (limited) return limited;
   const body = (await request.json().catch(() => null)) as Record<
     string,
     unknown
@@ -45,7 +54,31 @@ export async function POST(request: NextRequest) {
       ? body.marketplaceId
       : "ATVPDKIKX0DER");
   const product = await db.catalogProduct.findFirst({
-    where: { asin: targetAsin, ...(marketplaceId ? { marketplaceId } : {}) },
+    where: {
+      asin: targetAsin,
+      ...(marketplaceId ? { marketplaceId } : {}),
+      OR: [
+        {
+          listingCandidates: {
+            some: { organizationId: session.organizationId },
+          },
+        },
+        {
+          researchProjectItems: {
+            some: { organizationId: session.organizationId },
+          },
+        },
+        {
+          productWatches: { some: { organizationId: session.organizationId } },
+        },
+        { marketMembers: { some: { organizationId: session.organizationId } } },
+        {
+          historyRefreshItems: {
+            some: { organizationId: session.organizationId },
+          },
+        },
+      ],
+    },
     include: {
       salesEstimates: {
         where: { organizationId: session.organizationId },

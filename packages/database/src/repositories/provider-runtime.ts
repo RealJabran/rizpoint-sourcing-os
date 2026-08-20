@@ -4,6 +4,7 @@ import type {
   ProviderCapability,
   ProviderCapabilityState,
   ProviderCostEstimate,
+  ProviderDataRights,
   ProviderOperationalState,
   ProviderRuntimeMode,
   ProviderUnavailableReason,
@@ -59,6 +60,7 @@ function reasonFromCode(
     "UNSUPPORTED_BY_PROVIDER",
     "DATA_NOT_RETURNED",
     "RATE_BUDGET_NOT_CONFIGURED",
+    "DATA_RIGHTS_NOT_CONFIGURED",
     "REQUEST_ALREADY_SETTLED",
   ]);
   return reasonCode && allowed.has(reasonCode as ProviderUnavailableReason)
@@ -77,6 +79,15 @@ function capabilityStateDto(input: {
   retryAt: Date | null;
   reasonCode: string | null;
   completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+  dataUsageScope: "INTERNAL_ONLY" | "REDISTRIBUTABLE";
+  exportPolicy: "BLOCK" | "ALLOW" | "FIELD_ALLOWLIST";
+  exportableFields: string[];
+  dataRetentionDays: number | null;
+  termsReference: string | null;
+  termsVersion: string | null;
+  termsReviewedAt: Date | null;
+  rightsEffectiveAt: Date | null;
+  rightsExpiresAt: Date | null;
 }): ProviderCapabilityState {
   const reason = reasonFromCode(input.reasonCode);
   return {
@@ -90,7 +101,146 @@ function capabilityStateDto(input: {
     ...(input.retryAt ? { retryAt: input.retryAt.toISOString() } : {}),
     ...(reason ? { reason } : {}),
     completeness: input.completeness,
+    dataRights: {
+      usageScope: input.dataUsageScope,
+      exportPolicy: input.exportPolicy,
+      exportableFields: input.exportableFields,
+      ...(input.dataRetentionDays
+        ? { retentionDays: input.dataRetentionDays }
+        : {}),
+      ...(input.termsReference ? { termsReference: input.termsReference } : {}),
+      ...(input.termsVersion ? { termsVersion: input.termsVersion } : {}),
+      ...(input.termsReviewedAt
+        ? { termsReviewedAt: input.termsReviewedAt.toISOString() }
+        : {}),
+      ...(input.rightsEffectiveAt
+        ? { effectiveAt: input.rightsEffectiveAt.toISOString() }
+        : {}),
+      ...(input.rightsExpiresAt
+        ? { expiresAt: input.rightsExpiresAt.toISOString() }
+        : {}),
+    },
   };
+}
+
+export type ProviderDataRightsInput = Omit<
+  ProviderDataRights,
+  "termsReviewedAt" | "effectiveAt" | "expiresAt"
+> & {
+  termsReviewedAt: Date;
+  effectiveAt: Date;
+  expiresAt?: Date;
+};
+
+function providerDataRightsData(input: ProviderDataRightsInput) {
+  if (
+    input.retentionDays !== undefined &&
+    (input.retentionDays < 1 || input.retentionDays > 3650)
+  )
+    throw new Error("PROVIDER_RETENTION_DAYS_INVALID");
+  if (
+    input.exportPolicy !== "BLOCK" &&
+    (input.usageScope !== "REDISTRIBUTABLE" ||
+      !input.retentionDays ||
+      !input.termsReference?.trim() ||
+      !input.termsVersion?.trim())
+  )
+    throw new Error("PROVIDER_EXPORT_RIGHTS_INCOMPLETE");
+  if (
+    input.exportPolicy === "FIELD_ALLOWLIST" &&
+    input.exportableFields.length === 0
+  )
+    throw new Error("PROVIDER_EXPORT_ALLOWLIST_REQUIRED");
+  if (input.expiresAt && input.expiresAt <= input.effectiveAt)
+    throw new Error("PROVIDER_RIGHTS_WINDOW_INVALID");
+  return {
+    dataUsageScope: input.usageScope,
+    exportPolicy: input.exportPolicy,
+    exportableFields: [...new Set(input.exportableFields)].sort(),
+    dataRetentionDays: input.retentionDays ?? null,
+    termsReference: input.termsReference ?? null,
+    termsVersion: input.termsVersion ?? null,
+    termsReviewedAt: input.termsReviewedAt,
+    rightsEffectiveAt: input.effectiveAt,
+    rightsExpiresAt: input.expiresAt ?? null,
+  };
+}
+
+export async function updateProviderDataRights(input: {
+  organizationId: string;
+  providerKey: string;
+  marketplaceId: string;
+  capability: ProviderCapability;
+  dataRights: ProviderDataRightsInput;
+}) {
+  const data = providerDataRightsData(input.dataRights);
+  return db.$transaction(async (transaction) => {
+    const entitlement = await transaction.providerEntitlement.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        providerKey: input.providerKey,
+        marketplaceId: input.marketplaceId,
+        capability: input.capability,
+      },
+      select: { id: true },
+    });
+    if (!entitlement) throw new Error("PROVIDER_ENTITLEMENT_NOT_FOUND");
+    const updated = await transaction.providerEntitlement.update({
+      where: { id: entitlement.id },
+      data,
+    });
+    let shortenedSeriesCount = 0;
+    let shortenedCacheCount = 0;
+    if (data.dataRetentionDays) {
+      shortenedSeriesCount = (
+        await transaction.historicalMetricSeries.updateMany({
+          where: {
+            organizationId: input.organizationId,
+            marketplaceId: input.marketplaceId,
+            providerKey: input.providerKey,
+            retentionDays: { gt: data.dataRetentionDays },
+          },
+          data: { retentionDays: data.dataRetentionDays },
+        })
+      ).count;
+      shortenedCacheCount = await transaction.$executeRaw(Prisma.sql`
+        UPDATE provider_cache_entries
+        SET retain_until = LEAST(
+              retain_until,
+              observed_at + (${data.dataRetentionDays} * INTERVAL '1 day')
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE organization_id = ${input.organizationId}
+          AND entitlement_id = ${entitlement.id}
+          AND retain_until > observed_at + (${data.dataRetentionDays} * INTERVAL '1 day')
+      `);
+    }
+    await transaction.workflowAuditEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        entityType: "PROVIDER_ENTITLEMENT",
+        entityId: entitlement.id,
+        eventType: "DATA_RIGHTS_UPDATED",
+        payload: {
+          providerKey: input.providerKey,
+          marketplaceId: input.marketplaceId,
+          capability: input.capability,
+          usageScope: input.dataRights.usageScope,
+          exportPolicy: input.dataRights.exportPolicy,
+          exportableFields: data.exportableFields,
+          retentionDays: input.dataRights.retentionDays ?? null,
+          termsReference: input.dataRights.termsReference ?? null,
+          termsVersion: input.dataRights.termsVersion ?? null,
+          termsReviewedAt: input.dataRights.termsReviewedAt.toISOString(),
+          effectiveAt: input.dataRights.effectiveAt.toISOString(),
+          expiresAt: input.dataRights.expiresAt?.toISOString() ?? null,
+          shortenedSeriesCount,
+          shortenedCacheCount,
+        },
+      },
+    });
+    return capabilityStateDto(updated);
+  });
 }
 
 export type EncryptedProviderCredentialInput = {
@@ -194,6 +344,7 @@ export async function upsertProviderEntitlement(input: {
   checkedAt: Date;
   expiresAt?: Date;
   retryAt?: Date;
+  dataRights?: ProviderDataRightsInput;
 }) {
   if (input.providerConnectionId) {
     const connection = await db.providerConnection.findFirst({
@@ -205,6 +356,9 @@ export async function upsertProviderEntitlement(input: {
     });
     if (!connection) throw new Error("PROVIDER_CONNECTION_NOT_FOUND");
   }
+  const dataRights = input.dataRights
+    ? providerDataRightsData(input.dataRights)
+    : undefined;
   const entitlement = await db.providerEntitlement.upsert({
     where: {
       organizationId_providerKey_marketplaceId_capability: {
@@ -229,6 +383,7 @@ export async function upsertProviderEntitlement(input: {
       checkedAt: input.checkedAt,
       ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
       ...(input.retryAt ? { retryAt: input.retryAt } : {}),
+      ...(dataRights ?? {}),
       ...(["AUTHORIZED", "HEALTHY"].includes(input.state)
         ? { lastSuccessAt: input.checkedAt }
         : {}),
@@ -242,6 +397,7 @@ export async function upsertProviderEntitlement(input: {
       checkedAt: input.checkedAt,
       expiresAt: input.expiresAt ?? null,
       retryAt: input.retryAt ?? null,
+      ...(dataRights ?? {}),
       ...(["AUTHORIZED", "HEALTHY"].includes(input.state)
         ? { lastSuccessAt: input.checkedAt }
         : {}),

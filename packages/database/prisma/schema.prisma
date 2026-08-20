@@ -685,6 +685,17 @@ enum ProviderRuntimeMode {
   LIVE
 }
 
+enum ProviderDataUsageScope {
+  INTERNAL_ONLY
+  REDISTRIBUTABLE
+}
+
+enum ProviderExportPolicy {
+  BLOCK
+  ALLOW
+  FIELD_ALLOWLIST
+}
+
 enum ProviderOperationalState {
   NOT_CONFIGURED
   CONFIGURED
@@ -740,6 +751,7 @@ model Organization {
   providerCacheEntries        ProviderCacheEntry[]
   providerRequestLeases       ProviderRequestLease[]
   providerRequestAttempts     ProviderRequestAttempt[]
+  apiRateLimitBuckets         ApiRateLimitBucket[]
   enrichmentRuns              EnrichmentRun[]
   providerCallAttempts        ProviderCallAttempt[]
   financialPolicy             FinancialPolicy?
@@ -1295,6 +1307,15 @@ model ProviderEntitlement {
   expiresAt            DateTime?                       @map("expires_at")
   retryAt              DateTime?                       @map("retry_at")
   lastSuccessAt        DateTime?                       @map("last_success_at")
+  dataUsageScope       ProviderDataUsageScope          @default(INTERNAL_ONLY) @map("data_usage_scope")
+  exportPolicy         ProviderExportPolicy            @default(BLOCK) @map("export_policy")
+  exportableFields     String[]                        @default([]) @map("exportable_fields")
+  dataRetentionDays    Int?                            @map("data_retention_days")
+  termsReference       String?                         @map("terms_reference")
+  termsVersion         String?                         @map("terms_version")
+  termsReviewedAt      DateTime?                       @map("terms_reviewed_at")
+  rightsEffectiveAt    DateTime?                       @map("rights_effective_at")
+  rightsExpiresAt      DateTime?                       @map("rights_expires_at")
   createdAt            DateTime                        @default(now()) @map("created_at")
   updatedAt            DateTime                        @updatedAt @map("updated_at")
 
@@ -1309,6 +1330,24 @@ model ProviderEntitlement {
   @@index([organizationId, state, retryAt])
   @@index([providerConnectionId, organizationId], map: "provider_entitlements_connection_org_idx")
   @@map("provider_entitlements")
+}
+
+model ApiRateLimitBucket {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  scope          String
+  principalHash  String   @map("principal_hash")
+  windowStart    DateTime @map("window_start")
+  requestCount   Int      @default(0) @map("request_count")
+  expiresAt      DateTime @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, scope, principalHash, windowStart], map: "api_rate_limit_buckets_identity_key")
+  @@index([expiresAt], map: "api_rate_limit_buckets_expires_idx")
+  @@map("api_rate_limit_buckets")
 }
 
 model ProviderRateBudget {

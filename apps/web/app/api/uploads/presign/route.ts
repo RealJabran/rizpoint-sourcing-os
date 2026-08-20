@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createUpload, ensurePhaseZeroOrganization } from "@rizpoint/database";
 import { createUploadUrl } from "@rizpoint/object-storage";
 import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { enforceApiRateLimit } from "@/src/api-rate-limit";
 import {
   presignInputSchema,
   validateDeclaredMediaType,
@@ -27,6 +28,14 @@ export async function POST(request: NextRequest) {
     );
   }
   const organization = await ensurePhaseZeroOrganization();
+  const limited = await enforceApiRateLimit({
+    request,
+    organizationId: organization.id,
+    scope: "upload.presign",
+    limit: 30,
+    windowSeconds: 300,
+  });
+  if (limited) return limited;
   const idempotencyKey = request.headers.get("idempotency-key") ?? randomUUID();
   const created = await createUpload(
     organization.id,

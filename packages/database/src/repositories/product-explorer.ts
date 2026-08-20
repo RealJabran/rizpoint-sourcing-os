@@ -24,6 +24,7 @@ type RawExplorerRow = {
   brand: string | null;
   marketplaceId: string | null;
   category: string | null;
+  catalogProvider: string;
   sources: string;
   price: { toString(): string } | null;
   currency: string | null;
@@ -42,6 +43,8 @@ type RawExplorerRow = {
   historyCoveragePercent: { toString(): string } | null;
   freshnessState: string | null;
   observedAt: Date | null;
+  pricingProvider: string | null;
+  historyProvider: string | null;
 };
 
 function text(value: { toString(): string } | bigint | null): string | null {
@@ -92,6 +95,7 @@ function baseQuery(organizationId: string) {
         cp.brand,
         cp.marketplace_id AS "marketplaceId",
         cp.identity_projection -> 'productTypes' ->> 0 AS category,
+        cp.provider::text AS "catalogProvider",
         sr.sources,
         pricing.featured_price AS price,
         pricing.featured_currency AS currency,
@@ -109,7 +113,9 @@ function baseQuery(organizationId: string) {
         analytics.status::text AS "historyStatus",
         analytics.coverage_percent AS "historyCoveragePercent",
         pricing.freshness_state::text AS "freshnessState",
-        pricing.observed_at AS "observedAt"
+        pricing.observed_at AS "observedAt",
+        pricing.provider::text AS "pricingProvider",
+        analytics.provider_key AS "historyProvider"
       FROM source_rollup sr
       JOIN catalog_products cp ON cp.id = sr.product_id
       LEFT JOIN LATERAL (
@@ -197,6 +203,14 @@ function filterQuery(filters: ProductExplorerFilters): Prisma.Sql {
 }
 
 function project(row: RawExplorerRow) {
+  const providerKey = (provider: string | null) =>
+    provider === "AMAZON_SP_API"
+      ? "amazon-sp-api"
+      : provider === "MOCK_AMAZON"
+        ? "mock-amazon"
+        : provider === "MOCK_HISTORY"
+          ? "recorded-history"
+          : provider;
   return {
     id: row.id,
     asin: row.asin,
@@ -204,6 +218,7 @@ function project(row: RawExplorerRow) {
     brand: row.brand,
     marketplaceId: row.marketplaceId,
     category: row.category,
+    catalogProviderKey: providerKey(row.catalogProvider),
     sources: row.sources.split(","),
     price: text(row.price),
     currency: row.currency,
@@ -222,6 +237,8 @@ function project(row: RawExplorerRow) {
     historyCoveragePercent: text(row.historyCoveragePercent),
     freshnessState: row.freshnessState,
     observedAt: row.observedAt?.toISOString() ?? null,
+    pricingProviderKey: providerKey(row.pricingProvider),
+    historyProviderKey: row.historyProvider,
   };
 }
 

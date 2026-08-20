@@ -5,6 +5,7 @@ export type ExplorerRow = {
   brand: string | null;
   marketplaceId: string | null;
   category: string | null;
+  catalogProviderKey: string | null;
   sources: string[];
   price: string | null;
   currency: string | null;
@@ -23,6 +24,8 @@ export type ExplorerRow = {
   historyCoveragePercent: string | null;
   freshnessState: string | null;
   observedAt: string | null;
+  pricingProviderKey: string | null;
+  historyProviderKey: string | null;
 };
 
 export type Project = { id: string; name: string; marketplaceId: string };

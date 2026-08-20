@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   claimProviderRequestLease,
   completeProviderRequestLease,
+  consumeApiRateLimit,
   createOrUpdateProviderRateBudget,
   db,
   ensureMockAmazonConnection,
@@ -11,10 +12,12 @@ import {
   providerCapabilityAvailability,
   putProviderCacheEntry,
   recordProviderRequestTelemetry,
+  resolveProviderExportRights,
   reserveProviderBudget,
   settleProviderBudgetReservation,
   storeEncryptedProviderCredential,
   upsertProviderEntitlement,
+  updateProviderDataRights,
 } from "../../packages/database/src/index.js";
 
 const suffix = randomUUID();
@@ -61,6 +64,116 @@ try {
       },
     },
   });
+  await assert.rejects(
+    db.providerEntitlement.update({
+      where: { id: entitlement.id },
+      data: {
+        dataUsageScope: "REDISTRIBUTABLE",
+        exportPolicy: "ALLOW",
+        dataRetentionDays: 90,
+        rightsEffectiveAt: checkedAt,
+      },
+    }),
+  );
+  await updateProviderDataRights({
+    organizationId: organizationA.id,
+    providerKey: "licensed-fixture",
+    marketplaceId,
+    capability: "MARKET_HISTORY",
+    dataRights: {
+      usageScope: "REDISTRIBUTABLE",
+      exportPolicy: "FIELD_ALLOWLIST",
+      exportableFields: ["history.rating"],
+      retentionDays: 90,
+      termsReference: "fixture-contract:2026",
+      termsVersion: "2026-08",
+      termsReviewedAt: checkedAt,
+      effectiveAt: checkedAt,
+    },
+  });
+  const exportDecision = await resolveProviderExportRights({
+    organizationId: organizationA.id,
+    now: new Date("2026-08-16T08:01:00.000Z"),
+    requests: [
+      {
+        providerKey: "licensed-fixture",
+        marketplaceId,
+        capability: "MARKET_HISTORY",
+        fields: ["history.rating", "history.salesRank"],
+      },
+    ],
+  });
+  assert.deepEqual(exportDecision[0]?.allowedFields, ["history.rating"]);
+  assert.deepEqual(exportDecision[0]?.deniedFields, ["history.salesRank"]);
+  assert.equal(
+    (
+      await resolveProviderExportRights({
+        organizationId: organizationB.id,
+        requests: [
+          {
+            providerKey: "licensed-fixture",
+            marketplaceId,
+            capability: "MARKET_HISTORY",
+            fields: ["history.rating"],
+          },
+        ],
+      })
+    )[0]?.decision,
+    "RIGHTS_NOT_CONFIGURED",
+  );
+  await assert.rejects(
+    updateProviderDataRights({
+      organizationId: organizationB.id,
+      providerKey: "licensed-fixture",
+      marketplaceId,
+      capability: "MARKET_HISTORY",
+      dataRights: {
+        usageScope: "REDISTRIBUTABLE",
+        exportPolicy: "ALLOW",
+        exportableFields: [],
+        retentionDays: 90,
+        termsReference: "fixture-contract:2026",
+        termsVersion: "2026-08",
+        termsReviewedAt: checkedAt,
+        effectiveAt: checkedAt,
+      },
+    }),
+    /PROVIDER_ENTITLEMENT_NOT_FOUND/,
+  );
+  const rateInput = {
+    scope: "integration.security",
+    principal: "fixture-principal",
+    limit: 1,
+    windowSeconds: 60,
+    now: checkedAt,
+  };
+  assert.equal(
+    (
+      await consumeApiRateLimit({
+        ...rateInput,
+        organizationId: organizationA.id,
+      })
+    ).allowed,
+    true,
+  );
+  assert.equal(
+    (
+      await consumeApiRateLimit({
+        ...rateInput,
+        organizationId: organizationA.id,
+      })
+    ).allowed,
+    false,
+  );
+  assert.equal(
+    (
+      await consumeApiRateLimit({
+        ...rateInput,
+        organizationId: organizationB.id,
+      })
+    ).allowed,
+    true,
+  );
   const budget = await createOrUpdateProviderRateBudget({
     organizationId: organizationA.id,
     entitlementId: entitlement.id,
@@ -241,6 +354,33 @@ try {
     retainUntil: new Date("2026-09-16T07:00:00.000Z"),
     completeness: "COMPLETE",
   });
+  await updateProviderDataRights({
+    organizationId: organizationA.id,
+    providerKey: "licensed-fixture",
+    marketplaceId,
+    capability: "MARKET_HISTORY",
+    dataRights: {
+      usageScope: "REDISTRIBUTABLE",
+      exportPolicy: "FIELD_ALLOWLIST",
+      exportableFields: ["history.rating"],
+      retentionDays: 1,
+      termsReference: "fixture-contract:2026",
+      termsVersion: "2026-08-revised",
+      termsReviewedAt: checkedAt,
+      effectiveAt: checkedAt,
+    },
+  });
+  assert.equal(
+    (
+      await db.providerCacheEntry.findUniqueOrThrow({
+        where: {
+          organizationId_providerKey_marketplaceId_capability_operation_requestHash:
+            cacheKey,
+        },
+      })
+    ).retainUntil.toISOString(),
+    "2026-08-17T08:00:00.000Z",
+  );
   const cache = await getProviderCacheEntry({
     ...cacheKey,
     now: new Date("2026-08-16T09:30:00.000Z"),
@@ -364,10 +504,19 @@ try {
       cacheFreshness: "PASS",
       requestDeduplication: "PASS",
       telemetryRedaction: "PASS",
+      providerExportRights: "PASS",
+      crossTenantRights: "PASS",
+      tenantRateLimit: "PASS",
     }),
   );
 } finally {
   const organizationIds = [organizationA.id, organizationB.id];
+  await db.apiRateLimitBucket.deleteMany({
+    where: { organizationId: { in: organizationIds } },
+  });
+  await db.workflowAuditEvent.deleteMany({
+    where: { organizationId: { in: organizationIds } },
+  });
   await db.providerRequestAttempt.deleteMany({
     where: { organizationId: { in: organizationIds } },
   });

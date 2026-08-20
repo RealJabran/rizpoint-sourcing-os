@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import {
   db,
   listAnalysisResults,
+  resolveProviderExportRights,
   type AnalysisFilters,
   type AnalysisSort,
+  type ProviderExportFieldRequest,
 } from "@rizpoint/database";
 import {
   EXPORT_ENGINE_VERSION,
@@ -26,6 +28,86 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function providerKey(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  if (value === "AMAZON_SP_API") return "amazon-sp-api";
+  if (value === "MOCK_AMAZON") return "mock-amazon";
+  if (value === "MOCK_HISTORY") return "recorded-history";
+  return value;
+}
+
+function addRightsRequest(
+  requests: Map<string, ProviderExportFieldRequest>,
+  input: {
+    provider: unknown;
+    marketplaceId: unknown;
+    capability: ProviderExportFieldRequest["capability"];
+    fields: readonly string[];
+  },
+) {
+  const provider = providerKey(input.provider);
+  if (!provider) return;
+  if (typeof input.marketplaceId !== "string" || !input.marketplaceId)
+    throw new Error("PROVIDER_EXPORT_MARKETPLACE_MISSING");
+  const key = `${provider}\u0000${input.marketplaceId}\u0000${input.capability}`;
+  const previous = requests.get(key);
+  requests.set(key, {
+    providerKey: provider,
+    marketplaceId: input.marketplaceId,
+    capability: input.capability,
+    fields: [...new Set([...(previous?.fields ?? []), ...input.fields])],
+  });
+}
+
+async function assertProviderExportRights(
+  organizationId: string,
+  requests: Map<string, ProviderExportFieldRequest>,
+) {
+  if (!requests.size) return;
+  const decisions = await resolveProviderExportRights({
+    organizationId,
+    requests: [...requests.values()],
+  });
+  if (decisions.some((decision) => decision.deniedFields.length > 0))
+    throw new Error("PROVIDER_EXPORT_RIGHTS_BLOCKED");
+}
+
+function financialExportRightsRequests(
+  sources: readonly {
+    catalogProvider: unknown;
+    marketplaceId: unknown;
+    evidence: unknown;
+    scenarioType: string;
+  }[],
+) {
+  const requests = new Map<string, ProviderExportFieldRequest>();
+  for (const source of sources) {
+    addRightsRequest(requests, {
+      provider: source.catalogProvider,
+      marketplaceId: source.marketplaceId,
+      capability: "CATALOG",
+      fields: ["catalog.identity"],
+    });
+    const scenario = record(record(source.evidence).scenarios)[
+      source.scenarioType
+    ];
+    const scenarioEvidence = record(record(scenario).evidence);
+    addRightsRequest(requests, {
+      provider: record(scenarioEvidence.price).provider,
+      marketplaceId: source.marketplaceId,
+      capability: "COMPETITIVE_OFFERS",
+      fields: ["pricing.exportedFinancialInputs"],
+    });
+    addRightsRequest(requests, {
+      provider: record(scenarioEvidence.feeQuote).provider,
+      marketplaceId: source.marketplaceId,
+      capability: "FEES",
+      fields: ["fees.exportedFinancialInputs"],
+    });
+  }
+  return requests;
 }
 
 // The web API intentionally caps interactive windows at 200 rows. Export is a
@@ -430,6 +512,39 @@ async function analysisTable(job: {
       direction,
     });
     if (!page) throw new Error("ANALYSIS_EXPORT_SOURCE_NOT_FOUND");
+    const rightsRequests = new Map<string, ProviderExportFieldRequest>();
+    for (const result of page.rows) {
+      const catalog =
+        result.supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
+      addRightsRequest(rightsRequests, {
+        provider: catalog?.provider,
+        marketplaceId: catalog?.marketplaceId,
+        capability: "CATALOG",
+        fields: ["catalog.identity"],
+      });
+      addRightsRequest(rightsRequests, {
+        provider: result.offerIntelligence?.provider,
+        marketplaceId: result.offerIntelligence?.marketplaceId,
+        capability: "COMPETITIVE_OFFERS",
+        fields: [
+          "pricing.offerIntelligence",
+          "pricing.exportedFinancialInputs",
+        ],
+      });
+      addRightsRequest(rightsRequests, {
+        provider: result.feeEstimate?.provider,
+        marketplaceId: result.feeEstimate?.marketplaceId,
+        capability: "FEES",
+        fields: ["fees.estimate", "fees.exportedFinancialInputs"],
+      });
+      addRightsRequest(rightsRequests, {
+        provider: result.listingRestriction?.provider,
+        marketplaceId: result.listingRestriction?.marketplaceId,
+        capability: "RESTRICTIONS",
+        fields: ["restrictions.eligibility"],
+      });
+    }
+    await assertProviderExportRights(job.organizationId, rightsRequests);
     for (const result of page.rows) {
       const offer = result.supplierRow.normalizedOffer;
       const catalog =
@@ -532,6 +647,39 @@ export async function processExport(exportJobId: string): Promise<void> {
       throw new Error("EXPORT_SOURCE_STALE");
     if (order && order.status !== "VALIDATED" && order.status !== "EXPORTED")
       throw new Error("PURCHASE_ORDER_NOT_VALIDATED");
+    if (order)
+      await assertProviderExportRights(
+        job.organizationId,
+        financialExportRightsRequests(
+          order.lines.map((line) => {
+            const catalog =
+              line.supplierRow.matchDecision?.selectedCandidate?.catalogProduct;
+            return {
+              catalogProvider: catalog?.provider,
+              marketplaceId: catalog?.marketplaceId,
+              evidence: record(line.sourceSnapshot).evidence,
+              scenarioType: order.scenarioType,
+            };
+          }),
+        ),
+      );
+    if (shortlist)
+      await assertProviderExportRights(
+        job.organizationId,
+        financialExportRightsRequests(
+          shortlist.items.map((item) => {
+            const catalog =
+              item.profitResult.supplierRow.matchDecision?.selectedCandidate
+                ?.catalogProduct;
+            return {
+              catalogProvider: catalog?.provider,
+              marketplaceId: catalog?.marketplaceId,
+              evidence: item.profitResult.evidence,
+              scenarioType: item.profitResult.scenarioType,
+            };
+          }),
+        ),
+      );
     const table = analysis
       ? analysis
       : order

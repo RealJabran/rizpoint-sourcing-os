@@ -217,6 +217,34 @@ export type ProviderOperationalState = z.infer<
 export const providerRuntimeModeSchema = z.enum(["MOCK", "LIVE"]);
 export type ProviderRuntimeMode = z.infer<typeof providerRuntimeModeSchema>;
 
+export const providerDataUsageScopeSchema = z.enum([
+  "INTERNAL_ONLY",
+  "REDISTRIBUTABLE",
+]);
+export type ProviderDataUsageScope = z.infer<
+  typeof providerDataUsageScopeSchema
+>;
+
+export const providerExportPolicySchema = z.enum([
+  "BLOCK",
+  "ALLOW",
+  "FIELD_ALLOWLIST",
+]);
+export type ProviderExportPolicy = z.infer<typeof providerExportPolicySchema>;
+
+export const providerDataRightsSchema = z.object({
+  usageScope: providerDataUsageScopeSchema,
+  exportPolicy: providerExportPolicySchema,
+  exportableFields: z.array(z.string().min(1)),
+  retentionDays: z.number().int().positive().max(3650).optional(),
+  termsReference: z.string().min(1).optional(),
+  termsVersion: z.string().min(1).optional(),
+  termsReviewedAt: z.iso.datetime().optional(),
+  effectiveAt: z.iso.datetime().optional(),
+  expiresAt: z.iso.datetime().optional(),
+});
+export type ProviderDataRights = z.infer<typeof providerDataRightsSchema>;
+
 export const providerUnavailableReasonSchema = z.enum([
   "CREDENTIALS_MISSING",
   "CONNECTION_NOT_AUTHORIZED",
@@ -229,6 +257,7 @@ export const providerUnavailableReasonSchema = z.enum([
   "UNSUPPORTED_BY_PROVIDER",
   "DATA_NOT_RETURNED",
   "RATE_BUDGET_NOT_CONFIGURED",
+  "DATA_RIGHTS_NOT_CONFIGURED",
   "REQUEST_ALREADY_SETTLED",
 ]);
 export type ProviderUnavailableReason = z.infer<
@@ -246,6 +275,7 @@ export const providerCapabilityStateSchema = z.object({
   retryAt: z.iso.datetime().optional(),
   reason: providerUnavailableReasonSchema.optional(),
   completeness: z.enum(["COMPLETE", "PARTIAL", "UNKNOWN"]),
+  dataRights: providerDataRightsSchema.optional(),
 });
 export type ProviderCapabilityState = z.infer<
   typeof providerCapabilityStateSchema

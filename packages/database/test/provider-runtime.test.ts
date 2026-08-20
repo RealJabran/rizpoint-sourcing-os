@@ -15,6 +15,7 @@ describe("provider runtime schema", () => {
       "ProviderCacheEntry",
       "ProviderRequestLease",
       "ProviderRequestAttempt",
+      "ApiRateLimitBucket",
     ])
       expect(schema).toContain(`model ${model}`);
     for (const capability of [
@@ -37,6 +38,9 @@ describe("provider runtime schema", () => {
     expect(schema).toMatch(/estimatedCost\s+Decimal\?/);
     expect(schema).not.toContain("plaintextSecret");
     expect(schema).not.toContain("requestPayload");
+    expect(schema).toContain("dataUsageScope");
+    expect(schema).toContain("exportableFields");
+    expect(schema).toContain("dataRetentionDays");
     for (const deployedName of [
       "provider_entitlements_org_provider_market_capability_key",
       "provider_budget_reservations_org_budget_request_key",
@@ -75,5 +79,29 @@ describe("provider runtime schema", () => {
     expect(migration).not.toContain("DROP COLUMN");
     expect(rollback).toContain('DROP TABLE IF EXISTS "provider_entitlements"');
     expect(rollback).toContain('DROP TYPE IF EXISTS "ProviderCapability"');
+  });
+
+  it("ships reversible provider-rights and durable rate-limit controls", async () => {
+    const migration = await readFile(
+      new URL(
+        "../prisma/migrations/20260819100000_security_data_rights/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const rollback = await readFile(
+      new URL(
+        "../prisma/migrations/20260819100000_security_data_rights/rollback.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(migration).toContain("provider_entitlements_export_rights_check");
+    expect(migration).toContain("api_rate_limit_buckets_identity_key");
+    expect(migration).toContain(
+      'FOREIGN KEY ("organization_id") REFERENCES "organizations"',
+    );
+    expect(rollback).toContain('DROP TABLE IF EXISTS "api_rate_limit_buckets"');
+    expect(rollback).toContain('DROP TYPE IF EXISTS "ProviderExportPolicy"');
   });
 });

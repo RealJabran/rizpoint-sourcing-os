@@ -15,3 +15,24 @@ for (const [path, expected] of checks) {
       `Production hardening check failed: ${path} lacks ${expected}`,
     );
 }
+
+const companionManifest = JSON.parse(
+  await readFile("apps/research-companion/manifest.json", "utf8"),
+);
+const permissions = companionManifest.permissions ?? [];
+if (
+  permissions.some((permission) =>
+    ["tabs", "activeTab", "cookies", "identity", "clipboardRead"].includes(
+      permission,
+    ),
+  )
+)
+  throw new Error(
+    "Research Companion requests an unnecessary sensitive permission",
+  );
+if (
+  (companionManifest.host_permissions ?? []).some(
+    (host) => host === "<all_urls>" || host.includes("*://*"),
+  )
+)
+  throw new Error("Research Companion host permissions must remain explicit");

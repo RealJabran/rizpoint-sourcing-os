@@ -549,6 +549,7 @@ export async function listAnalysisResults(input: {
                         sizeText: true,
                         variation: true,
                         provider: true,
+                        marketplaceId: true,
                         observedAt: true,
                         freshnessState: true,
                         packCount: true,

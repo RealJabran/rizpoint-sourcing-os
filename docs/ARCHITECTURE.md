@@ -157,6 +157,20 @@ that reuses the existing enrichment run/checkpoints. `Retry-After` is honored
 exactly; retryable provider responses without a deadline use bounded jitter so
 concurrent workers do not resume in lockstep.
 
+Provider operational access and data redistribution are independent policies.
+`ProviderEntitlement` stores contractual retention, reviewed terms metadata,
+usage scope, effective/expiry dates, and export policy. Database constraints
+default unknown rights to internal-only/block and prevent permissive policies
+without the required metadata. Export policy is resolved by organization,
+provider, marketplace, capability, and normalized field. Live history
+collection fails closed without retention rights, and cache/series retention is
+capped by the reviewed provider period. Policy updates write audit events.
+
+High-risk web APIs use durable fixed-window buckets keyed by organization,
+operation, and a one-way principal hash. The buckets are an application guard;
+deployment edge controls remain responsible for traffic that should be rejected
+before it reaches the application.
+
 ## Runtime baselines
 
 Local Compose executes the optimized Next.js production server. Its unauthenticated fixture mode is not the private-production mode: it requires both explicit demo flags, loopback application/auth URLs, and host ports bound to loopback. Private production continues to reject demo mode and requires authenticated membership.

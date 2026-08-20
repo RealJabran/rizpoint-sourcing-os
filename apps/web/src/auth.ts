@@ -6,7 +6,7 @@ import {
 import { promisify } from "node:util";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
-import { db } from "@rizpoint/database";
+import { consumeApiRateLimit, db } from "@rizpoint/database";
 
 const scrypt = promisify(scryptCallback);
 
@@ -78,6 +78,14 @@ export const authOptions: NextAuthOptions = {
             process.env.RIZPOINT_PRIVATE_ORGANIZATION_SLUG
         )
           return null;
+        const rateLimit = await consumeApiRateLimit({
+          organizationId: user.memberships[0]!.organizationId,
+          scope: "auth.credentials",
+          principal: `email:${email}`,
+          limit: 10,
+          windowSeconds: 15 * 60,
+        });
+        if (!rateLimit.allowed) return null;
         if (!(await verifyPassword(password, user.passwordHash))) return null;
         return {
           id: user.id,
