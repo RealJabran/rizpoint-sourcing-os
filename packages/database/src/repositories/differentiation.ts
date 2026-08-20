@@ -1,5 +1,7 @@
 import { db } from "../client.js";
 
+export const DIFFERENTIATION_SUMMARY_VERSION = "differentiation-brief/v1";
+
 type BriefEvidence = {
   themeId: string;
   kind: string;

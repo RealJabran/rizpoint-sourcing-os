@@ -1,0 +1,116 @@
+{
+  "datasetVersion": "provider-contract-evals/v1",
+  "classification": "RECORDED_REDACTED_SYNTHETIC",
+  "marketplace": { "marketplaceId": "ATVPDKIKX0DER", "region": "NA" },
+  "keepa": {
+    "requestedAsins": ["B000000001", "B000000002"],
+    "completePayload": {
+      "products": [
+        {
+          "asin": "B000000001",
+          "trackingSince": 7889760,
+          "csv": [
+            [7889760, 1999],
+            [7889760, 1899],
+            [],
+            [7889760, 1234],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [7889760, 4]
+          ],
+          "rating": 450,
+          "reviewCount": 19,
+          "categoryTree": [{ "catId": 123, "name": "Synthetic Fixtures" }]
+        },
+        {
+          "asin": "B000000002",
+          "trackingSince": 7889760,
+          "csv": [
+            [7889760, 2499],
+            [7889760, 2399],
+            [],
+            [7889760, 4321],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [7889760, 2]
+          ],
+          "rating": 420,
+          "reviewCount": 8,
+          "categoryTree": [{ "catId": 123, "name": "Synthetic Fixtures" }]
+        }
+      ]
+    },
+    "partialPayload": { "products": [{ "asin": "B000000001", "csv": [] }] },
+    "driftedPayload": { "products": { "unexpected": true } }
+  },
+  "feeComponents": {
+    "complete": [
+      {
+        "FeeType": "ReferralFee",
+        "FeeAmount": { "Amount": "3.00", "CurrencyCode": "USD" },
+        "FinalFee": { "Amount": "3.25", "CurrencyCode": "USD" },
+        "TaxAmount": { "Amount": "0.25", "CurrencyCode": "USD" }
+      },
+      {
+        "FeeType": "FBAFees",
+        "FeeAmount": { "Amount": "2.00", "CurrencyCode": "USD" },
+        "FinalFee": { "Amount": "2.00", "CurrencyCode": "USD" }
+      }
+    ],
+    "drifted": [
+      {
+        "FeeType": "ReferralFee",
+        "FeeAmount": { "value": "3.00", "currency": "USD" },
+        "FinalFee": null
+      }
+    ]
+  },
+  "keywordContracts": {
+    "valid": {
+      "phrase": "dog bed",
+      "searchVolume": "1200",
+      "provenance": {
+        "provider": "recorded-keyword",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "freshnessState": "FRESH",
+        "marketplaceId": "ATVPDKIKX0DER"
+      },
+      "completeness": "COMPLETE"
+    },
+    "drifted": {
+      "phrase": "dog bed",
+      "searchVolume": 1200,
+      "provenance": {
+        "provider": "recorded-keyword",
+        "observedAt": "not-a-date",
+        "freshnessState": "FRESH"
+      },
+      "completeness": "COMPLETE"
+    }
+  },
+  "entitlement": {
+    "request": {
+      "providerKey": "unconfigured-provider",
+      "marketplaceId": "ATVPDKIKX0DER",
+      "capability": "KEYWORD_DISCOVERY",
+      "fields": ["keyword.searchVolume"]
+    },
+    "expectedDecision": "RIGHTS_NOT_CONFIGURED"
+  },
+  "throttle": {
+    "status": 429,
+    "retryAfter": "3",
+    "expectedCode": "THROTTLED",
+    "expectedRetryAfterMs": 3000
+  }
+}

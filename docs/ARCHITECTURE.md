@@ -171,6 +171,26 @@ operation, and a one-way principal hash. The buckets are an application guard;
 deployment edge controls remain responsible for traffic that should be rejected
 before it reaches the application.
 
+### Research accuracy release gate
+
+`@rizpoint/research-evals` is a test-only boundary over production calculation
+and normalization functions. Its checked-in JSON datasets pin the formula
+version and selected exact outputs for every research metric family. The
+benchmark does not copy formulas: it supplies synthetic/redacted inputs to the
+same functions used by runtime modules. Reverse-ASIN latest-observation gap math,
+rank trend/share-of-voice math, review clustering, keyword normalization,
+category aggregation, compliance screening, and differentiation summaries now
+publish explicit versions alongside the existing history, opportunity, sales,
+profit, and portfolio versions.
+
+AI evaluation uses structured claims. Facts and derived claims must match an
+allowlisted statement on a cited evidence ID; required missing data must be
+disclosed, and unsafe authoritative medical/legal/IP-style claims fail even if
+labeled as hypotheses. Provider evaluation replays redacted/synthetic response
+shapes through adapters and contract schemas for complete, partial, drifted,
+throttled, and unentitled cases. `pnpm release-gate:research` is the canonical
+local and CI gate.
+
 ## Runtime baselines
 
 Local Compose executes the optimized Next.js production server. Its unauthenticated fixture mode is not the private-production mode: it requires both explicit demo flags, loopback application/auth URLs, and host ports bound to loopback. Private production continues to reject demo mode and requires authenticated membership.

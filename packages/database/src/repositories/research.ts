@@ -35,6 +35,8 @@ type ResearchDatabase = Pick<
   | "alertRule"
 >;
 
+export const KEYWORD_NORMALIZATION_VERSION = "keyword-normalization/v1";
+
 function requiredText(value: string, code: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(code);

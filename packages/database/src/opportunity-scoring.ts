@@ -3,6 +3,7 @@ import { Decimal } from "decimal.js";
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
 export const NICHE_OPPORTUNITY_SCORE_VERSION = "niche-opportunity/v1";
+export const NICHE_AGGREGATION_VERSION = "niche-aggregation/v1";
 
 export type NicheScoreThresholds = {
   lowReviewMaximum: string;

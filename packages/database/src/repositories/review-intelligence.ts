@@ -1,6 +1,6 @@
 import { db } from "../client.js";
 import {
-  classifyReviewTheme,
+  clusterReviewThemes,
   redactReviewText,
   reviewDedupeHash,
 } from "../review-intelligence.js";
@@ -70,26 +70,10 @@ export async function rebuildReviewThemes(input: {
     },
     select: { id: true, rating: true, bodyRedacted: true },
   });
-  const grouped = new Map<
-    string,
-    {
-      kind: ReturnType<typeof classifyReviewTheme>["kind"];
-      label: string;
-      ids: string[];
-      ratings: number[];
-    }
-  >();
-  for (const review of reviews) {
-    const theme = classifyReviewTheme(review.bodyRedacted, review.rating);
-    const key = `${theme.kind}:${theme.label}`;
-    const value = grouped.get(key) ?? { ...theme, ids: [], ratings: [] };
-    value.ids.push(review.id);
-    value.ratings.push(review.rating);
-    grouped.set(key, value);
-  }
+  const themes = clusterReviewThemes(reviews);
   const calculatedAt = new Date();
   await db.$transaction(
-    [...grouped.values()].map((theme) =>
+    themes.map((theme) =>
       db.reviewTheme.upsert({
         where: {
           organizationId_catalogProductId_kind_label: {
@@ -104,23 +88,17 @@ export async function rebuildReviewThemes(input: {
           catalogProductId: input.catalogProductId,
           kind: theme.kind,
           label: theme.label,
-          reviewCount: theme.ids.length,
-          averageRating: (
-            theme.ratings.reduce((total, rating) => total + rating, 0) /
-            theme.ratings.length
-          ).toFixed(2),
-          evidenceReviewIds: theme.ids,
-          methodVersion: "RULES_V1",
+          reviewCount: theme.reviewCount,
+          averageRating: theme.averageRating,
+          evidenceReviewIds: theme.evidenceReviewIds,
+          methodVersion: theme.methodVersion,
           calculatedAt,
         },
         update: {
-          reviewCount: theme.ids.length,
-          averageRating: (
-            theme.ratings.reduce((total, rating) => total + rating, 0) /
-            theme.ratings.length
-          ).toFixed(2),
-          evidenceReviewIds: theme.ids,
-          methodVersion: "RULES_V1",
+          reviewCount: theme.reviewCount,
+          averageRating: theme.averageRating,
+          evidenceReviewIds: theme.evidenceReviewIds,
+          methodVersion: theme.methodVersion,
           calculatedAt,
         },
       }),

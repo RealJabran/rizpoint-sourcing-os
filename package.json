@@ -18,6 +18,7 @@
     "test:research-scale": "docker compose run --rm --no-deps --volume \"${PWD}/tests/integration:/app/tests/integration:ro\" worker pnpm exec tsx tests/integration/research-scale.integration.ts",
     "test:scale:browser": "bash scripts/run-browser-scale.sh",
     "test:browser": "playwright test",
+    "release-gate:research": "pnpm turbo run build --filter=@rizpoint/research-evals... && pnpm --filter @rizpoint/research-evals lint && pnpm --filter @rizpoint/research-evals typecheck && pnpm --filter @rizpoint/research-evals test && pnpm --filter @rizpoint/research-evals eval",
     "typecheck": "turbo run typecheck",
     "check:private-assets": "node scripts/check-private-assets.mjs",
     "check:production-hardening": "node scripts/check-production-hardening.mjs",

@@ -13,6 +13,21 @@ export type ReviewThemeCandidate = {
   label: string;
 };
 
+export const REVIEW_CLUSTERING_VERSION = "RULES_V1";
+
+export type ReviewClusteringInput = {
+  id: string;
+  rating: number;
+  bodyRedacted: string;
+};
+
+export type ReviewThemeCluster = ReviewThemeCandidate & {
+  reviewCount: number;
+  averageRating: string;
+  evidenceReviewIds: string[];
+  methodVersion: typeof REVIEW_CLUSTERING_VERSION;
+};
+
 const patterns: Array<{ match: RegExp; theme: ReviewThemeCandidate }> = [
   {
     match: /packag|box|arrived damaged/i,
@@ -73,4 +88,48 @@ export function classifyReviewTheme(
   return rating <= 2
     ? { kind: "COMPLAINT", label: "General complaint" }
     : { kind: "PRAISE", label: "General praise" };
+}
+
+/** Deterministic evidence grouping used by both persistence and golden evals. */
+export function clusterReviewThemes(
+  reviews: readonly ReviewClusteringInput[],
+): ReviewThemeCluster[] {
+  const grouped = new Map<
+    string,
+    ReviewThemeCandidate & { ids: string[]; ratings: number[] }
+  >();
+  for (const review of [...reviews].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  )) {
+    if (
+      !Number.isInteger(review.rating) ||
+      review.rating < 1 ||
+      review.rating > 5
+    )
+      throw new Error("REVIEW_RATING_INVALID");
+    const theme = classifyReviewTheme(review.bodyRedacted, review.rating);
+    const key = `${theme.kind}:${theme.label}`;
+    const value = grouped.get(key) ?? { ...theme, ids: [], ratings: [] };
+    value.ids.push(review.id);
+    value.ratings.push(review.rating);
+    grouped.set(key, value);
+  }
+  return [...grouped.values()]
+    .map<ReviewThemeCluster>((theme) => ({
+      kind: theme.kind,
+      label: theme.label,
+      reviewCount: theme.ids.length,
+      averageRating: (
+        theme.ratings.reduce((total, rating) => total + rating, 0) /
+        theme.ratings.length
+      ).toFixed(2),
+      evidenceReviewIds: theme.ids,
+      methodVersion: REVIEW_CLUSTERING_VERSION,
+    }))
+    .sort(
+      (left, right) =>
+        right.reviewCount - left.reviewCount ||
+        left.kind.localeCompare(right.kind) ||
+        left.label.localeCompare(right.label),
+    );
 }

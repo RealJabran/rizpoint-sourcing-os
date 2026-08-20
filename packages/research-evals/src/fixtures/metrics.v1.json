@@ -1,0 +1,1081 @@
+{
+  "datasetVersion": "research-golden-metrics/v1",
+  "classification": "SYNTHETIC",
+  "formulaVersions": {
+    "productHistory": "history-analytics/v1",
+    "seasonality": "history-analytics/v1",
+    "opportunityScoring": "niche-opportunity/v1",
+    "nicheAggregation": "niche-aggregation/v1",
+    "categoryAggregation": "category-aggregation/v1",
+    "keywordNormalization": "keyword-normalization/v1",
+    "reverseAsinGap": "reverse-asin-gap/v1",
+    "rankTracking": "keyword-rank-analytics/v1",
+    "salesEstimation": "sales-estimation/v1",
+    "reviewClustering": "RULES_V1",
+    "differentiationSummary": "differentiation-brief/v1",
+    "profitability": "profit-engine/v3",
+    "privateLabelProfitability": "private-label-profit/v1",
+    "complianceClassification": "compliance-risk-screen/v1",
+    "portfolioOptimization": "portfolio-optimizer/v1"
+  },
+  "history": {
+    "input": {
+      "providerKey": "golden-history",
+      "calculatedAt": "2026-06-30T00:00:00.000Z",
+      "series": [
+        {
+          "metricKey": "FEATURED_OFFER_PRICE",
+          "providerKey": "golden-history",
+          "unit": "currency",
+          "currency": "USD",
+          "points": [
+            {
+              "id": "p01",
+              "observedAt": "2026-06-21T00:00:00.000Z",
+              "decimalValue": "10"
+            },
+            {
+              "id": "p02",
+              "observedAt": "2026-06-22T00:00:00.000Z",
+              "decimalValue": "11"
+            },
+            {
+              "id": "p03",
+              "observedAt": "2026-06-23T00:00:00.000Z",
+              "decimalValue": "12"
+            },
+            {
+              "id": "p04",
+              "observedAt": "2026-06-24T00:00:00.000Z",
+              "decimalValue": "13"
+            },
+            {
+              "id": "p05",
+              "observedAt": "2026-06-25T00:00:00.000Z",
+              "decimalValue": "14"
+            },
+            {
+              "id": "p06",
+              "observedAt": "2026-06-26T00:00:00.000Z",
+              "decimalValue": "15"
+            },
+            {
+              "id": "p07",
+              "observedAt": "2026-06-27T00:00:00.000Z",
+              "decimalValue": "16"
+            },
+            {
+              "id": "p08",
+              "observedAt": "2026-06-28T00:00:00.000Z",
+              "decimalValue": "17"
+            },
+            {
+              "id": "p09",
+              "observedAt": "2026-06-29T00:00:00.000Z",
+              "decimalValue": "18"
+            },
+            {
+              "id": "p10",
+              "observedAt": "2026-06-30T00:00:00.000Z",
+              "decimalValue": "19"
+            }
+          ]
+        },
+        {
+          "metricKey": "SALES_RANK",
+          "providerKey": "golden-history",
+          "unit": "rank",
+          "points": [
+            {
+              "id": "r01",
+              "observedAt": "2026-06-21T00:00:00.000Z",
+              "integerValue": "100"
+            },
+            {
+              "id": "r02",
+              "observedAt": "2026-06-22T00:00:00.000Z",
+              "integerValue": "90"
+            },
+            {
+              "id": "r03",
+              "observedAt": "2026-06-23T00:00:00.000Z",
+              "integerValue": "80"
+            },
+            {
+              "id": "r04",
+              "observedAt": "2026-06-24T00:00:00.000Z",
+              "integerValue": "70"
+            },
+            {
+              "id": "r05",
+              "observedAt": "2026-06-25T00:00:00.000Z",
+              "integerValue": "60"
+            },
+            {
+              "id": "r06",
+              "observedAt": "2026-06-26T00:00:00.000Z",
+              "integerValue": "50"
+            },
+            {
+              "id": "r07",
+              "observedAt": "2026-06-27T00:00:00.000Z",
+              "integerValue": "40"
+            },
+            {
+              "id": "r08",
+              "observedAt": "2026-06-28T00:00:00.000Z",
+              "integerValue": "30"
+            },
+            {
+              "id": "r09",
+              "observedAt": "2026-06-29T00:00:00.000Z",
+              "integerValue": "20"
+            },
+            {
+              "id": "r10",
+              "observedAt": "2026-06-30T00:00:00.000Z",
+              "integerValue": "10"
+            }
+          ]
+        },
+        {
+          "metricKey": "REVIEW_COUNT",
+          "providerKey": "golden-history",
+          "unit": "count",
+          "points": [
+            {
+              "id": "v01",
+              "observedAt": "2026-06-21T00:00:00.000Z",
+              "integerValue": "40"
+            },
+            {
+              "id": "v02",
+              "observedAt": "2026-06-22T00:00:00.000Z",
+              "integerValue": "41"
+            },
+            {
+              "id": "v03",
+              "observedAt": "2026-06-23T00:00:00.000Z",
+              "integerValue": "42"
+            },
+            {
+              "id": "v04",
+              "observedAt": "2026-06-24T00:00:00.000Z",
+              "integerValue": "43"
+            },
+            {
+              "id": "v05",
+              "observedAt": "2026-06-25T00:00:00.000Z",
+              "integerValue": "44"
+            },
+            {
+              "id": "v06",
+              "observedAt": "2026-06-26T00:00:00.000Z",
+              "integerValue": "45"
+            },
+            {
+              "id": "v07",
+              "observedAt": "2026-06-27T00:00:00.000Z",
+              "integerValue": "46"
+            },
+            {
+              "id": "v08",
+              "observedAt": "2026-06-28T00:00:00.000Z",
+              "integerValue": "47"
+            },
+            {
+              "id": "v09",
+              "observedAt": "2026-06-29T00:00:00.000Z",
+              "integerValue": "48"
+            },
+            {
+              "id": "v10",
+              "observedAt": "2026-06-30T00:00:00.000Z",
+              "integerValue": "49"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "version": "history-analytics/v1",
+      "priceSourceMetricKey": "FEATURED_OFFER_PRICE",
+      "price": {
+        "30": { "status": "PARTIAL", "median": "14.5000", "mean": "14.5000" }
+      },
+      "salesRank": {
+        "30": {
+          "status": "PARTIAL",
+          "median": "55.0000",
+          "trendSlopePerDay": "-10.000000"
+        }
+      },
+      "reviewCountGrowth": {
+        "30": {
+          "status": "PARTIAL",
+          "growth": "9.0000",
+          "trendSlopePerDay": "1.000000"
+        }
+      }
+    }
+  },
+  "seasonality": {
+    "input": {
+      "providerKey": "golden-history",
+      "calculatedAt": "2026-06-30T00:00:00.000Z",
+      "series": [
+        {
+          "metricKey": "FEATURED_OFFER_PRICE",
+          "providerKey": "golden-history",
+          "unit": "currency",
+          "currency": "USD",
+          "points": [
+            {
+              "id": "s1",
+              "observedAt": "2026-01-15T00:00:00.000Z",
+              "decimalValue": "10"
+            },
+            {
+              "id": "s2",
+              "observedAt": "2026-02-15T00:00:00.000Z",
+              "decimalValue": "10"
+            },
+            {
+              "id": "s3",
+              "observedAt": "2026-03-15T00:00:00.000Z",
+              "decimalValue": "10"
+            },
+            {
+              "id": "s4",
+              "observedAt": "2026-04-15T00:00:00.000Z",
+              "decimalValue": "10"
+            },
+            {
+              "id": "s5",
+              "observedAt": "2026-05-15T00:00:00.000Z",
+              "decimalValue": "10"
+            },
+            {
+              "id": "s6",
+              "observedAt": "2026-06-15T00:00:00.000Z",
+              "decimalValue": "20"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "seasonalIndex": {
+        "status": "INSUFFICIENT_DATA",
+        "indexPercent": "171.43",
+        "explanation": "Latest observed calendar-month average divided by the observed 365-day average; no missing-month interpolation."
+      }
+    }
+  },
+  "nicheRows": [
+    {
+      "productId": "product-a",
+      "brand": "Brand A",
+      "reviewCount": "20",
+      "price": "20",
+      "priceVolatilityPercent": "5",
+      "listingAgeDays": "50",
+      "amazonRetailPresence": "ABSENT",
+      "historyStatus": "COMPLETE",
+      "historyAssessmentId": "history-a",
+      "observedAt": "2026-06-30T00:00:00.000Z"
+    },
+    {
+      "productId": "product-b",
+      "brand": "Brand B",
+      "reviewCount": "80",
+      "price": "30",
+      "priceVolatilityPercent": "10",
+      "listingAgeDays": "200",
+      "amazonRetailPresence": "PRESENT",
+      "historyStatus": "COMPLETE",
+      "historyAssessmentId": "history-b",
+      "observedAt": "2026-06-30T00:00:00.000Z"
+    }
+  ],
+  "opportunityExpected": {
+    "status": "COMPLETE",
+    "score": "50.00",
+    "confidencePercent": "100.00",
+    "components": [
+      { "key": "reviewBarrier", "score": "50.00", "observedCount": 2 },
+      { "key": "priceStability", "score": "50.00", "observedCount": 2 },
+      { "key": "amazonRetailAbsence", "score": "50.00", "observedCount": 2 },
+      { "key": "brandConcentration", "score": "50.00", "observedCount": 2 },
+      { "key": "newEntrantPresence", "score": "50.00", "observedCount": 2 }
+    ]
+  },
+  "nicheAggregateExpected": {
+    "metrics": {
+      "productCount": 2,
+      "medianPrice": "25.00",
+      "averagePrice": "25.00",
+      "medianReviews": "50.00",
+      "medianPriceVolatilityPercent": "7.50",
+      "medianListingAgeDays": "125.00",
+      "top10ReviewDistribution": ["80", "20"],
+      "brandHhi": "5000"
+    }
+  },
+  "category": {
+    "rows": [
+      {
+        "id": "a",
+        "asin": "B000000001",
+        "title": "A",
+        "brand": "Brand A",
+        "category": "Home",
+        "marketplaceId": "ATVPDKIKX0DER",
+        "sources": "PROJECT",
+        "price": "10.10",
+        "reviewCount": "10",
+        "priceVolatilityPercent": "12.5",
+        "priceVolatility30Percent": "9.5",
+        "reviewGrowth": "4",
+        "reviewGrowth30": "3",
+        "listingAgeDays": "40",
+        "seasonalityStatus": "COMPLETE",
+        "historyStatus": "COMPLETE",
+        "amazonRetailPresence": "PRESENT",
+        "opportunityScore": "70",
+        "observedAt": "2026-06-30T00:00:00.000Z"
+      },
+      {
+        "id": "b",
+        "asin": "B000000002",
+        "title": "B",
+        "brand": "Brand B",
+        "category": "Home",
+        "marketplaceId": "ATVPDKIKX0DER",
+        "sources": "WATCH",
+        "price": "20.20",
+        "reviewCount": "200",
+        "priceVolatilityPercent": "16",
+        "priceVolatility30Percent": "20",
+        "reviewGrowth": "2",
+        "reviewGrowth30": "1",
+        "listingAgeDays": "120",
+        "seasonalityStatus": "PARTIAL",
+        "historyStatus": "PARTIAL",
+        "amazonRetailPresence": "ABSENT",
+        "opportunityScore": "50",
+        "observedAt": "2026-06-30T00:00:00.000Z"
+      },
+      {
+        "id": "c",
+        "asin": "B000000003",
+        "title": "C",
+        "brand": "Brand B",
+        "category": "Home",
+        "marketplaceId": "ATVPDKIKX0DER",
+        "sources": "PROJECT",
+        "price": null,
+        "reviewCount": null,
+        "priceVolatilityPercent": null,
+        "priceVolatility30Percent": null,
+        "reviewGrowth": null,
+        "reviewGrowth30": null,
+        "listingAgeDays": null,
+        "seasonalityStatus": null,
+        "historyStatus": null,
+        "amazonRetailPresence": "UNKNOWN",
+        "opportunityScore": null,
+        "observedAt": null
+      }
+    ],
+    "expected": {
+      "medianPrice": "15.15",
+      "medianReviews": "105.00",
+      "reviewBarrier": { "lowReviewCount": 1, "observedCount": 2 },
+      "brandConcentration": { "hhi": "5556" },
+      "amazonRetail": { "presentCount": 1, "knownCount": 2 },
+      "newProductEntry": { "recentCount": 1, "observedCount": 2 },
+      "priceStability": { "stableCount": 1, "observedCount": 2 }
+    }
+  },
+  "keywordNormalization": {
+    "original": "  ＤＯＧ   Beds  ",
+    "expectedNormalized": "dog beds"
+  },
+  "reverseAsin": {
+    "asins": ["B000000001", "B000000002", "B000000003"],
+    "mineAsin": "B000000001",
+    "observations": [
+      {
+        "observationId": "new-2",
+        "productId": "p2",
+        "asin": "B000000002",
+        "keywordId": "k1",
+        "phrase": "dog bed",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": 10,
+        "sponsoredRank": null
+      },
+      {
+        "observationId": "old-2",
+        "productId": "p2",
+        "asin": "B000000002",
+        "keywordId": "k1",
+        "phrase": "dog bed",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-29T00:00:00.000Z",
+        "organicRank": 99,
+        "sponsoredRank": null
+      },
+      {
+        "observationId": "new-3",
+        "productId": "p3",
+        "asin": "B000000003",
+        "keywordId": "k1",
+        "phrase": "dog bed",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": 20,
+        "sponsoredRank": null
+      },
+      {
+        "observationId": "mine-gap",
+        "productId": "p1",
+        "asin": "B000000001",
+        "keywordId": "k1",
+        "phrase": "dog bed",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": null,
+        "sponsoredRank": null
+      },
+      {
+        "observationId": "mine-only",
+        "productId": "p1",
+        "asin": "B000000001",
+        "keywordId": "k2",
+        "phrase": "washable pet mat",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": 5,
+        "sponsoredRank": null
+      },
+      {
+        "observationId": "comp-2-missing",
+        "productId": "p2",
+        "asin": "B000000002",
+        "keywordId": "k2",
+        "phrase": "washable pet mat",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": null,
+        "sponsoredRank": null
+      },
+      {
+        "observationId": "comp-3-missing",
+        "productId": "p3",
+        "asin": "B000000003",
+        "keywordId": "k2",
+        "phrase": "washable pet mat",
+        "provider": "recorded-rank",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": null,
+        "sponsoredRank": null
+      }
+    ],
+    "expected": [
+      {
+        "keywordId": "k1",
+        "rankingAsinCount": 2,
+        "averageOrganicRank": "15.00",
+        "competitorGap": true,
+        "mineOnly": false
+      },
+      {
+        "keywordId": "k2",
+        "rankingAsinCount": 1,
+        "averageOrganicRank": null,
+        "competitorGap": false,
+        "mineOnly": true
+      }
+    ]
+  },
+  "rankTracking": {
+    "observations": [
+      {
+        "asin": "B000000001",
+        "observedAt": "2026-06-28T00:00:00.000Z",
+        "organicRank": 20,
+        "sponsoredRank": 8
+      },
+      {
+        "asin": "B000000001",
+        "observedAt": "2026-06-29T00:00:00.000Z",
+        "organicRank": 15,
+        "sponsoredRank": 6
+      },
+      {
+        "asin": "B000000001",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": 10,
+        "sponsoredRank": null
+      },
+      {
+        "asin": "B000000002",
+        "observedAt": "2026-06-29T00:00:00.000Z",
+        "organicRank": 25,
+        "sponsoredRank": null
+      },
+      {
+        "asin": "B000000002",
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "organicRank": 20,
+        "sponsoredRank": null
+      }
+    ],
+    "expected": {
+      "calculationVersion": "keyword-rank-analytics/v1",
+      "products": [
+        {
+          "asin": "B000000001",
+          "organic": {
+            "latest": 10,
+            "change": 5,
+            "movingAverage": "15.00",
+            "best": 10,
+            "worst": 20,
+            "volatility": "4.08"
+          },
+          "organicShareOfVoicePercent": "66.67"
+        },
+        {
+          "asin": "B000000002",
+          "organic": {
+            "latest": 20,
+            "change": 5,
+            "movingAverage": "22.50",
+            "best": 20,
+            "worst": 25,
+            "volatility": "2.50"
+          },
+          "organicShareOfVoicePercent": "33.33"
+        }
+      ]
+    }
+  },
+  "salesEstimation": {
+    "model": {
+      "marketplaceId": "ATVPDKIKX0DER",
+      "categoryReference": "HOME",
+      "version": "golden-home/v1",
+      "status": "VALIDATED",
+      "referenceDataset": {
+        "id": "synthetic-sales-reference-v1",
+        "sourceReference": "fixture:synthetic-sales-reference-v1",
+        "sampleSize": 3,
+        "observedFrom": "2026-01-01T00:00:00.000Z",
+        "observedTo": "2026-03-31T00:00:00.000Z"
+      },
+      "minimumHistoryPoints": 3,
+      "rankBands": [
+        {
+          "maximumRank": "100",
+          "monthlyUnitsLow": "100",
+          "monthlyUnitsCentral": "120",
+          "monthlyUnitsHigh": "140"
+        },
+        {
+          "maximumRank": "1000",
+          "monthlyUnitsLow": "30",
+          "monthlyUnitsCentral": "50",
+          "monthlyUnitsHigh": "70"
+        }
+      ]
+    },
+    "input": {
+      "marketplaceId": "ATVPDKIKX0DER",
+      "categoryReference": "HOME",
+      "salesRankHistory": [
+        {
+          "rank": "100",
+          "observedAt": "2026-03-01T00:00:00.000Z",
+          "evidenceReference": "rank:1"
+        },
+        {
+          "rank": "200",
+          "observedAt": "2026-03-02T00:00:00.000Z",
+          "evidenceReference": "rank:2"
+        },
+        {
+          "rank": "300",
+          "observedAt": "2026-03-03T00:00:00.000Z",
+          "evidenceReference": "rank:3"
+        }
+      ]
+    },
+    "expected": {
+      "status": "AVAILABLE",
+      "source": "RIZPOINT_CALIBRATED_MODEL",
+      "monthlyUnitsLow": "30",
+      "monthlyUnitsCentral": "50",
+      "monthlyUnitsHigh": "70",
+      "confidencePercent": "80.00",
+      "modelVersion": "golden-home/v1"
+    },
+    "backtestCases": [
+      {
+        "actualUnits": "100",
+        "estimateLow": "80",
+        "estimateCentral": "90",
+        "estimateHigh": "110"
+      },
+      {
+        "actualUnits": "50",
+        "estimateLow": "40",
+        "estimateCentral": "60",
+        "estimateHigh": "70"
+      },
+      {
+        "actualUnits": "0",
+        "estimateLow": "0",
+        "estimateCentral": "10",
+        "estimateHigh": "20"
+      }
+    ],
+    "qualityGate": {
+      "maximumMae": "10.00",
+      "maximumMapePercent": "15.00",
+      "minimumIntervalCoveragePercent": "100.00"
+    },
+    "expectedBacktest": {
+      "sampleSize": 3,
+      "mae": "10.00",
+      "mapePercent": "15.00",
+      "intervalCoveragePercent": "100.00"
+    }
+  },
+  "reviews": {
+    "input": [
+      {
+        "id": "review-1",
+        "rating": 1,
+        "bodyRedacted": "The packaging arrived damaged."
+      },
+      { "id": "review-2", "rating": 2, "bodyRedacted": "The box was crushed." },
+      { "id": "review-3", "rating": 5, "bodyRedacted": "Great product." }
+    ],
+    "expected": [
+      {
+        "kind": "PACKAGING",
+        "label": "Packaging",
+        "reviewCount": 2,
+        "averageRating": "1.50",
+        "evidenceReviewIds": ["review-1", "review-2"],
+        "methodVersion": "RULES_V1"
+      },
+      {
+        "kind": "PRAISE",
+        "label": "Praised attribute",
+        "reviewCount": 1,
+        "averageRating": "5.00",
+        "evidenceReviewIds": ["review-3"],
+        "methodVersion": "RULES_V1"
+      }
+    ]
+  },
+  "differentiation": {
+    "input": {
+      "themeId": "theme-packaging",
+      "kind": "PACKAGING",
+      "label": "Packaging",
+      "reviewCount": 2,
+      "averageRating": "1.50",
+      "evidenceReviewIds": ["review-1", "review-2"]
+    },
+    "expected": {
+      "label": "Packaging hypothesis",
+      "recommendation": "Test a more protective packaging approach.",
+      "validationQuestion": "What packaging options can withstand the expected fulfillment path?",
+      "confidence": "LOW",
+      "supportingSignals": [
+        "2 linked authorized review(s)",
+        "Theme rating: 1.50"
+      ],
+      "evidenceReviewIds": ["review-1", "review-2"]
+    }
+  },
+  "profitability": {
+    "input": {
+      "packGuardStatus": "VERIFIED",
+      "price": {
+        "price": "20.00",
+        "currency": "USD",
+        "provider": "mock-amazon",
+        "observedAt": "2026-07-12T00:00:00.000Z",
+        "freshUntil": "2026-07-14T00:00:00.000Z",
+        "freshnessState": "FRESH"
+      },
+      "feeQuote": {
+        "totalFee": "5.0000",
+        "quotedPrice": "20.00",
+        "currency": "USD",
+        "provider": "mock-amazon",
+        "observedAt": "2026-07-12T00:00:00.000Z",
+        "freshUntil": "2026-07-14T00:00:00.000Z",
+        "freshnessState": "FRESH",
+        "completeness": "COMPLETE",
+        "scenarioSource": "CURRENT_FEATURED_OFFER",
+        "fulfillmentChannel": "AMAZON",
+        "components": [
+          {
+            "feeType": "FulfillmentFee",
+            "finalFee": "2.0000",
+            "currency": "USD"
+          },
+          { "feeType": "ReferralFee", "finalFee": "3.0000", "currency": "USD" }
+        ],
+        "model": { "fixedFee": "2.0000", "percentageOfPrice": "0.1500" }
+      },
+      "costs": {
+        "supplierCostPerSellableUnit": "4.0000",
+        "allocatedSupplierFreight": "0.5000",
+        "prepFee": "1.4900",
+        "labelingFee": "0.1000",
+        "polybagFee": "0.0500",
+        "bundleFee": "0.0500",
+        "bubblewrapFee": "0.0500",
+        "inboundShipping": "0.7500",
+        "dutyOrTax": "0.0000",
+        "storageAllowance": "0.2000",
+        "returnAllowance": "0.3000",
+        "otherCosts": "0.0000"
+      }
+    },
+    "calculatedAt": "2026-07-13T00:00:00.000Z",
+    "expected": {
+      "status": "CALCULATED",
+      "effectiveCogs": "7.49",
+      "amazonFees": "5.00",
+      "netProfit": "7.51",
+      "roiPercent": "100.27",
+      "marginPercent": "37.55",
+      "breakEvenPrice": "11.17",
+      "engineVersion": "profit-engine/v3"
+    }
+  },
+  "privateLabelProfitability": {
+    "input": {
+      "incoterm": "FOB",
+      "supplierCurrency": "USD",
+      "analysisCurrency": "USD",
+      "unitCost": "5.00",
+      "moq": 1000,
+      "targetSellingPrice": "20.00",
+      "unitCostSource": "synthetic audited supplier quote Q-1",
+      "unitCostAssumedAt": "2026-06-30T00:00:00.000Z",
+      "costs": [
+        {
+          "category": "SAMPLES",
+          "allocation": "BATCH_TOTAL",
+          "amount": "100",
+          "currency": "USD",
+          "source": "synthetic sample assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "TOOLING_SETUP",
+          "allocation": "BATCH_TOTAL",
+          "amount": "900",
+          "currency": "USD",
+          "source": "synthetic tooling assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "PACKAGING",
+          "allocation": "PER_UNIT",
+          "amount": "0.50",
+          "currency": "USD",
+          "source": "synthetic packaging assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "LABELING",
+          "allocation": "PER_UNIT",
+          "amount": "0.10",
+          "currency": "USD",
+          "source": "synthetic labeling assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "INSPECTION",
+          "allocation": "BATCH_TOTAL",
+          "amount": "200",
+          "currency": "USD",
+          "source": "synthetic inspection assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "FREIGHT",
+          "allocation": "BATCH_TOTAL",
+          "amount": "1000",
+          "currency": "USD",
+          "source": "synthetic freight assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "CUSTOMS_TARIFFS",
+          "allocation": "BATCH_TOTAL",
+          "amount": "500",
+          "currency": "USD",
+          "source": "synthetic customs assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "INSURANCE",
+          "allocation": "BATCH_TOTAL",
+          "amount": "100",
+          "currency": "USD",
+          "source": "synthetic insurance assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "PREP",
+          "allocation": "PER_UNIT",
+          "amount": "0.30",
+          "currency": "USD",
+          "source": "synthetic prep assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "INBOUND_SHIPPING",
+          "allocation": "PER_UNIT",
+          "amount": "0.40",
+          "currency": "USD",
+          "source": "synthetic inbound assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "AMAZON_REFERRAL",
+          "allocation": "PERCENT_OF_PRICE",
+          "amount": "15",
+          "currency": "USD",
+          "source": "synthetic referral assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "AMAZON_FBA",
+          "allocation": "PER_UNIT",
+          "amount": "3",
+          "currency": "USD",
+          "source": "synthetic FBA assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "STORAGE_ALLOWANCE",
+          "allocation": "PER_UNIT",
+          "amount": "0.20",
+          "currency": "USD",
+          "source": "synthetic storage assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "RETURNS_ALLOWANCE",
+          "allocation": "PERCENT_OF_PRICE",
+          "amount": "5",
+          "currency": "USD",
+          "source": "synthetic returns assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "AD_LAUNCH_BUDGET",
+          "allocation": "BATCH_TOTAL",
+          "amount": "1000",
+          "currency": "USD",
+          "source": "synthetic ad assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "COUPON_PROMO",
+          "allocation": "PERCENT_OF_PRICE",
+          "amount": "2",
+          "currency": "USD",
+          "source": "synthetic promotion assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        },
+        {
+          "category": "DEFECT_ALLOWANCE",
+          "allocation": "PER_UNIT",
+          "amount": "0.10",
+          "currency": "USD",
+          "source": "synthetic defect assumption",
+          "assumedAt": "2026-06-30T00:00:00.000Z",
+          "confidence": "CONFIRMED"
+        }
+      ]
+    },
+    "expected": {
+      "status": "CALCULATED",
+      "formulaVersion": "private-label-profit/v1",
+      "landedCostPerUnit": "8.1000",
+      "contributionMarginPerUnit": "3.2000",
+      "netProfitPerUnit": "2.2000",
+      "roiPercent": "24.1758",
+      "marginPercent": "11.0000",
+      "breakEvenSalePrice": "17.1795",
+      "initialCashRequired": "10100.0000",
+      "moqCashExposure": "8100.0000"
+    }
+  },
+  "compliance": {
+    "inputText": "Rechargeable battery-powered desk lamp",
+    "ruleSet": {
+      "ruleSetId": "golden-rules",
+      "ruleSetName": "Synthetic research rules",
+      "ruleSetVersion": "v1",
+      "sourceTitle": "Synthetic fixture",
+      "sourceUrl": "https://example.invalid/rules",
+      "sourcePublishedAt": "2026-01-01T00:00:00.000Z",
+      "sourceAccessedAt": "2026-06-30T00:00:00.000Z"
+    },
+    "rules": [
+      {
+        "id": "battery-review",
+        "domain": "BATTERY",
+        "riskLevel": "REVIEW",
+        "matchTerms": ["battery"],
+        "rationale": "Battery handling and transport evidence requires review.",
+        "supplierQuestions": ["Which battery test evidence is available?"],
+        "likelyDocumentation": ["Supplier test report"],
+        "authoritativeClearance": false,
+        "sourceTitle": "Synthetic fixture",
+        "sourceUrl": "https://example.invalid/battery",
+        "sourcePublishedAt": "2026-01-01T00:00:00.000Z"
+      }
+    ],
+    "expected": [
+      {
+        "domain": "BATTERY",
+        "riskLevel": "REVIEW",
+        "doNotLaunchUntilVerified": true
+      },
+      {
+        "domain": "MEDICAL_HEALTH_CLAIMS",
+        "riskLevel": "UNKNOWN",
+        "doNotLaunchUntilVerified": true
+      }
+    ]
+  },
+  "portfolio": {
+    "candidates": [
+      {
+        "id": "A",
+        "catalogProductId": "product-A",
+        "asin": "B000000001",
+        "brand": "Brand A",
+        "category": "Home",
+        "currency": "USD",
+        "unitCost": "10",
+        "sellingPrice": "25",
+        "feePerUnit": "5",
+        "adCostPerUnit": "2",
+        "moq": 20,
+        "casePack": 10,
+        "expectedMonthlyDemandLow": "60",
+        "expectedMonthlyDemandHigh": "100",
+        "netProfitPerUnitLow": "4",
+        "netProfitPerUnitHigh": "7",
+        "leadTimeDays": 30,
+        "marginPercent": "20",
+        "roiPercent": "40",
+        "confidencePercent": "80",
+        "seasonalityRisk": "LOW",
+        "complianceRisk": "LOW",
+        "priceVolatilityPercent": "8",
+        "competitionRisk": "LOW",
+        "targetInventoryDays": 30,
+        "observedAt": "2026-06-30T00:00:00.000Z",
+        "evidenceReferences": ["evidence-A"]
+      }
+    ],
+    "constraints": {
+      "cashBudget": "300",
+      "currency": "USD",
+      "maxAsinExposurePercent": "100",
+      "maxBrandExposurePercent": "100",
+      "maxCategoryExposurePercent": "100",
+      "minMarginPercent": "5",
+      "minRoiPercent": "5",
+      "minConfidencePercent": "50",
+      "maxPriceVolatilityPercent": "30",
+      "allowedComplianceRisks": ["LOW", "REVIEW"],
+      "maxSeasonalityRisk": "MEDIUM",
+      "maxCompetitionRisk": "MEDIUM"
+    },
+    "expected": {
+      "status": "CALCULATED",
+      "solverVersion": "portfolio-optimizer/v1",
+      "scenarios": [
+        {
+          "scenario": "BASE",
+          "status": "CALCULATED",
+          "exactOptimal": true,
+          "recommended": {
+            "cashUsed": "300.0000",
+            "cashRemaining": "0.0000",
+            "expectedProfitLow": "120.0000",
+            "expectedProfitHigh": "210.0000",
+            "allocations": [
+              {
+                "candidateId": "A",
+                "quantity": 30,
+                "cashAllocated": "300.0000"
+              }
+            ]
+          }
+        },
+        {
+          "scenario": "DEMAND_DOWN_20",
+          "status": "CALCULATED",
+          "exactOptimal": true
+        },
+        {
+          "scenario": "PRICE_DOWN_10",
+          "status": "CALCULATED",
+          "exactOptimal": true
+        },
+        {
+          "scenario": "FEE_UP_5",
+          "status": "CALCULATED",
+          "exactOptimal": true
+        },
+        {
+          "scenario": "DELAYED_REPLENISHMENT",
+          "status": "CALCULATED",
+          "exactOptimal": true
+        },
+        {
+          "scenario": "AD_COST_INCREASE",
+          "status": "CALCULATED",
+          "exactOptimal": true
+        }
+      ]
+    }
+  }
+}

@@ -25,6 +25,7 @@ jobs:
       - run: pnpm check:production-hardening
       - run: DATABASE_URL=postgresql://invalid:invalid@127.0.0.1:1/invalid pnpm db:generate
       - run: pnpm verify
+      - run: pnpm release-gate:research
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e 'services/scanner[dev]'
       - run: python -m ruff check services/scanner && python -m ruff format --check services/scanner

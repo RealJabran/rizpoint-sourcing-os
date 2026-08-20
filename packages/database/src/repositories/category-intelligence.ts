@@ -4,6 +4,7 @@ import { withInteractiveResearchQuery } from "../research-performance.js";
 
 export const CATEGORY_PAGE_LIMIT = 100;
 export const CATEGORY_ANALYSIS_WINDOW_LIMIT = 1000;
+export const CATEGORY_AGGREGATION_VERSION = "category-aggregation/v1";
 
 export type CategoryAggregateRow = {
   id: string;

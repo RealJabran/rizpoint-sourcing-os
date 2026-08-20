@@ -45,6 +45,15 @@ internal-use versus redistributable scope, and an effective field-level export
 policy. Unknown or expired rights fail closed; Product Explorer redacts blocked
 provider fields instead of treating internal display access as export consent.
 
+Research accuracy is release-gated by versioned synthetic/redacted golden
+datasets. The gate calls production calculation functions for history,
+seasonality, opportunity/category/niche metrics, keyword/rank analysis, sales
+estimation, reviews, differentiation, profitability, compliance, and portfolio
+selection. It also rejects uncited or unsafe AI claims and exercises recorded
+provider drift, partial, throttle, and entitlement failures. Synthetic sales
+backtests measure error and interval coverage; they are not evidence of live
+market accuracy. See [Research evaluation](RESEARCH_EVALUATION.md).
+
 ## Product principles
 
 - Correctness and explainability take priority over feature count.

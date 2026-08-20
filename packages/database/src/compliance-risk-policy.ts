@@ -18,6 +18,8 @@ export const COMPLIANCE_RISK_DOMAINS = [
   "AMAZON_RESTRICTED_CATEGORY",
 ] as const;
 
+export const COMPLIANCE_SCREEN_VERSION = "compliance-risk-screen/v1";
+
 export type ComplianceScreenDomain = (typeof COMPLIANCE_RISK_DOMAINS)[number];
 export type ComplianceScreenRiskLevel = "LOW" | "REVIEW" | "HIGH" | "UNKNOWN";
 
