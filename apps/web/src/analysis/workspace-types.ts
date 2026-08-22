@@ -8,9 +8,11 @@ export type AnalysisGroup = (typeof ANALYSIS_GROUPS)[number];
 export type DecimalValue = string | { toString(): string };
 export type ExternalEvidence = {
   provider: string;
+  marketplaceId: string;
   observedAt: string;
   freshUntil: string;
   freshnessState: string;
+  completeness: string | null;
   value: string | null;
   currency: string | null;
   restrictionStatus: string | null;
@@ -60,6 +62,8 @@ export type AnalysisRow = {
           sizeText: string | null;
           variation: string | null;
           provider: string;
+          marketplaceId: string | null;
+          responseCompleteness: string | null;
           observedAt: string;
           freshnessState: string;
           packCount?: number | null;

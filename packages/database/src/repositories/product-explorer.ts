@@ -25,6 +25,7 @@ type RawExplorerRow = {
   marketplaceId: string | null;
   category: string | null;
   catalogProvider: string;
+  catalogCompleteness: string | null;
   sources: string;
   price: { toString(): string } | null;
   currency: string | null;
@@ -44,6 +45,7 @@ type RawExplorerRow = {
   freshnessState: string | null;
   observedAt: Date | null;
   pricingProvider: string | null;
+  pricingCompleteness: string | null;
   historyProvider: string | null;
 };
 
@@ -96,6 +98,7 @@ function baseQuery(organizationId: string) {
         cp.marketplace_id AS "marketplaceId",
         cp.identity_projection -> 'productTypes' ->> 0 AS category,
         cp.provider::text AS "catalogProvider",
+        cp.response_completeness AS "catalogCompleteness",
         sr.sources,
         pricing.featured_price AS price,
         pricing.featured_currency AS currency,
@@ -115,6 +118,7 @@ function baseQuery(organizationId: string) {
         pricing.freshness_state::text AS "freshnessState",
         pricing.observed_at AS "observedAt",
         pricing.provider::text AS "pricingProvider",
+        pricing.completeness::text AS "pricingCompleteness",
         analytics.provider_key AS "historyProvider"
       FROM source_rollup sr
       JOIN catalog_products cp ON cp.id = sr.product_id
@@ -219,6 +223,7 @@ function project(row: RawExplorerRow) {
     marketplaceId: row.marketplaceId,
     category: row.category,
     catalogProviderKey: providerKey(row.catalogProvider),
+    catalogCompleteness: row.catalogCompleteness,
     sources: row.sources.split(","),
     price: text(row.price),
     currency: row.currency,
@@ -238,6 +243,7 @@ function project(row: RawExplorerRow) {
     freshnessState: row.freshnessState,
     observedAt: row.observedAt?.toISOString() ?? null,
     pricingProviderKey: providerKey(row.pricingProvider),
+    pricingCompleteness: row.pricingCompleteness,
     historyProviderKey: row.historyProvider,
   };
 }

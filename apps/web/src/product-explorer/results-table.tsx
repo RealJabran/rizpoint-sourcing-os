@@ -73,6 +73,7 @@ export function ExplorerResultsTable({
                         {row.asin ?? "ASIN unavailable"} ·{" "}
                         {row.brand ?? "Brand unavailable"}
                         {row.category ? ` · ${row.category}` : ""}
+                        {row.marketplaceId ? ` · ${row.marketplaceId}` : ""}
                       </small>
                     </td>
                     <td>
@@ -81,7 +82,7 @@ export function ExplorerResultsTable({
                           label="Price"
                           value={row.price}
                           unit={row.currency ?? ""}
-                          source={row.sources[0] ?? null}
+                          source={row.pricingProviderKey}
                           window="Latest observation"
                           observedAt={row.observedAt}
                           state={explorerDataState(
@@ -92,7 +93,7 @@ export function ExplorerResultsTable({
                         <MetricValue
                           label="Reviews"
                           value={row.reviewCount}
-                          source={row.sources[0] ?? null}
+                          source={row.historyProviderKey}
                           window="Latest observation"
                           observedAt={row.observedAt}
                           state={explorerDataState(
@@ -116,20 +117,33 @@ export function ExplorerResultsTable({
                     </td>
                     <td>
                       <div className="badge-stack">
-                        {row.sources.map((source) => (
-                          <SourceBadge
-                            key={source}
-                            source={source
-                              .replaceAll("_", " ")
-                              .toLocaleLowerCase("en-US")}
-                          />
-                        ))}
+                        {[
+                          row.catalogProviderKey,
+                          row.pricingProviderKey,
+                          row.historyProviderKey,
+                        ]
+                          .filter((source): source is string => Boolean(source))
+                          .filter(
+                            (source, index, sources) =>
+                              sources.indexOf(source) === index,
+                          )
+                          .map((source) => (
+                            <SourceBadge
+                              key={source}
+                              source={source
+                                .replaceAll("_", " ")
+                                .toLocaleLowerCase("en-US")}
+                            />
+                          ))}
                         <DataStateBadge
                           state={explorerDataState(
                             row.freshnessState,
                             row.observedAt,
                           )}
                         />
+                        <small>
+                          Universe: {row.sources.join(", ").toLowerCase()}
+                        </small>
                       </div>
                     </td>
                     <td>
@@ -172,6 +186,10 @@ export function ExplorerResultsTable({
               <strong>ASIN:</strong> {evidence.asin ?? "Unavailable"}
             </p>
             <p>
+              <strong>Marketplace:</strong>{" "}
+              {evidence.marketplaceId ?? "Unavailable"}
+            </p>
+            <p>
               <strong>Observed:</strong>{" "}
               {evidence.observedAt
                 ? new Date(evidence.observedAt).toLocaleString()
@@ -186,10 +204,22 @@ export function ExplorerResultsTable({
                 ? `${evidence.historyCoveragePercent}%`
                 : "Unavailable"}
             </p>
+            <p>
+              <strong>Completeness:</strong> Catalog{" "}
+              {evidence.catalogCompleteness ?? "unknown"}
+              {" · "}Pricing {evidence.pricingCompleteness ?? "unknown"}
+              {" · "}History {evidence.historyStatus ?? "unknown"}
+            </p>
             <div className="badge-stack">
-              {evidence.sources.map((source) => (
-                <SourceBadge key={source} source={source} />
-              ))}
+              {[
+                evidence.catalogProviderKey,
+                evidence.pricingProviderKey,
+                evidence.historyProviderKey,
+              ]
+                .filter((source): source is string => Boolean(source))
+                .map((source) => (
+                  <SourceBadge key={source} source={source} />
+                ))}
             </div>
             <p className="muted-copy">
               Only normalized, authorized evidence is shown here. Raw provider

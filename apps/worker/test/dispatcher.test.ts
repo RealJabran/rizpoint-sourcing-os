@@ -57,4 +57,27 @@ describe("outbox dispatch recovery", () => {
       }),
     );
   });
+
+  it("uses provider-aware backoff for Amazon connection jobs", async () => {
+    recoverPublishedOutboxEvents.mockResolvedValue(0);
+    claimPendingOutboxEvents.mockResolvedValue([
+      {
+        id: "outbox_provider",
+        claimToken: "claim_provider",
+        payload: {
+          kind: "PROVIDER_CONNECTION",
+          connectionJobId: "connection_job_1",
+        },
+      },
+    ]);
+    add.mockResolvedValue({});
+    markOutboxPublished.mockResolvedValue(true);
+    const { dispatchOutboxOnce } = await import("../src/dispatcher.js");
+    await expect(dispatchOutboxOnce()).resolves.toBe(1);
+    expect(add).toHaveBeenCalledWith(
+      "mock-scan",
+      expect.any(Object),
+      expect.objectContaining({ backoff: { type: "provider" }, attempts: 3 }),
+    );
+  });
 });

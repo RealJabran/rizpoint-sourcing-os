@@ -39,7 +39,8 @@ function publicState(
     (marketplace) => marketplace.isParticipating,
   );
   const states = connection.entitlements.map((item) => item.state);
-  const usableStates = new Set(["AUTHORIZED", "CONFIGURED", "HEALTHY"]);
+  if (states.includes("THROTTLED")) return "THROTTLED";
+  const usableStates = new Set(["HEALTHY"]);
   if (!participating.length || states.some((state) => !usableStates.has(state)))
     return "PARTIAL";
   return "CONNECTED";
@@ -48,6 +49,19 @@ function publicState(
 function safeSellerIdentity(value: string | null) {
   if (!value) return null;
   return `Seller account ••••${value.slice(-4)}`;
+}
+
+function capabilityFreshness(input: {
+  state: string;
+  checkedAt: Date;
+  expiresAt: Date | null;
+}) {
+  const now = Date.now();
+  if (input.expiresAt && input.expiresAt.getTime() <= now) return "EXPIRED";
+  if (input.state !== "HEALTHY") return "UNKNOWN";
+  return now - input.checkedAt.getTime() <= 24 * 60 * 60_000
+    ? "FRESH"
+    : "STALE";
 }
 
 export async function GET(request: NextRequest) {
@@ -63,7 +77,7 @@ export async function GET(request: NextRequest) {
       provider: "amazon-sp-api",
       providerName: "Amazon Selling Partner API",
       connectionState: publicState(connection, latestJob),
-      dataOrigin: connection?.status === "ACTIVE" ? "LIVE_PROVIDER" : "NONE",
+      dataOrigin: connection?.status === "ACTIVE" ? "LIVE_AMAZON" : "NONE",
       localDemo: isLocalDemoMode(),
       oauthAvailable: amazonOAuthPublicConfigurationAvailable(),
       selfAuthorizedReady: connection?.mode === "SELF_AUTHORIZED",
@@ -84,7 +98,12 @@ export async function GET(request: NextRequest) {
             })),
             capabilities: connection.entitlements.map((capability) => ({
               ...capability,
+              source: "Amazon Selling Partner API",
+              dataOrigin: "LIVE_AMAZON",
+              freshness: capabilityFreshness(capability),
               checkedAt: capability.checkedAt.toISOString(),
+              expiresAt: capability.expiresAt?.toISOString() ?? null,
+              retryAt: capability.retryAt?.toISOString() ?? null,
               lastSuccessAt: capability.lastSuccessAt?.toISOString() ?? null,
             })),
           }

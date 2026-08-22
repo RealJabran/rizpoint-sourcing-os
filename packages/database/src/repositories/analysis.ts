@@ -550,6 +550,7 @@ export async function listAnalysisResults(input: {
                         variation: true,
                         provider: true,
                         marketplaceId: true,
+                        responseCompleteness: true,
                         observedAt: true,
                         freshnessState: true,
                         packCount: true,
@@ -659,9 +660,11 @@ export async function listAnalysisResults(input: {
       if (!observation) return null;
       return {
         provider: observation.provider,
+        marketplaceId: observation.marketplaceId,
         observedAt: observation.observedAt.toISOString(),
         freshUntil: observation.freshUntil.toISOString(),
         freshnessState: observation.freshnessState,
+        completeness: observation.completeness,
         value: observation.primaryAmount?.toString() ?? null,
         currency: observation.currency,
         restrictionStatus:

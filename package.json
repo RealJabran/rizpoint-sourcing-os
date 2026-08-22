@@ -25,7 +25,8 @@
     "verify": "pnpm check:private-assets && pnpm check:production-hardening && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:private-assets",
     "db:generate": "pnpm --filter @rizpoint/database prisma:generate",
     "db:migrate": "pnpm --filter @rizpoint/database prisma:migrate",
-    "sp-api:connect": "tsx scripts/sp-api-connect.ts"
+    "sp-api:connect": "tsx scripts/sp-api-connect.ts",
+    "sp-api:validate-live": "tsx scripts/sp-api-validate-live.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

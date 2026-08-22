@@ -25,7 +25,7 @@ type ConnectionState =
 type IntegrationStatus = {
   providerName: string;
   connectionState: ConnectionState;
-  dataOrigin: "LIVE_PROVIDER" | "NONE";
+  dataOrigin: "LIVE_AMAZON" | "NONE";
   localDemo: boolean;
   oauthAvailable: boolean;
   selfAuthorizedReady: boolean;
@@ -52,9 +52,16 @@ type IntegrationStatus = {
     capabilities: Array<{
       marketplaceId: string;
       capability: string;
+      source: "Amazon Selling Partner API";
+      dataOrigin: "LIVE_AMAZON";
+      mode: "LIVE";
       state: string;
       reasonCode: string | null;
+      completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+      freshness: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
       checkedAt: string;
+      expiresAt: string | null;
+      retryAt: string | null;
       lastSuccessAt: string | null;
     }>;
   };
@@ -103,6 +110,47 @@ const humanErrors: Record<string, string> = {
   CONNECTION_FAILED:
     "The connection could not be validated. Review worker configuration and retry.",
 };
+
+const capabilityLabels: Record<string, string> = {
+  CATALOG: "Catalog lookup & search",
+  COMPETITIVE_OFFERS: "Competitive offers",
+  FEES: "Fee estimates",
+  RESTRICTIONS: "Selling eligibility",
+};
+
+const unavailableFamilies = [
+  {
+    label: "Historical market data",
+    detail:
+      "Requires a licensed history provider; SP-API is not a market-history database.",
+  },
+  {
+    label: "Keyword volume",
+    detail:
+      "Requires a licensed keyword provider; Catalog keyword search does not expose volume.",
+  },
+  {
+    label: "Reverse-ASIN ranks",
+    detail:
+      "Requires a licensed rank provider; RizPoint never infers ranks from Amazon HTML.",
+  },
+] as const;
+
+function capabilityPresentation(state: string) {
+  if (state === "HEALTHY")
+    return { label: "Connected", tone: "success" as const };
+  if (state === "AUTHORIZED")
+    return { label: "Authorized · awaiting proof", tone: "info" as const };
+  if (state === "THROTTLED")
+    return { label: "Retry scheduled", tone: "warning" as const };
+  if (state === "PARTIAL")
+    return { label: "Partial response", tone: "warning" as const };
+  if (state === "UNAUTHORIZED")
+    return { label: "Not granted", tone: "danger" as const };
+  if (state === "NOT_CONFIGURED")
+    return { label: "Server setup required", tone: "warning" as const };
+  return { label: "Unavailable", tone: "neutral" as const };
+}
 
 function dateTime(value: string | null) {
   return value
@@ -299,8 +347,8 @@ export function AmazonIntegrationWorkspace() {
             <Skeleton />
           )}
           <span>
-            {status?.dataOrigin === "LIVE_PROVIDER"
-              ? "Live Amazon source"
+            {status?.dataOrigin === "LIVE_AMAZON"
+              ? "LIVE AMAZON · tenant connection"
               : "No live Amazon data"}
           </span>
         </div>
@@ -512,41 +560,67 @@ export function AmazonIntegrationWorkspace() {
                       <th>Capability</th>
                       <th>Marketplace</th>
                       <th>Status</th>
+                      <th>Evidence</th>
                       <th>Last checked</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {status.connection.capabilities.map((capability) => (
-                      <tr
-                        key={`${capability.marketplaceId}:${capability.capability}`}
-                      >
+                    {status.connection.capabilities.map((capability) => {
+                      const presentation = capabilityPresentation(
+                        capability.state,
+                      );
+                      return (
+                        <tr
+                          key={`${capability.marketplaceId}:${capability.capability}`}
+                        >
+                          <td>
+                            {capabilityLabels[capability.capability] ??
+                              capability.capability
+                                .replaceAll("_", " ")
+                                .toLowerCase()}
+                          </td>
+                          <td>
+                            {status.connection?.marketplaces.find(
+                              (item) =>
+                                item.marketplaceId === capability.marketplaceId,
+                            )?.name ?? "Known marketplace"}
+                          </td>
+                          <td>
+                            <Badge tone={presentation.tone}>
+                              {presentation.label}
+                            </Badge>
+                            {capability.retryAt ? (
+                              <span>
+                                Retry after {dateTime(capability.retryAt)}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td>
+                            <strong>LIVE AMAZON</strong>
+                            <span>
+                              {capability.completeness.toLowerCase()} ·{" "}
+                              {capability.freshness.toLowerCase()}
+                            </span>
+                          </td>
+                          <td>{dateTime(capability.checkedAt)}</td>
+                        </tr>
+                      );
+                    })}
+                    {unavailableFamilies.map((family) => (
+                      <tr key={family.label}>
                         <td>
-                          {capability.capability
-                            .replaceAll("_", " ")
-                            .toLowerCase()}
+                          <strong>{family.label}</strong>
+                          <span>{family.detail}</span>
+                        </td>
+                        <td>All marketplaces</td>
+                        <td>
+                          <Badge tone="neutral">Provider required</Badge>
                         </td>
                         <td>
-                          {status.connection?.marketplaces.find(
-                            (item) =>
-                              item.marketplaceId === capability.marketplaceId,
-                          )?.name ?? "Known marketplace"}
+                          <strong>NOT AVAILABLE</strong>
+                          <span>No value shown</span>
                         </td>
-                        <td>
-                          <Badge
-                            tone={
-                              capability.state === "HEALTHY"
-                                ? "success"
-                                : capability.state === "THROTTLED"
-                                  ? "warning"
-                                  : "neutral"
-                            }
-                          >
-                            {capability.state
-                              .replaceAll("_", " ")
-                              .toLowerCase()}
-                          </Badge>
-                        </td>
-                        <td>{dateTime(capability.checkedAt)}</td>
+                        <td>—</td>
                       </tr>
                     ))}
                   </tbody>

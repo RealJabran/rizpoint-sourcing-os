@@ -52,7 +52,10 @@ export async function dispatchOutboxOnce(): Promise<number> {
                   payload.runId,
                 ),
         attempts: 3,
-        backoff: { type: "exponential", delay: 1_000, jitter: 0.25 },
+        backoff:
+          payload.kind === "PROVIDER_CONNECTION"
+            ? { type: "provider" }
+            : { type: "exponential", delay: 1_000, jitter: 0.25 },
         priority: queuePriorityForKind(payload.kind ?? "MOCK"),
         ...(Number.isFinite(notBefore) && notBefore > Date.now()
           ? { delay: notBefore - Date.now() }

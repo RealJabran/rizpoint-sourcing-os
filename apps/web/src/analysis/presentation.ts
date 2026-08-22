@@ -1,4 +1,5 @@
 import type { DecimalValue, ExternalEvidence } from "./workspace-types";
+import { evidenceOrigin } from "../components/evidence-origin";
 
 export function formatDecimal(value: DecimalValue | null): string {
   return value?.toString() ?? "—";
@@ -20,5 +21,5 @@ export function formatEvidenceSource(evidence: ExternalEvidence): string {
     Date.parse(evidence.freshUntil) < Date.now()
       ? "STALE"
       : evidence.freshnessState;
-  return `${evidence.provider} · ${evidence.observedAt.replace("T", " ").slice(0, 19)} · ${humanizeAnalysisValue(effectiveFreshness)}`;
+  return `${evidenceOrigin(evidence.provider)} · ${evidence.provider} · ${evidence.marketplaceId} · ${evidence.observedAt.replace("T", " ").slice(0, 19)} · ${humanizeAnalysisValue(effectiveFreshness)} · ${humanizeAnalysisValue(evidence.completeness)}`;
 }

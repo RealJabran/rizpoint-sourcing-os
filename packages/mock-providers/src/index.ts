@@ -63,6 +63,7 @@ function toCatalogProduct(
       : {}),
     provenance: {
       provider: "mock-catalog",
+      dataOrigin: "MOCK",
       observedAt: observedAt(),
       freshnessState: "FRESH",
       providerReference: product.asin,
@@ -164,6 +165,7 @@ export class MockAmazonProvider
       ],
       provenance: {
         provider: "mock-amazon",
+        dataOrigin: "MOCK",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
@@ -250,6 +252,7 @@ export class MockAmazonProvider
       },
       provenance: {
         provider: "mock-amazon",
+        dataOrigin: "MOCK",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
@@ -316,6 +319,7 @@ export class MockAmazonProvider
       },
       provenance: {
         provider: "mock-amazon",
+        dataOrigin: "MOCK",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: request.requestId,
@@ -353,6 +357,7 @@ export class MockAmazonProvider
       },
       provenance: {
         provider: "mock-amazon",
+        dataOrigin: "MOCK",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
@@ -377,6 +382,7 @@ export class MockAmazonProvider
       ],
       provenance: {
         provider: "mock-history",
+        dataOrigin: "MOCK",
         observedAt: observedAt(),
         freshnessState: "FRESH",
         providerReference: asin,
@@ -527,6 +533,7 @@ export class RecordedMarketHistoryProvider implements MarketHistoryProvider {
       },
       provenance: {
         provider: this.providerKey,
+        dataOrigin: "MOCK",
         observedAt,
         freshnessState: "FRESH",
         marketplaceId: marketplace.marketplaceId,

@@ -134,11 +134,16 @@ describe("provider status route", () => {
       ],
       entitlements: [
         {
+          providerKey: "amazon-sp-api",
           marketplaceId: "ATVPDKIKX0DER",
           capability: "CATALOG",
+          mode: "LIVE",
           state: "HEALTHY",
           reasonCode: null,
+          completeness: "COMPLETE",
           checkedAt: new Date("2026-08-22T01:00:00.000Z"),
+          expiresAt: null,
+          retryAt: null,
           lastSuccessAt: new Date("2026-08-22T01:00:00.000Z"),
         },
       ],
@@ -153,10 +158,17 @@ describe("provider status route", () => {
     expect(body).toMatchObject({
       provider: "amazon-sp-api",
       connectionState: "CONNECTED",
-      dataOrigin: "LIVE_PROVIDER",
+      dataOrigin: "LIVE_AMAZON",
       connection: {
         mode: "OAUTH",
         sellerIdentity: "Seller account ••••9XYZ",
+        capabilities: [
+          expect.objectContaining({
+            source: "Amazon Selling Partner API",
+            dataOrigin: "LIVE_AMAZON",
+            completeness: "COMPLETE",
+          }),
+        ],
       },
     });
     expect(JSON.stringify(body)).not.toMatch(

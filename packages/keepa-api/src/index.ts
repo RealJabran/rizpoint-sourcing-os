@@ -308,6 +308,7 @@ export class KeepaMarketHistoryProvider
       },
       provenance: {
         provider: this.providerKey,
+        dataOrigin: "LICENSED_PROVIDER",
         observedAt,
         freshnessState: "FRESH",
         marketplaceId: marketplace.marketplaceId,

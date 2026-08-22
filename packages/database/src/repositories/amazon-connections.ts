@@ -192,6 +192,7 @@ export async function requestAmazonConnectionJob(input: {
   connectionId: string;
   kind: "VALIDATE" | "REFRESH_CAPABILITIES";
   idempotencyKey?: string;
+  now?: Date;
 }) {
   return db.$transaction(async (transaction) => {
     const connection = await transaction.providerConnection.findFirst({
@@ -204,7 +205,25 @@ export async function requestAmazonConnectionJob(input: {
       select: { id: true },
     });
     if (!connection) throw new AmazonConnectionError("CONNECTION_NOT_FOUND");
-    const bucket = Math.floor(Date.now() / 10_000);
+    const now = input.now ?? new Date();
+    const cooldownMs =
+      input.kind === "REFRESH_CAPABILITIES" ? 15 * 60_000 : 60_000;
+    if (!input.idempotencyKey) {
+      const recent = await transaction.providerConnectionJob.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          providerConnectionId: connection.id,
+          kind: input.kind,
+          requestedAt: { gt: new Date(now.getTime() - cooldownMs) },
+          status: {
+            in: ["PENDING", "RUNNING", "FAILED_RETRYABLE", "COMPLETED"],
+          },
+        },
+        orderBy: { requestedAt: "desc" },
+      });
+      if (recent) return recent;
+    }
+    const bucket = Math.floor(now.getTime() / cooldownMs);
     const idempotencyKey =
       input.idempotencyKey ??
       `amazon-${input.kind.toLowerCase()}:${connection.id}:${bucket}`;
@@ -240,6 +259,64 @@ export async function requestAmazonConnectionJob(input: {
     });
     return job;
   });
+}
+
+/** Select a tiny, tenant-scoped product set for non-destructive capability
+ * probes. No provider call is needed to discover these candidates. */
+export async function findAmazonCapabilityProbeAsins(input: {
+  organizationId: string;
+  marketplaceId: string;
+  limit?: number;
+}) {
+  const limit = Math.max(1, Math.min(input.limit ?? 5, 5));
+  const asins = new Set<string>();
+  const add = (value: string | null | undefined) => {
+    if (value && /^B[A-Z0-9]{9}$/.test(value) && asins.size < limit)
+      asins.add(value);
+  };
+  const watches = await db.productWatch.findMany({
+    where: {
+      organizationId: input.organizationId,
+      marketplaceId: input.marketplaceId,
+      status: "ACTIVE",
+    },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    select: { catalogProduct: { select: { asin: true } } },
+  });
+  watches.forEach((item) => add(item.catalogProduct.asin));
+  if (asins.size < limit) {
+    const projectItems = await db.researchProjectItem.findMany({
+      where: {
+        organizationId: input.organizationId,
+        kind: "PRODUCT",
+        catalogProduct: {
+          marketplaceId: input.marketplaceId,
+          asin: { not: null },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+      select: { catalogProduct: { select: { asin: true } } },
+    });
+    projectItems.forEach((item) => add(item.catalogProduct?.asin));
+  }
+  if (asins.size < limit) {
+    const listingCandidates = await db.listingCandidate.findMany({
+      where: {
+        organizationId: input.organizationId,
+        catalogProduct: {
+          marketplaceId: input.marketplaceId,
+          asin: { not: null },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+      select: { catalogProduct: { select: { asin: true } } },
+    });
+    listingCandidates.forEach((item) => add(item.catalogProduct.asin));
+  }
+  return [...asins];
 }
 
 export async function persistAmazonMarketplaceParticipations(input: {
@@ -317,11 +394,26 @@ export async function persistAmazonMarketplaceParticipations(input: {
             },
           },
         });
+        const resetConnectionBoundary = [
+          "MARKETPLACE_NOT_PARTICIPATING",
+          "LOCAL_CONNECTION_REVOKED",
+          "CONNECTION_NOT_AUTHORIZED",
+        ].includes(existing?.reasonCode ?? "");
         const state = item.isParticipating
-          ? existing?.state === "HEALTHY"
-            ? ("HEALTHY" as const)
+          ? existing && !resetConnectionBoundary
+            ? existing.state
             : ("AUTHORIZED" as const)
           : ("UNAVAILABLE" as const);
+        const reasonCode = item.isParticipating
+          ? state === "AUTHORIZED"
+            ? null
+            : (existing?.reasonCode ?? null)
+          : "MARKETPLACE_NOT_PARTICIPATING";
+        const completeness = item.isParticipating
+          ? existing && !resetConnectionBoundary
+            ? existing.completeness
+            : ("UNKNOWN" as const)
+          : ("UNKNOWN" as const);
         await transaction.providerEntitlement.upsert({
           where: {
             organizationId_providerKey_marketplaceId_capability: {
@@ -339,10 +431,8 @@ export async function persistAmazonMarketplaceParticipations(input: {
             capability,
             mode: "LIVE",
             state,
-            reasonCode: item.isParticipating
-              ? null
-              : "MARKETPLACE_NOT_PARTICIPATING",
-            completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+            reasonCode,
+            completeness,
             checkedAt: input.observedAt,
             lastSuccessAt:
               state === "HEALTHY" ? (existing?.lastSuccessAt ?? null) : null,
@@ -351,14 +441,10 @@ export async function persistAmazonMarketplaceParticipations(input: {
             providerConnectionId: connection.id,
             mode: "LIVE",
             state,
-            reasonCode: item.isParticipating
-              ? null
-              : "MARKETPLACE_NOT_PARTICIPATING",
-            completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+            reasonCode,
+            completeness,
             checkedAt: input.observedAt,
-            ...(state === "HEALTHY"
-              ? { lastSuccessAt: existing?.lastSuccessAt ?? null }
-              : { lastSuccessAt: null }),
+            lastSuccessAt: existing?.lastSuccessAt ?? null,
           },
         });
       }
@@ -490,11 +576,16 @@ export async function getAmazonIntegrationStatus(organizationId: string) {
       entitlements: {
         orderBy: [{ marketplaceId: "asc" }, { capability: "asc" }],
         select: {
+          providerKey: true,
           marketplaceId: true,
           capability: true,
+          mode: true,
           state: true,
           reasonCode: true,
+          completeness: true,
           checkedAt: true,
+          expiresAt: true,
+          retryAt: true,
           lastSuccessAt: true,
         },
       },

@@ -7,17 +7,29 @@ export const freshnessStateSchema = z.enum([
   "UNKNOWN",
 ]);
 
+export const dataOriginSchema = z.enum([
+  "LIVE_AMAZON",
+  "STORED_AMAZON",
+  "LICENSED_PROVIDER",
+  "USER_INPUT",
+  "DERIVED",
+  "MOCK",
+]);
+export type DataOrigin = z.infer<typeof dataOriginSchema>;
+
+export const decimalStringSchema = z.string().regex(/^-?\d+(\.\d+)?$/);
+
 export const provenanceSchema = z.object({
   provider: z.string().min(1),
+  dataOrigin: dataOriginSchema.optional(),
   observedAt: z.iso.datetime(),
   freshnessState: freshnessStateSchema,
   providerReference: z.string().min(1).optional(),
   marketplaceId: z.string().min(1).optional(),
   requestId: z.string().min(1).optional(),
   responseCompleteness: z.enum(["COMPLETE", "PARTIAL"]).optional(),
+  rateLimitPerSecond: decimalStringSchema.optional(),
 });
-
-export const decimalStringSchema = z.string().regex(/^-?\d+(\.\d+)?$/);
 
 export const marketplaceContextSchema = z.object({
   marketplaceId: z.string().min(1),

@@ -1,4 +1,5 @@
 import type { ScanJobStatus } from "@rizpoint/database";
+import { ProviderError } from "@rizpoint/provider-contracts";
 
 export type UploadJobKind =
   | "UPLOAD_INSPECT"
@@ -45,6 +46,18 @@ export function failureStatusForAttempt(
 ): Extract<ScanJobStatus, "FAILED_RETRYABLE" | "FAILED_FINAL"> {
   const maxAttempts = configuredAttempts ?? 1;
   return attemptsMade + 1 >= maxAttempts ? "FAILED_FINAL" : "FAILED_RETRYABLE";
+}
+
+/** Honor a provider Retry-After deadline when BullMQ retries a connection
+ * operation. The fallback is deliberately slow enough to avoid reconnect
+ * storms when Amazon supplies no explicit deadline. */
+export function providerConnectionRetryDelay(error?: Error): number {
+  if (
+    error instanceof ProviderError &&
+    error.options.retryAfterMs !== undefined
+  )
+    return Math.max(1_000, Math.min(error.options.retryAfterMs, 15 * 60_000));
+  return 30_000;
 }
 
 export function isProfitCalculationAttemptRunnable(

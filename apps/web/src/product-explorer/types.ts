@@ -6,6 +6,7 @@ export type ExplorerRow = {
   marketplaceId: string | null;
   category: string | null;
   catalogProviderKey: string | null;
+  catalogCompleteness: string | null;
   sources: string[];
   price: string | null;
   currency: string | null;
@@ -25,6 +26,7 @@ export type ExplorerRow = {
   freshnessState: string | null;
   observedAt: string | null;
   pricingProviderKey: string | null;
+  pricingCompleteness: string | null;
   historyProviderKey: string | null;
 };
 

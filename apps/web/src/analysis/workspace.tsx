@@ -20,6 +20,7 @@ import {
   type AnalysisScanContext as ScanContext,
 } from "./workspace-types";
 import { PageHeader } from "@/src/components/page-header";
+import { evidenceOrigin } from "@/src/components/evidence-origin";
 import {
   Alert,
   Badge,
@@ -1645,9 +1646,11 @@ function GridRow({
           </small>
           {catalog ? (
             <small>
-              {catalog.provider} ·{" "}
+              {evidenceOrigin(catalog.provider)} · {catalog.provider} ·{" "}
+              {catalog.marketplaceId ?? "Marketplace unknown"} ·{" "}
               {String(catalog.observedAt).replace("T", " ").slice(0, 19)} ·{" "}
-              {humanize(catalog.freshnessState)}
+              {humanize(catalog.freshnessState)} ·{" "}
+              {humanize(catalog.responseCompleteness)}
             </small>
           ) : null}
           {!pricing || !fees || !restrictions ? (

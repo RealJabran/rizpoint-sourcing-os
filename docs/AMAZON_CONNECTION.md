@@ -48,8 +48,10 @@ These are the actions the RizPoint owner must perform outside the application:
    The command exchanges the refresh token only server-side, calls Sellers
    `getMarketplaceParticipations`, encrypts the refresh token with AES-256-GCM
    and organization/connection authenticated data, persists the discovered
-   marketplaces and capability boundary, and prints only
-   `SP_API_CONNECTION_STATUS=CONNECTED`.
+   marketplaces and initial capability boundary, queues a worker-side probe of
+   Catalog, Competitive Offers, Fees, and Listings Restrictions, and prints only
+   normalized connection/capability status lines. No manual
+   `ProviderEntitlement` SQL is part of onboarding.
 
 6. Remove the raw refresh token from the process environment and protected
    import file when the deployment secret procedure permits. The normal worker
@@ -130,4 +132,65 @@ prior observations and last-success timestamps. Discovered marketplace changes
 are tenant-scoped, timestamped, and become the source for the application
 marketplace selector.
 
-Official references: [Amazon website authorization workflow](https://developer-docs.amazon.com/sp-api/docs/website-authorization-workflow), [self-authorization](https://developer-docs.amazon.com/sp-api/docs/self-authorization), [Seller Central URLs](https://developer-docs.amazon.com/sp-api/docs/seller-central-urls), and [Sellers getMarketplaceParticipations](https://developer-docs.amazon.com/sp-api/reference/getmarketplaceparticipations).
+## Capability activation and health
+
+Sellers `getMarketplaceParticipations` proves that the refresh token and seller
+connection work; it does **not** prove every SP-API role. On OAuth completion,
+self-authorized import, or **Refresh capabilities**, the worker performs bounded,
+read-only probes for each participating marketplace and persists the independent
+result:
+
+| RizPoint capability | Official SP-API operation                                                     | Role needed in the Amazon application |
+| ------------------- | ----------------------------------------------------------------------------- | ------------------------------------- |
+| Catalog             | Catalog Items `getCatalogItem` and `searchCatalogItems` by keyword/identifier | Product Listing                       |
+| Competitive offers  | Product Pricing `getCompetitiveSummary`                                       | Pricing                               |
+| Fee estimates       | Product Fees `getMyFeesEstimateForASIN` with an explicit scenario price       | Pricing and Product Listing           |
+| Selling eligibility | Listings Restrictions `getListingsRestrictions`                               | Product Listing                       |
+
+Each state remains one of authorized/healthy, unauthorized, throttled, partial,
+unavailable, or not configured. HTTP 401/403, 429 plus `Retry-After`, 5xx,
+invalid payloads, and partial batch results remain distinct. Amazon's
+`x-amzn-RateLimit-Limit` response header updates the adapter's per-operation
+pacing. A 15-minute refresh coalescing window and provider-aware queue backoff
+prevent repeated clicks or reconnects from creating a request storm.
+
+The Amazon workspace identifies live probe status as **LIVE AMAZON**. Research
+pages identify already-persisted values as **STORED AMAZON**. Licensed-provider,
+user-input, derived, and mock evidence receive different labels. SP-API does not
+provide global historical market data, keyword search volume, or reverse-ASIN
+rank history; those rows remain visible as **Provider required** rather than
+being hidden or inferred.
+
+## Explicit live validation (operator only)
+
+After connecting an account, an operator can validate a small known ASIN set
+against the active marketplace. This command is blocked in CI and does nothing
+unless explicitly enabled:
+
+```sh
+RIZPOINT_ENABLE_LIVE_SP_API_VALIDATION=true \
+pnpm sp-api:validate-live -- \
+  --asin B000000001 \
+  --price 24.99 \
+  --currency USD
+```
+
+Repeat `--asin` for at most five ASINs. Use a realistic, nonzero sale price; it
+is the explicit input to the Amazon fee-estimate scenario and is not stored as
+market truth. `--currency` may be omitted when marketplace discovery returned a
+currency. The command exercises marketplace participation, ASIN and identifier
+Catalog lookup, keyword Catalog search, competitive offers, fees, and selling
+restrictions, then persists normalized entitlement states. It outputs a
+sanitized report containing source, marketplace, observation/freshness,
+completeness, normalized status, request IDs, rate-limit observations, and retry
+deadlines only. It never prints product payloads, titles, seller identity, or
+credential material.
+
+For live use the worker still needs the application-specific LWA client ID and
+client secret plus the credential-vault key. The organization must already have
+an encrypted refresh token from `pnpm sp-api:connect` or OAuth. Amazon must have
+approved/granted Product Listing and Pricing roles to the application and the
+seller must authorize that current role set. A role added later requires Amazon
+reauthorization before its probe can become connected.
+
+Official references: [Amazon website authorization workflow](https://developer-docs.amazon.com/sp-api/docs/website-authorization-workflow), [self-authorization](https://developer-docs.amazon.com/sp-api/docs/self-authorization), [Seller Central URLs](https://developer-docs.amazon.com/sp-api/docs/seller-central-urls), [Sellers getMarketplaceParticipations](https://developer-docs.amazon.com/sp-api/reference/getmarketplaceparticipations), [Catalog Items](https://developer-docs.amazon.com/sp-api/docs/catalog-items-api-v2022-04-01-reference), [Product Fees](https://developer-docs.amazon.com/sp-api/docs/get-product-fee-estimates-asin), and [Listings Restrictions](https://developer-docs.amazon.com/sp-api/docs/listings-restrictions-api).

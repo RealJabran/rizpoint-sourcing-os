@@ -159,6 +159,67 @@ try {
       },
     ],
   });
+  await db.providerEntitlement.update({
+    where: {
+      organizationId_providerKey_marketplaceId_capability: {
+        organizationId: organizationA.id,
+        providerKey: "amazon-sp-api",
+        marketplaceId: "ATVPDKIKX0DER",
+        capability: "FEES",
+      },
+    },
+    data: {
+      state: "UNAUTHORIZED",
+      reasonCode: "CAPABILITY_NOT_ENTITLED",
+      completeness: "UNKNOWN",
+    },
+  });
+  await persistAmazonMarketplaceParticipations({
+    organizationId: organizationA.id,
+    connectionId: connection.id,
+    observedAt: new Date("2026-08-22T01:05:00.000Z"),
+    preferredMarketplaceId: "ATVPDKIKX0DER",
+    participations: [
+      {
+        marketplaceId: "ATVPDKIKX0DER",
+        name: "Amazon.com",
+        isParticipating: true,
+        hasSuspendedListings: false,
+      },
+    ],
+  });
+  const deniedFee = await db.providerEntitlement.findUniqueOrThrow({
+    where: {
+      organizationId_providerKey_marketplaceId_capability: {
+        organizationId: organizationA.id,
+        providerKey: "amazon-sp-api",
+        marketplaceId: "ATVPDKIKX0DER",
+        capability: "FEES",
+      },
+    },
+  });
+  assert.equal(
+    deniedFee.state,
+    "UNAUTHORIZED",
+    "Sellers validation must not overwrite a capability-specific denial",
+  );
+  assert.ok(await getCatalogProviderConnection(organizationA.id));
+  assert.equal(
+    (
+      await db.providerEntitlement.findUniqueOrThrow({
+        where: {
+          organizationId_providerKey_marketplaceId_capability: {
+            organizationId: organizationA.id,
+            providerKey: "amazon-sp-api",
+            marketplaceId: "ATVPDKIKX0DER",
+            capability: "FEES",
+          },
+        },
+      })
+    ).state,
+    "UNAUTHORIZED",
+    "runtime resolution must preserve the capability probe result",
+  );
   assert.equal(await getAmazonIntegrationStatus(organizationB.id), null);
   await assert.rejects(
     requestAmazonConnectionJob({
@@ -183,10 +244,30 @@ try {
   });
   const status = await getAmazonIntegrationStatus(organizationA.id);
   assert.equal(status?.mode, "SELF_AUTHORIZED");
+  assert.equal(status?.entitlements.length, 8);
+  assert.ok(
+    status?.entitlements.every(
+      (item) => item.providerKey === "amazon-sp-api" && item.mode === "LIVE",
+    ),
+    "marketplace discovery should bootstrap capability rows without manual SQL",
+  );
   assert.equal(
     status?.marketplaces.find((item) => item.isDefault)?.marketplaceId,
     "A2EUQ1WTGCTBG2",
   );
+  const firstRefresh = await requestAmazonConnectionJob({
+    organizationId: organizationA.id,
+    connectionId: connection.id,
+    kind: "REFRESH_CAPABILITIES",
+    now: new Date("2026-08-22T02:00:00.000Z"),
+  });
+  const coalescedRefresh = await requestAmazonConnectionJob({
+    organizationId: organizationA.id,
+    connectionId: connection.id,
+    kind: "REFRESH_CAPABILITIES",
+    now: new Date("2026-08-22T02:05:00.000Z"),
+  });
+  assert.equal(coalescedRefresh.id, firstRefresh.id);
 
   process.env.PHASE_ZERO_DEMO_MODE = "true";
   process.env.PROVIDER_MODE = "mock";

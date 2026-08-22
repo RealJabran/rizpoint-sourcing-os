@@ -14,7 +14,10 @@ import {
 import { getObjectBytes } from "@rizpoint/object-storage";
 import { createHash } from "node:crypto";
 import { redis } from "./queue.js";
-import { failureStatusForAttempt } from "./job-policy.js";
+import {
+  failureStatusForAttempt,
+  providerConnectionRetryDelay,
+} from "./job-policy.js";
 import { selectMappedUploadSheet } from "./normalization-selection.js";
 import {
   inspectWorkbook,
@@ -271,5 +274,13 @@ export const mockScanWorker = new Worker<{
       throw error;
     }
   },
-  { connection: redis, concurrency: 4, limiter: { max: 10, duration: 1_000 } },
+  {
+    connection: redis,
+    concurrency: 4,
+    limiter: { max: 10, duration: 1_000 },
+    settings: {
+      backoffStrategy: (_attemptsMade, type, error) =>
+        type === "provider" ? providerConnectionRetryDelay(error) : 30_000,
+    },
+  },
 );

@@ -154,6 +154,14 @@ is available when Amazon public credentials are configured. Mock evidence is
 restricted to explicit local demo mode and is never presented as a connected
 Amazon source. See `docs/AMAZON_CONNECTION.md`.
 
+Once connected, marketplace discovery creates the four normal SP-API capability
+records automatically. A bounded worker probe independently validates Catalog,
+Competitive Offers, Fees, and Selling Eligibility per marketplace; absent
+roles, throttling, partial responses, and outages remain explicit. Amazon
+settings keeps historical market data, keyword volume, and reverse-ASIN ranks
+visible as licensed-provider dependencies because SP-API does not supply those
+research universes.
+
 ## Licensed market history
 
 Prompt 04 adds an optional, vendor-neutral market-history boundary. The first

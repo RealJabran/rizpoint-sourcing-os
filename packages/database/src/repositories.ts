@@ -1458,18 +1458,25 @@ async function ensureAmazonCapabilityRows(
         existing.retryAt > checkedAt
       )
         return existing;
-      // Sellers validation proves the account and marketplace grant, not that
-      // Catalog, Pricing, Fees, or Restrictions has successfully answered.
-      // Preserve a capability's proven HEALTHY state; otherwise expose only
-      // the connection-level authorization until that operation is observed.
-      const state =
+      // Sellers validation proves the account connection only. Preserve every
+      // capability-specific probe result; a 403, partial response, or outage
+      // must not be rewritten as authorized by an unrelated runtime lookup.
+      const capabilitySpecific =
         !mock &&
         connectionState === "AUTHORIZED" &&
-        existing?.state === "HEALTHY"
-          ? ("HEALTHY" as const)
-          : connectionState;
-      const reasonCode =
-        state === "UNAUTHORIZED"
+        existing &&
+        ![
+          "CONNECTION_NOT_AUTHORIZED",
+          "LOCAL_CONNECTION_REVOKED",
+          "MARKETPLACE_NOT_PARTICIPATING",
+        ].includes(existing.reasonCode ?? "");
+      const state = capabilitySpecific ? existing.state : connectionState;
+      const capabilityCheckedAt = capabilitySpecific
+        ? existing.checkedAt
+        : checkedAt;
+      const reasonCode = capabilitySpecific
+        ? existing.reasonCode
+        : state === "UNAUTHORIZED"
           ? "CONNECTION_NOT_AUTHORIZED"
           : state === "THROTTLED"
             ? "PROVIDER_THROTTLED"
@@ -1494,9 +1501,13 @@ async function ensureAmazonCapabilityRows(
           mode: mock ? "MOCK" : "LIVE",
           state,
           reasonCode,
-          retryAt: null,
-          completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
-          checkedAt,
+          retryAt: capabilitySpecific ? existing.retryAt : null,
+          completeness: capabilitySpecific
+            ? existing.completeness
+            : state === "HEALTHY"
+              ? "COMPLETE"
+              : "UNKNOWN",
+          checkedAt: capabilityCheckedAt,
           ...(mockRights
             ? {
                 dataUsageScope: mockRights.usageScope,
@@ -1509,18 +1520,24 @@ async function ensureAmazonCapabilityRows(
                 rightsEffectiveAt: mockRights.effectiveAt,
               }
             : {}),
-          ...(state === "HEALTHY" || state === "AUTHORIZED"
-            ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
-            : {}),
+          ...(capabilitySpecific
+            ? { lastSuccessAt: existing.lastSuccessAt }
+            : state === "HEALTHY" || state === "AUTHORIZED"
+              ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
+              : {}),
         },
         update: {
           providerConnectionId: connection.id,
           mode: mock ? "MOCK" : "LIVE",
           state,
           reasonCode,
-          retryAt: null,
-          completeness: state === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
-          checkedAt,
+          retryAt: capabilitySpecific ? existing.retryAt : null,
+          completeness: capabilitySpecific
+            ? existing.completeness
+            : state === "HEALTHY"
+              ? "COMPLETE"
+              : "UNKNOWN",
+          checkedAt: capabilityCheckedAt,
           ...(mockRights
             ? {
                 dataUsageScope: mockRights.usageScope,
@@ -1533,9 +1550,11 @@ async function ensureAmazonCapabilityRows(
                 rightsEffectiveAt: mockRights.effectiveAt,
               }
             : {}),
-          ...(state === "HEALTHY" || state === "AUTHORIZED"
-            ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
-            : {}),
+          ...(capabilitySpecific
+            ? { lastSuccessAt: existing.lastSuccessAt }
+            : state === "HEALTHY" || state === "AUTHORIZED"
+              ? { lastSuccessAt: connection.lastSuccessAt ?? checkedAt }
+              : {}),
         },
       });
     }),

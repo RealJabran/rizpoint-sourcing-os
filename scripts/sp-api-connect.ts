@@ -7,7 +7,11 @@ import {
   readSpApiConnectionConfig,
   vaultFromEnvironment,
 } from "@rizpoint/amazon-sp-api";
-import { db, persistAmazonMarketplaceParticipations } from "@rizpoint/database";
+import {
+  db,
+  persistAmazonMarketplaceParticipations,
+  requestAmazonConnectionJob,
+} from "@rizpoint/database";
 
 async function main() {
   const config = readSpApiConnectionConfig();
@@ -93,6 +97,12 @@ async function main() {
     observedAt,
     preferredMarketplaceId: config.marketplaceId,
   });
+  await requestAmazonConnectionJob({
+    organizationId: organization.id,
+    connectionId: connection.id,
+    kind: "REFRESH_CAPABILITIES",
+    idempotencyKey: `amazon-self-authorized-capabilities:${connection.id}:${observedAt.toISOString()}`,
+  });
   await db.workflowAuditEvent.create({
     data: {
       organizationId: organization.id,
@@ -107,6 +117,7 @@ async function main() {
   });
   // Deliberately report only the normalized status; never print identifiers or credentials.
   process.stdout.write("SP_API_CONNECTION_STATUS=CONNECTED\n");
+  process.stdout.write("SP_API_CAPABILITY_STATUS=QUEUED\n");
 }
 
 main()

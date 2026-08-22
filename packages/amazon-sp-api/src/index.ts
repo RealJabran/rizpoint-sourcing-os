@@ -36,6 +36,8 @@ import {
 export * from "./connectivity.js";
 export * from "./credential-vault.js";
 export * from "./oauth.js";
+export * from "./capability-probe.js";
+export * from "./live-validation-policy.js";
 export * from "./fee-normalizer.js";
 export * from "./offer-policy.js";
 import { amazonRetailPresence } from "./offer-policy.js";
@@ -61,6 +63,7 @@ export class AmazonSpApiProvider
   private nextPricingRequestAt = 0;
   private pricingQueue: Promise<void> = Promise.resolve();
   private readonly operationLimits = {
+    catalog: { rate: 2, nextRequestAt: 0, queue: Promise.resolve() },
     fees: { rate: 1, nextRequestAt: 0, queue: Promise.resolve() },
     restrictions: { rate: 5, nextRequestAt: 0, queue: Promise.resolve() },
   };
@@ -130,7 +133,12 @@ export class AmazonSpApiProvider
   private catalogProduct(
     item: Record<string, unknown>,
     marketplace: MarketplaceContext,
-    result: { body: unknown; observedAt: string; requestId?: string },
+    result: {
+      body: unknown;
+      observedAt: string;
+      requestId?: string;
+      rateLimitPerSecond?: number;
+    },
   ): CatalogProduct | null {
     const asin = typeof item.asin === "string" ? item.asin : null;
     if (!asin || !/^B[A-Z0-9]{9}$/.test(asin)) return null;
@@ -348,12 +356,16 @@ export class AmazonSpApiProvider
       }),
       provenance: {
         provider: "amazon-sp-api",
+        dataOrigin: "LIVE_AMAZON",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
         providerReference: asin,
         marketplaceId: marketplace.marketplaceId,
         requestId: result.requestId,
         responseCompleteness: completeness,
+        ...(result.rateLimitPerSecond === undefined
+          ? {}
+          : { rateLimitPerSecond: String(result.rateLimitPerSecond) }),
       },
       rawProviderObservation: result.body,
     });
@@ -364,7 +376,8 @@ export class AmazonSpApiProvider
     marketplace?: MarketplaceContext,
   ): Promise<CatalogProduct | null> {
     if (!marketplace) throw new ProviderError("PERMANENT");
-    const result = await this.request(
+    const result = await this.rateLimitedRequest(
+      "catalog",
       `/catalog/2022-04-01/items/${encodeURIComponent(asin)}?${new URLSearchParams({ marketplaceIds: marketplace.marketplaceId, includedData: "attributes,classifications,dimensions,identifiers,images,productTypes,salesRanks,summaries,relationships" }).toString()}`,
     );
     return this.catalogProduct(
@@ -395,7 +408,8 @@ export class AmazonSpApiProvider
       identifiers.some((item) => item.type !== type)
     )
       throw new ProviderError("INVALID_REQUEST");
-    const result = await this.request(
+    const result = await this.rateLimitedRequest(
+      "catalog",
       this.catalogPath({
         marketplaceIds: marketplace.marketplaceId,
         identifiers: identifiers.map((item) => item.value).join(","),
@@ -421,7 +435,8 @@ export class AmazonSpApiProvider
     marketplace?: MarketplaceContext,
   ): Promise<readonly CatalogProduct[]> {
     if (!marketplace) throw new ProviderError("PERMANENT");
-    const result = await this.request(
+    const result = await this.rateLimitedRequest(
+      "catalog",
       this.catalogPath({ marketplaceIds: marketplace.marketplaceId, keywords }),
     );
     return ((result.body as { items?: unknown[] }).items ?? []).flatMap(
@@ -812,12 +827,16 @@ export class AmazonSpApiProvider
       },
       provenance: {
         provider: "amazon-sp-api",
+        dataOrigin: "LIVE_AMAZON",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
         providerReference: asin,
         marketplaceId: marketplace.marketplaceId,
         requestId: result.requestId,
         responseCompleteness: complete ? "COMPLETE" : "PARTIAL",
+        ...(result.rateLimitPerSecond === undefined
+          ? {}
+          : { rateLimitPerSecond: String(result.rateLimitPerSecond) }),
       },
       rawProviderObservation: {
         status: response.status,
@@ -913,12 +932,16 @@ export class AmazonSpApiProvider
       },
       provenance: {
         provider: "amazon-sp-api",
+        dataOrigin: "LIVE_AMAZON",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
         providerReference: result.requestId ?? request.requestId,
         marketplaceId: request.marketplace.marketplaceId,
         requestId: result.requestId,
         responseCompleteness: complete ? "COMPLETE" : "PARTIAL",
+        ...(result.rateLimitPerSecond === undefined
+          ? {}
+          : { rateLimitPerSecond: String(result.rateLimitPerSecond) }),
       },
       rawProviderObservation: result.body,
     });
@@ -1030,6 +1053,7 @@ export class AmazonSpApiProvider
       },
       provenance: {
         provider: "amazon-sp-api",
+        dataOrigin: "LIVE_AMAZON",
         observedAt: result.observedAt,
         freshnessState: "FRESH",
         providerReference: result.requestId ?? asin,
@@ -1037,6 +1061,9 @@ export class AmazonSpApiProvider
         requestId: result.requestId,
         responseCompleteness:
           complete && state !== "INCOMPLETE" ? "COMPLETE" : "PARTIAL",
+        ...(result.rateLimitPerSecond === undefined
+          ? {}
+          : { rateLimitPerSecond: String(result.rateLimitPerSecond) }),
       },
       rawProviderObservation: result.body,
     });
@@ -1090,9 +1117,12 @@ export class AmazonSpApiProvider
       marketplaceId: marketplace.marketplaceId,
       capability,
       mode: "LIVE",
-      state: health.status,
+      // Marketplace participation validates the connection, not the role for
+      // each downstream API family. A capability probe promotes this state.
+      state:
+        health.status === "HEALTHY" ? ("AUTHORIZED" as const) : health.status,
       checkedAt: health.checkedAt,
-      completeness: health.status === "HEALTHY" ? "COMPLETE" : "UNKNOWN",
+      completeness: "UNKNOWN" as const,
       ...(reason ? { reason } : {}),
     }));
   }

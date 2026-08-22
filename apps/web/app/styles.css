@@ -2059,7 +2059,7 @@ pre {
 }
 .amazon-capability-table {
   width: 100%;
-  min-width: 680px;
+  min-width: 880px;
   border-collapse: collapse;
 }
 .amazon-capability-table th,
@@ -2072,6 +2072,15 @@ pre {
 .amazon-capability-table th {
   background: var(--rp-surface-subtle);
   color: var(--rp-muted);
+}
+.amazon-capability-table td > strong,
+.amazon-capability-table td > span {
+  display: block;
+}
+.amazon-capability-table td > span {
+  margin-top: 0.2rem;
+  color: var(--rp-muted);
+  font-size: 0.72rem;
 }
 .amazon-empty {
   display: grid;

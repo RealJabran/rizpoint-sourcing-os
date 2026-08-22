@@ -12,6 +12,7 @@ import {
   statePresentation,
   type DataState,
 } from "./research-ui-policy";
+import { evidenceOrigin } from "./evidence-origin";
 
 export function DataStateBadge({ state }: { state: DataState }) {
   const presentation = statePresentation[state];
@@ -24,10 +25,11 @@ export function DataStateBadge({ state }: { state: DataState }) {
 }
 
 export function SourceBadge({ source }: { source: string | null | undefined }) {
+  const origin = evidenceOrigin(source);
   return (
     <Badge tone="neutral">
       <span aria-hidden="true">◇</span>
-      {source?.trim() || "Source unavailable"}
+      {source?.trim() ? `${origin} · ${source.trim()}` : "Source unavailable"}
     </Badge>
   );
 }

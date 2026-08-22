@@ -92,6 +92,7 @@ describe("Catalog Items identity projection", () => {
     const fetch = vi.fn(async () =>
       response({ items: [catalogItem] }, 200, {
         "x-amzn-requestid": "request-1",
+        "x-amzn-ratelimit-limit": "2",
       }),
     );
     vi.stubGlobal("fetch", fetch);
@@ -119,6 +120,8 @@ describe("Catalog Items identity projection", () => {
       provenance: {
         marketplaceId: "ATVPDKIKX0DER",
         requestId: "request-1",
+        dataOrigin: "LIVE_AMAZON",
+        rateLimitPerSecond: "2",
         responseCompleteness: "COMPLETE",
       },
     });

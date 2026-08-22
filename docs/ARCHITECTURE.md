@@ -49,6 +49,15 @@ The matching worker calls the typed catalog interface, validates provider payloa
 
 Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Mock/recorded adapters are the default; the optional Amazon SP-API adapter is isolated in `packages/amazon-sp-api`, server-side only, and configuration-gated. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
 
+An active Amazon connection bootstraps capability rows from marketplace
+participation, then promotes each row only after its own bounded live probe.
+Catalog, Competitive Offers, Fees, and Restrictions therefore cannot inherit a
+false healthy state from the Sellers API. Probe operations retain marketplace,
+observation time, completeness, request ID, rate-limit and retry metadata in
+tenant-scoped entitlement/request telemetry. Authorization completion and
+manual capability refresh use the same worker runtime; no browser process
+receives provider credentials or raw responses.
+
 Catalog resolution selects an active encrypted SP-API connection for the
 organization and its selected discovered marketplace. Only an explicitly
 enabled local demo without a live Amazon connection may select mock. Catalog
