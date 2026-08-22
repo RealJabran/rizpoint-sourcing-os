@@ -22,8 +22,12 @@ export async function dispatchOutboxOnce(): Promise<number> {
         scanJobId?: string;
         exportJobId?: string;
         connectionJobId?: string;
+        researchRunId?: string;
         kind?:
-          Exclude<UploadJobKind, "MOCK"> | "EXPORT" | "PROVIDER_CONNECTION";
+          | Exclude<UploadJobKind, "MOCK">
+          | "EXPORT"
+          | "PROVIDER_CONNECTION"
+          | "PRODUCT_RESEARCH";
         runAttempt?: number;
         runId?: string;
         notBefore?: string;
@@ -32,9 +36,12 @@ export async function dispatchOutboxOnce(): Promise<number> {
         throw new Error("export_job_id_missing");
       if (payload.kind === "PROVIDER_CONNECTION" && !payload.connectionJobId)
         throw new Error("connection_job_id_missing");
+      if (payload.kind === "PRODUCT_RESEARCH" && !payload.researchRunId)
+        throw new Error("research_run_id_missing");
       if (
         payload.kind !== "EXPORT" &&
         payload.kind !== "PROVIDER_CONNECTION" &&
+        payload.kind !== "PRODUCT_RESEARCH" &&
         !payload.scanJobId
       )
         throw new Error("scan_job_id_missing");
@@ -45,15 +52,18 @@ export async function dispatchOutboxOnce(): Promise<number> {
             ? `export-${payload.exportJobId}`
             : payload.kind === "PROVIDER_CONNECTION"
               ? `provider-connection-${payload.connectionJobId}`
-              : mockScanQueueJobId(
-                  payload.scanJobId!,
-                  payload.kind ?? "MOCK",
-                  payload.runAttempt,
-                  payload.runId,
-                ),
+              : payload.kind === "PRODUCT_RESEARCH"
+                ? `product-research-${payload.researchRunId}`
+                : mockScanQueueJobId(
+                    payload.scanJobId!,
+                    payload.kind ?? "MOCK",
+                    payload.runAttempt,
+                    payload.runId,
+                  ),
         attempts: 3,
         backoff:
-          payload.kind === "PROVIDER_CONNECTION"
+          payload.kind === "PROVIDER_CONNECTION" ||
+          payload.kind === "PRODUCT_RESEARCH"
             ? { type: "provider" }
             : { type: "exponential", delay: 1_000, jitter: 0.25 },
         priority: queuePriorityForKind(payload.kind ?? "MOCK"),

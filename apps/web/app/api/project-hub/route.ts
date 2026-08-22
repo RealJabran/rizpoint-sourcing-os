@@ -3,12 +3,13 @@ import {
   compareProjectNiches,
   compareProjectProducts,
   createDecisionMemo,
+  createProjectNote,
   createProjectAssumption,
   createProjectEvidence,
-  ensurePhaseZeroOrganization,
   getProjectHub,
 } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ function sections(value: unknown) {
 export async function GET(request: NextRequest) {
   const denied = requirePrivateAccess(request);
   if (denied) return denied;
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId)
     return NextResponse.json({ error: "PROJECT_ID_REQUIRED" }, { status: 400 });
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const denied = requirePrivateAccess(request);
   if (denied) return denied;
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   const body = (await request.json().catch(() => null)) as Record<
     string,
     unknown
@@ -89,6 +90,15 @@ export async function POST(request: NextRequest) {
   const projectId = text(body, "projectId");
   try {
     const action = text(body, "action");
+    if (action === "note")
+      return NextResponse.json(
+        await createProjectNote({
+          organizationId: organization.id,
+          projectId,
+          body: text(body, "body"),
+        }),
+        { status: 201 },
+      );
     if (action === "evidence")
       return NextResponse.json(
         await createProjectEvidence({

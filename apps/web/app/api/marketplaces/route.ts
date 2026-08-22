@@ -17,11 +17,18 @@ export async function GET(request: NextRequest) {
           (marketplace) => marketplace.id === participation.marketplaceId,
         );
         return registered
-          ? [{ ...registered, isDefault: participation.isDefault }]
+          ? [
+              {
+                ...registered,
+                label: `${registered.locale} · ${registered.domain}`,
+                isDefault: participation.isDefault,
+              },
+            ]
           : [];
       })
     : MARKETPLACES.map((marketplace) => ({
         ...marketplace,
+        label: `${marketplace.locale} · ${marketplace.domain}`,
         isDefault: marketplace.id === "ATVPDKIKX0DER",
       }));
   return NextResponse.json({

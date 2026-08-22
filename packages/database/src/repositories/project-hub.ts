@@ -86,7 +86,29 @@ export async function getProjectHub(input: {
         orderBy: { updatedAt: "desc" },
         take: 100,
         include: {
-          catalogProduct: true,
+          catalogProduct: {
+            include: {
+              productResearchItems: {
+                where: { organizationId: input.organizationId },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+                select: {
+                  observedAt: true,
+                  freshnessState: true,
+                  completeness: true,
+                  source: true,
+                  run: {
+                    select: {
+                      id: true,
+                      status: true,
+                      completedAt: true,
+                      createdAt: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           marketDefinition: true,
           keyword: true,
         },
@@ -118,6 +140,26 @@ export async function getProjectHub(input: {
   });
   if (!project) throw new Error("RESEARCH_PROJECT_NOT_FOUND");
   return project;
+}
+
+export async function createProjectNote(input: {
+  organizationId: string;
+  projectId: string;
+  body: string;
+}) {
+  if (!input.body.trim()) throw new Error("PROJECT_NOTE_REQUIRED");
+  const project = await db.researchProject.findFirst({
+    where: { id: input.projectId, organizationId: input.organizationId },
+    select: { id: true },
+  });
+  if (!project) throw new Error("RESEARCH_PROJECT_NOT_FOUND");
+  return db.researchNote.create({
+    data: {
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      body: input.body.trim(),
+    },
+  });
 }
 
 export async function createProjectEvidence(input: {

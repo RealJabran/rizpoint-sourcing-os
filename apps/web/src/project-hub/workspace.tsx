@@ -5,6 +5,7 @@ import {
   Alert,
   Badge,
   Button,
+  ButtonLink,
   Card,
   SelectControl,
   TextInput,
@@ -17,6 +18,7 @@ type Project = {
   marketplaceId: string;
   status: string;
   version: number;
+  updatedAt: string;
   projectTags: Array<{ tag: { id: string; label: string } }>;
   items: Array<{
     id: string;
@@ -29,6 +31,18 @@ type Project = {
       title: string;
       asin: string | null;
       brand: string | null;
+      productResearchItems: Array<{
+        observedAt: string;
+        freshnessState: string;
+        completeness: string;
+        source: string;
+        run: {
+          id: string;
+          status: string;
+          completedAt: string | null;
+          createdAt: string;
+        };
+      }>;
     } | null;
     marketDefinition: { id: string; name: string } | null;
     keyword: { phrase: string } | null;
@@ -122,6 +136,11 @@ export function ProjectHubWorkspace() {
   const [selectedNiches, setSelectedNiches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [projectMarketplaceId, setProjectMarketplaceId] = useState("");
+  const [projectMarketplaces, setProjectMarketplaces] = useState<
+    Array<{ id: string; label: string; isDefault: boolean }>
+  >([]);
   const load = async (targetId = projectId) => {
     if (!targetId.trim()) return;
     setBusy(true);
@@ -169,6 +188,26 @@ export function ProjectHubWorkspace() {
     };
     // Loading a deep-linked project once on mount is intentional.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void request("/api/marketplaces")
+      .then((payload) => {
+        if (cancelled) return;
+        const items = payload.marketplaces as Array<{
+          id: string;
+          label: string;
+          isDefault: boolean;
+        }>;
+        setProjectMarketplaces(items);
+        setProjectMarketplaceId(
+          items.find((item) => item.isDefault)?.id ?? items[0]?.id ?? "",
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const submit = async (event: FormEvent<HTMLFormElement>, action: string) => {
     event.preventDefault();
@@ -234,6 +273,37 @@ export function ProjectHubWorkspace() {
       setBusy(false);
     }
   };
+  const createProject = async () => {
+    if (!newProjectName.trim() || !projectMarketplaceId) return;
+    try {
+      setBusy(true);
+      const created = await request("/api/research-projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: newProjectName,
+          marketplaceId: projectMarketplaceId,
+          mode: "PRIVATE_LABEL",
+        }),
+      });
+      setProjects((current) => [created, ...current]);
+      setNewProjectName("");
+      await load(created.id);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "PROJECT_CREATE_FAILED",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const latestResearch = project?.items
+    .flatMap((item) => item.catalogProduct?.productResearchItems ?? [])
+    .sort(
+      (left, right) =>
+        new Date(right.observedAt).getTime() -
+        new Date(left.observedAt).getTime(),
+    )[0];
   return (
     <div className="page-stack">
       <PageHeader
@@ -265,6 +335,34 @@ export function ProjectHubWorkspace() {
           >
             {busy ? "Loading…" : "Open project"}
           </Button>
+          <span className="inline-control">
+            <TextInput
+              value={newProjectName}
+              onChange={(event) => setNewProjectName(event.target.value)}
+              placeholder="New project name"
+              aria-label="New project name"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void createProject()}
+              disabled={busy || !newProjectName.trim() || !projectMarketplaceId}
+            >
+              Create project
+            </Button>
+          </span>
+          <SelectControl
+            aria-label="New project marketplace"
+            value={projectMarketplaceId}
+            onChange={(event) => setProjectMarketplaceId(event.target.value)}
+          >
+            {projectMarketplaces.map((marketplace) => (
+              <option key={marketplace.id} value={marketplace.id}>
+                {marketplace.label}
+                {marketplace.isDefault ? " · default" : ""}
+              </option>
+            ))}
+          </SelectControl>
         </div>
       </Card>
       {error ? (
@@ -283,8 +381,8 @@ export function ProjectHubWorkspace() {
           </p>
           {!projects.length && !busy ? (
             <p>
-              No projects exist in this organization yet. Create one from
-              Product Explorer before saving research evidence.
+              No projects exist in this organization yet. Create one above, then
+              add products without copying an internal ID.
             </p>
           ) : null}
         </Card>
@@ -304,6 +402,31 @@ export function ProjectHubWorkspace() {
               {project.projectTags.map((item) => item.tag.label).join(", ") ||
                 "No tags"}
             </p>
+            <div className="research-evidence-strip">
+              <span>
+                Last research run:{" "}
+                {latestResearch
+                  ? new Date(
+                      latestResearch.run.completedAt ??
+                        latestResearch.run.createdAt,
+                    ).toLocaleString()
+                  : "No product research yet"}
+              </span>
+              <span>
+                Freshness:{" "}
+                {latestResearch?.freshnessState.toLowerCase() ?? "unknown"}
+              </span>
+              <span>
+                Evidence:{" "}
+                {latestResearch?.completeness.toLowerCase() ?? "not available"}
+              </span>
+              <span>
+                Project activity: {new Date(project.updatedAt).toLocaleString()}
+              </span>
+              <ButtonLink href="/product-research" size="sm" variant="quiet">
+                Research products
+              </ButtonLink>
+            </div>
           </Card>
           <div className="metric-grid">
             {[
@@ -344,6 +467,20 @@ export function ProjectHubWorkspace() {
                           {item.catalogProduct?.asin ?? "No ASIN"} ·{" "}
                           {item.catalogProduct?.brand ?? "Brand unavailable"}
                         </small>
+                        {item.catalogProduct?.productResearchItems[0] ? (
+                          <small>
+                            {item.catalogProduct.productResearchItems[0].source}{" "}
+                            ·{" "}
+                            {item.catalogProduct.productResearchItems[0].freshnessState.toLowerCase()}{" "}
+                            · observed{" "}
+                            {new Date(
+                              item.catalogProduct.productResearchItems[0]
+                                .observedAt,
+                            ).toLocaleString()}
+                          </small>
+                        ) : (
+                          <small>No manual research evidence stored yet.</small>
+                        )}
                       </span>
                     </label>
                   ))
@@ -436,6 +573,67 @@ export function ProjectHubWorkspace() {
             </Card>
           ) : null}
           <div className="two-column">
+            <Card>
+              <h2>Economics</h2>
+              <p>
+                {project.privateLabelQuoteScenarios.length} supplier quote
+                scenario(s) are linked to this project.
+              </p>
+              <p>
+                Product fees remain evidence inputs. Profit is shown only by a
+                deterministic wholesale or private-label calculation, never an
+                AI estimate.
+              </p>
+              <ButtonLink
+                href="/private-label-profitability"
+                variant="secondary"
+              >
+                Open profitability
+              </ButtonLink>
+            </Card>
+            <Card>
+              <h2>Risks</h2>
+              <p>
+                {project.complianceRiskAssessments.length} compliance check(s)
+                are linked. Unknown risks remain unknown until evidence is
+                verified.
+              </p>
+              <ButtonLink href="/compliance-risk" variant="secondary">
+                Review compliance risks
+              </ButtonLink>
+            </Card>
+          </div>
+          <div className="two-column">
+            <Card>
+              <h2>Notes</h2>
+              <form
+                className="page-stack"
+                onSubmit={(event) => submit(event, "note")}
+              >
+                <textarea
+                  className="rp-input"
+                  name="body"
+                  aria-label="Project note"
+                  placeholder="Record a research note"
+                  required
+                />
+                <Button disabled={busy}>Add note</Button>
+              </form>
+              {project.notes.length ? (
+                <ul>
+                  {project.notes.map((note) => (
+                    <li key={note.id}>
+                      {note.body}{" "}
+                      <small>
+                        · {new Date(note.updatedAt).toLocaleString()}
+                      </small>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No notes recorded yet.</p>
+              )}
+            </Card>
             <Card>
               <h2>Add evidence reference</h2>
               <form

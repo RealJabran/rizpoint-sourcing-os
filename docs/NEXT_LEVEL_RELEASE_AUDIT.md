@@ -51,6 +51,15 @@ the same marketplace-scoped rights decision as live providers. Export resolves
 the mock adapter to that configured parent entitlement and otherwise remains
 fail-closed.
 
+Prompt 36D closes the first live research vertical slice: an explicit
+organization/marketplace job accepts ASIN, UPC/EAN/GTIN, or a safe Amazon URL,
+then persists available Catalog Items, Competitive Offers, scenario-bound Fees,
+and Listings Restrictions evidence. It also adds bounded Catalog Items keyword
+discovery, direct project/watch actions, project freshness/last-run context,
+notes/economics/risks, and an optional Market History integration state. These
+jobs reuse the Prompt 36C cache and lease coordinator and fail if a queued live
+runtime resolves as mock.
+
 ## Audit method and decision rules
 
 The audit first inspected the product and architecture documents, migrations,

@@ -99,6 +99,15 @@ only; entitlements, provider throttles, rate budgets, tenant predicates, and
 deduplication remain mandatory. Web render paths do not import this boundary or
 call providers. See `docs/PROVIDER_RESEARCH_MEMORY.md`.
 
+Manual identifier research and bounded Catalog Items keyword search use the
+same policy through durable `ProductResearchRun` / `ProductResearchRunItem`
+records and an outbox event. A run pins its organization, marketplace, provider
+key, and runtime mode; the worker re-resolves and compares them before access,
+preventing a queued live request from becoming mock evidence. Catalog identity
+is persisted in `CatalogProduct`; sanitized capability evidence is persisted on
+the run item. Raw provider responses remain inside the existing private
+evidence/cache boundary and are not selected by browser DTOs.
+
 SP-API call attempts are dual-recorded into the legacy scan audit and the
 normalized runtime telemetry. The worker bundle declares provider key, mode,
 and capabilities. Live mode fails closed when an authorized live connection is

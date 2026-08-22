@@ -4,6 +4,7 @@ import {
   db,
   failProfitCalculation,
   failHistoryRefreshRun,
+  failProductResearchRun,
   failUploadStage,
   failScanJob,
   markScanJobRunning,
@@ -12,6 +13,7 @@ import {
   queueNextScanStage,
 } from "@rizpoint/database";
 import { getObjectBytes } from "@rizpoint/object-storage";
+import { ProviderError } from "@rizpoint/provider-contracts";
 import { createHash } from "node:crypto";
 import { redis } from "./queue.js";
 import {
@@ -36,6 +38,7 @@ import {
 } from "./provider-connection.js";
 import { jobFailures, logger, redactText } from "./observability.js";
 import { reportOperationalError } from "./error-tracking.js";
+import { processProductResearchRun } from "./product-research.js";
 
 const terminalUploadErrorCodes = new Set([
   "EMPTY_FILE",
@@ -66,6 +69,7 @@ export const mockScanWorker = new Worker<{
   scanJobId?: string;
   exportJobId?: string;
   connectionJobId?: string;
+  researchRunId?: string;
   runId?: string;
   kind?:
     | "UPLOAD_INSPECT"
@@ -75,7 +79,8 @@ export const mockScanWorker = new Worker<{
     | "CALCULATE"
     | "HISTORY_REFRESH"
     | "EXPORT"
-    | "PROVIDER_CONNECTION";
+    | "PROVIDER_CONNECTION"
+    | "PRODUCT_RESEARCH";
 }>(
   "mock-scan",
   async (job) => {
@@ -89,6 +94,11 @@ export const mockScanWorker = new Worker<{
         if (!job.data.connectionJobId)
           throw new Error("connection_job_id_missing");
         await processProviderConnectionJob(job.data.connectionJobId);
+        return;
+      }
+      if (job.data.kind === "PRODUCT_RESEARCH") {
+        if (!job.data.researchRunId) throw new Error("research_run_id_missing");
+        await processProductResearchRun(job.data.researchRunId);
         return;
       }
       if (!job.data.scanJobId) throw new Error("scan_job_id_missing");
@@ -200,6 +210,7 @@ export const mockScanWorker = new Worker<{
         scanJobId: job.data.scanJobId,
         exportJobId: job.data.exportJobId,
         connectionJobId: job.data.connectionJobId,
+        researchRunId: job.data.researchRunId,
         message: error instanceof Error ? redactText(error.message) : "unknown",
       });
       void reportOperationalError({
@@ -217,6 +228,20 @@ export const mockScanWorker = new Worker<{
               "FAILED_FINAL",
             error,
           );
+        throw error;
+      }
+      if (job.data.kind === "PRODUCT_RESEARCH") {
+        if (job.data.researchRunId)
+          await failProductResearchRun({
+            runId: job.data.researchRunId,
+            final:
+              failureStatusForAttempt(job.attemptsMade, job.opts.attempts) ===
+              "FAILED_FINAL",
+            errorCode:
+              error instanceof ProviderError
+                ? error.code
+                : "PRODUCT_RESEARCH_FAILED",
+          });
         throw error;
       }
       if (job.data.kind === "HISTORY_REFRESH") {

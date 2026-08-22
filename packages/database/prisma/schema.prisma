@@ -175,6 +175,20 @@ enum HistoryRefreshItemStatus {
   FAILED_FINAL
 }
 
+enum ProductResearchRunKind {
+  PRODUCT_LOOKUP
+  CATALOG_SEARCH
+}
+
+enum ProductResearchRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL_SUCCESS
+  FAILED_RETRYABLE
+  FAILED_FINAL
+}
+
 enum ProviderConnectionMode {
   MOCK
   SELF_AUTHORIZED
@@ -806,6 +820,8 @@ model Organization {
   historicalMetricSeries         HistoricalMetricSeries[]
   historicalMetricPoints         HistoricalMetricPoint[]
   historyRefreshRuns             HistoryRefreshRun[]
+  productResearchRuns            ProductResearchRun[]
+  productResearchItems           ProductResearchRunItem[]
   historyAnalyticsAssessments    HistoryAnalyticsAssessment[]
   opportunityAssessments         OpportunityAssessment[]
   opportunityReasons             OpportunityReason[]
@@ -1124,6 +1140,7 @@ model CatalogProduct {
   productMarketObservations   ProductMarketObservation[]
   historicalMetricSeries      HistoricalMetricSeries[]
   historyRefreshItems         HistoryRefreshItem[]
+  productResearchItems        ProductResearchRunItem[]
   historyAnalyticsAssessments HistoryAnalyticsAssessment[]
   opportunityAssessments      OpportunityAssessment[]
   salesEstimates              SalesEstimate[]
@@ -1686,6 +1703,72 @@ model HistoryRefreshItem {
   @@map("history_refresh_items")
 }
 
+/**
+ * An explicit, resumable product-research command. Page loads only read these
+ * persisted results; provider traffic is initiated by the outbox/worker path.
+ */
+model ProductResearchRun {
+  id                String                   @id @default(cuid())
+  organizationId    String                   @map("organization_id")
+  kind              ProductResearchRunKind
+  status            ProductResearchRunStatus @default(PENDING)
+  marketplaceId     String                   @map("marketplace_id")
+  providerKey       String                   @map("provider_key")
+  providerMode      ProviderRuntimeMode      @map("provider_mode")
+  queryType         String                   @map("query_type")
+  queryText         String                   @map("query_text")
+  normalizedQuery   String                   @map("normalized_query")
+  requestedLimit    Int                      @default(20) @map("requested_limit")
+  salePrice         Decimal?                 @map("sale_price") @db.Decimal(18, 4)
+  currency          String?
+  forceRefresh      Boolean                  @default(false) @map("force_refresh")
+  idempotencyKey    String                   @map("idempotency_key")
+  requestHash       String                   @map("request_hash")
+  attemptCount      Int                      @default(0) @map("attempt_count")
+  resultCount       Int                      @default(0) @map("result_count")
+  errorCode         String?                  @map("error_code")
+  startedAt         DateTime?                @map("started_at")
+  completedAt       DateTime?                @map("completed_at")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  updatedAt         DateTime                 @updatedAt @map("updated_at")
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  items        ProductResearchRunItem[]
+  outboxEvents OutboxEvent[]
+
+  @@unique([organizationId, idempotencyKey], map: "product_research_runs_org_idempotency_key")
+  @@unique([id, organizationId], map: "product_research_runs_id_org_key")
+  @@index([organizationId, marketplaceId, createdAt], map: "product_research_runs_org_market_created_idx")
+  @@index([status, updatedAt], map: "product_research_runs_status_updated_idx")
+  @@map("product_research_runs")
+}
+
+model ProductResearchRunItem {
+  id               String                     @id @default(cuid())
+  organizationId   String                     @map("organization_id")
+  runId            String                     @map("run_id")
+  catalogProductId String                     @map("catalog_product_id")
+  ordinal          Int
+  status           ProductResearchRunStatus   @default(COMPLETED)
+  evidence         Json
+  source           String
+  dataOrigin       String                     @map("data_origin")
+  observedAt       DateTime                   @map("observed_at")
+  freshUntil       DateTime?                  @map("fresh_until")
+  freshnessState   ExternalFreshnessState     @map("freshness_state")
+  completeness     ResearchObservationCompleteness
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  updatedAt        DateTime                   @updatedAt @map("updated_at")
+
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  run            ProductResearchRun @relation(fields: [runId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "product_research_items_run_org_fkey")
+  catalogProduct CatalogProduct      @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+
+  @@unique([runId, catalogProductId], map: "product_research_items_run_product_key")
+  @@index([organizationId, catalogProductId, createdAt], map: "product_research_items_org_product_created_idx")
+  @@map("product_research_run_items")
+}
+
 model ProviderObservation {
   id                            String                    @id @default(cuid())
   enrichmentItemId              String                    @map("enrichment_item_id")
@@ -2067,6 +2150,7 @@ model OutboxEvent {
   scanJobId               String?      @map("scan_job_id")
   exportJobId             String?      @map("export_job_id")
   providerConnectionJobId String?      @map("provider_connection_job_id")
+  productResearchRunId    String?      @map("product_research_run_id")
   eventType               String       @map("event_type")
   payload                 Json
   status                  OutboxStatus @default(PENDING)
@@ -2081,10 +2165,12 @@ model OutboxEvent {
   scanJob               ScanJob?               @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
   exportJob             ExportJob?             @relation(fields: [exportJobId], references: [id], onDelete: Cascade)
   providerConnectionJob ProviderConnectionJob? @relation(fields: [providerConnectionJobId], references: [id], onDelete: Cascade)
+  productResearchRun    ProductResearchRun?    @relation(fields: [productResearchRunId], references: [id], onDelete: Cascade)
 
   @@unique([scanJobId, eventType])
   @@unique([exportJobId, eventType])
   @@unique([providerConnectionJobId, eventType])
+  @@unique([productResearchRunId, eventType])
   @@index([status, claimedAt, createdAt])
   @@map("outbox_events")
 }

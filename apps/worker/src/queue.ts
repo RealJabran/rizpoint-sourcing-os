@@ -11,7 +11,12 @@ export const mockScanQueue = new Queue<
     exportJobId?: string;
     runId?: string;
     connectionJobId?: string;
-    kind?: Exclude<UploadJobKind, "MOCK"> | "EXPORT" | "PROVIDER_CONNECTION";
+    researchRunId?: string;
+    kind?:
+      | Exclude<UploadJobKind, "MOCK">
+      | "EXPORT"
+      | "PROVIDER_CONNECTION"
+      | "PRODUCT_RESEARCH";
   },
   void,
   "mock-scan"

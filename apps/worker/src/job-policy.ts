@@ -11,7 +11,8 @@ export type UploadJobKind =
   | "MOCK";
 
 export type QueueJobKind = Exclude<UploadJobKind, "MOCK"> | "EXPORT" | "MOCK";
-export type WorkerQueueJobKind = QueueJobKind | "PROVIDER_CONNECTION";
+export type WorkerQueueJobKind =
+  QueueJobKind | "PROVIDER_CONNECTION" | "PRODUCT_RESEARCH";
 
 export const QUEUE_JOB_PRIORITIES = {
   INTERACTIVE: 1,
@@ -23,7 +24,8 @@ export const QUEUE_JOB_PRIORITIES = {
 /** BullMQ processes lower numeric priorities first. Scheduled/provider-heavy
  * refreshes cannot starve an upload or an explicit user calculation. */
 export function queuePriorityForKind(kind: WorkerQueueJobKind): number {
-  if (kind === "PROVIDER_CONNECTION") return QUEUE_JOB_PRIORITIES.INTERACTIVE;
+  if (kind === "PROVIDER_CONNECTION" || kind === "PRODUCT_RESEARCH")
+    return QUEUE_JOB_PRIORITIES.INTERACTIVE;
   if (["UPLOAD_INSPECT", "NORMALIZE", "MATCH", "ENRICH", "MOCK"].includes(kind))
     return QUEUE_JOB_PRIORITIES.INTERACTIVE;
   if (kind === "CALCULATE") return QUEUE_JOB_PRIORITIES.CALCULATION;

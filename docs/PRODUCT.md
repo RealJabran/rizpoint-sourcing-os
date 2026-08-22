@@ -196,6 +196,19 @@ and private-label profit metrics remain visibly unavailable. Explorer products
 can be compared, saved to projects, watched, exported as a formula-safe
 authorized CSV window, and saved as reusable views.
 
+## Working live product research
+
+Prompt 36D adds `/product-research` for ASINs, UPC/EAN/GTIN values, safe Amazon
+URL identifier extraction, and bounded Amazon Catalog Items keyword search.
+Submissions create resumable tenant-scoped jobs; pages read persisted results
+and never fan out provider calls. Manual research combines available catalog
+identity/images/ranks, competitive offers, scenario-bound Amazon fees, and
+connected-seller listing restrictions. Every result carries source,
+marketplace, observation time, freshness, completeness, and an unmistakable
+live/stored/mock origin. History and sales estimates stay unavailable unless a
+legitimate provider or model is configured. See
+`docs/LIVE_RESEARCH_VERTICAL_SLICE.md`.
+
 ## Category Intelligence
 
 Prompt 07 adds a Category Intelligence browser and category detail pages over

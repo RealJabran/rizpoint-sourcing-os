@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  ensurePhaseZeroOrganization,
-  researchRepository,
-} from "@rizpoint/database";
+import { researchRepository } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 import { createResearchProjectSchema } from "@/src/product-explorer/contracts";
 
 export const runtime = "nodejs";
@@ -11,7 +9,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const denied = requirePrivateAccess(request);
   if (denied) return denied;
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   return NextResponse.json(
     await researchRepository.listProjects(
       organization.id,
@@ -31,7 +29,7 @@ export async function POST(request: NextRequest) {
       { error: "INVALID_RESEARCH_PROJECT" },
       { status: 400 },
     );
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   return NextResponse.json(
     await researchRepository.createProject({
       organizationId: organization.id,

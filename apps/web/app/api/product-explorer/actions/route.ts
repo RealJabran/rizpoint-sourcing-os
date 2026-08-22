@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  ensurePhaseZeroOrganization,
-  researchRepository,
-} from "@rizpoint/database";
+import { researchRepository } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 import { productExplorerActionSchema } from "@/src/product-explorer/contracts";
 
 export const runtime = "nodejs";
@@ -19,7 +17,7 @@ export async function POST(request: NextRequest) {
       { error: "INVALID_PRODUCT_EXPLORER_ACTION" },
       { status: 400 },
     );
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   try {
     if (parsed.data.action === "SAVE_TO_PROJECT") {
       const project = await researchRepository.getProject(

@@ -10,6 +10,7 @@ export * from "./repositories/history-refresh.js";
 export * from "./repositories/history-analytics.js";
 export * from "./repositories/research-retention.js";
 export * from "./repositories/product-explorer.js";
+export * from "./repositories/product-research.js";
 export * from "./repositories/category-intelligence.js";
 export * from "./repositories/opportunity-finder.js";
 export * from "./opportunity-scoring.js";

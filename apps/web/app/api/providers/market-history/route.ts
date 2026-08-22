@@ -1,39 +1,33 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
-  ensureMockAmazonConnection,
-  ensurePhaseZeroOrganization,
   hasActiveProviderCredential,
   listProviderCapabilityStates,
 } from "@rizpoint/database";
 import type { ProviderCapabilityState } from "@rizpoint/provider-contracts";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 
 export const runtime = "nodejs";
 
 /** Settings-safe status only: encrypted credential envelopes and raw history
  * observations never cross this boundary. */
-export async function GET() {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const organization = await ensurePhaseZeroOrganization();
+export async function GET(request: NextRequest) {
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
+  const organization = await organizationForRequest(request);
   const mode =
     process.env.MARKET_HISTORY_PROVIDER_MODE === "keepa" ? "LIVE" : "MOCK";
   if (mode === "MOCK") {
-    const connection = await ensureMockAmazonConnection(organization.id);
-    const capabilities = await listProviderCapabilityStates({
-      organizationId: organization.id,
-      providerKey: "mock-amazon",
-      marketplaceId: connection.marketplaceId,
-    });
     return NextResponse.json({
       provider: "recorded-history",
       mode,
-      status: "HEALTHY",
+      status: "NOT_CONFIGURED",
       checkedAt: new Date().toISOString(),
       dataOrigin: "RECORDED_FIXTURE",
-      capabilities: capabilities.filter(
-        (item) => item.capability === "MARKET_HISTORY",
-      ),
+      configured: false,
+      capabilities: [],
+      message:
+        "Recorded history fixtures are available only in explicit local demo workflows; a licensed provider is required for live history.",
     });
   }
   const configured = await hasActiveProviderCredential({
@@ -64,6 +58,8 @@ export async function GET() {
     mode,
     status: state.state,
     checkedAt: state.checkedAt,
+    configured,
+    dataOrigin: configured ? "LICENSED_PROVIDER" : "NONE",
     capabilities: [state],
   });
 }

@@ -196,7 +196,13 @@ describe("provider status route", () => {
     ]);
     const { GET } =
       await import("../app/api/providers/market-history/route.js");
-    const body = await (await GET()).json();
+    requirePrivateAccess.mockReturnValue(null);
+    organizationForRequest.mockResolvedValue({ id: "org" });
+    const body = await (
+      await GET(
+        new NextRequest("http://localhost/api/providers/market-history"),
+      )
+    ).json();
     expect(body).toMatchObject({
       provider: "recorded-history",
       mode: "MOCK",
@@ -225,7 +231,13 @@ describe("provider status route", () => {
     ]);
     const { GET } =
       await import("../app/api/providers/market-history/route.js");
-    const body = await (await GET()).json();
+    requirePrivateAccess.mockReturnValue(null);
+    organizationForRequest.mockResolvedValue({ id: "org" });
+    const body = await (
+      await GET(
+        new NextRequest("http://localhost/api/providers/market-history"),
+      )
+    ).json();
     expect(body).toMatchObject({
       provider: "keepa",
       mode: "LIVE",

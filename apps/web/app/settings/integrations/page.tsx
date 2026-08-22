@@ -34,6 +34,25 @@ export default function IntegrationsPage() {
       </Card>
       <Card className="integration-directory-card">
         <div className="amazon-provider-mark" aria-hidden="true">
+          K
+        </div>
+        <div>
+          <div className="badge-stack">
+            <Badge tone="warning">Optional provider</Badge>
+            <Badge tone="neutral">Licensed history</Badge>
+          </div>
+          <h2>Market history</h2>
+          <p>
+            Configure and inspect licensed historical price, rank, offer,
+            rating, and review evidence. SP-API does not provide history.
+          </p>
+        </div>
+        <ButtonLink href="/settings/integrations/history">
+          View history setup
+        </ButtonLink>
+      </Card>
+      <Card className="integration-directory-card">
+        <div className="amazon-provider-mark" aria-hidden="true">
           ↻
         </div>
         <div>

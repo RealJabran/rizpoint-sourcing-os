@@ -1610,12 +1610,34 @@ export async function getAmazonProviderConnectionStatus(
 
 /** Worker-only connection lookup. The caller receives encrypted material but
  * must decrypt it locally; web routes only use the status projection above. */
-export async function getCatalogProviderConnection(organizationId: string) {
+export async function getCatalogProviderConnection(
+  organizationId: string,
+  marketplaceId?: string,
+) {
   const connection = await db.providerConnection.findFirst({
-    where: { organizationId, provider: "AMAZON_SP_API", status: "ACTIVE" },
+    where: {
+      organizationId,
+      provider: "AMAZON_SP_API",
+      status: "ACTIVE",
+      ...(marketplaceId
+        ? {
+            OR: [
+              { marketplaceId },
+              {
+                marketplaces: {
+                  some: { marketplaceId, isParticipating: true },
+                },
+              },
+            ],
+          }
+        : {}),
+    },
     include: {
       marketplaces: {
-        where: { isParticipating: true },
+        where: {
+          isParticipating: true,
+          ...(marketplaceId ? { marketplaceId } : {}),
+        },
         orderBy: [{ isDefault: "desc" }, { observedAt: "desc" }],
         take: 1,
       },
@@ -1629,7 +1651,9 @@ export async function getCatalogProviderConnection(organizationId: string) {
     return {
       ...connection,
       marketplaceId:
-        connection.marketplaces[0]?.marketplaceId ?? connection.marketplaceId,
+        connection.marketplaces[0]?.marketplaceId ??
+        marketplaceId ??
+        connection.marketplaceId,
     };
   }
   const failedLiveConnection = await db.providerConnection.findFirst({
@@ -1640,7 +1664,9 @@ export async function getCatalogProviderConnection(organizationId: string) {
   const localMockAllowed =
     process.env.PHASE_ZERO_DEMO_MODE === "true" &&
     (process.env.PROVIDER_MODE ?? "mock") === "mock";
-  return localMockAllowed ? ensureMockAmazonConnection(organizationId) : null;
+  if (!localMockAllowed) return null;
+  const mock = await ensureMockAmazonConnection(organizationId);
+  return !marketplaceId || marketplaceId === mock.marketplaceId ? mock : null;
 }
 
 export async function queueEnrichment(
@@ -3156,6 +3182,15 @@ export async function recoverPublishedOutboxEvents(
         {
           providerConnectionJob: {
             is: { status: { notIn: ["COMPLETED", "FAILED_FINAL"] } },
+          },
+        },
+        {
+          productResearchRun: {
+            is: {
+              status: {
+                notIn: ["COMPLETED", "PARTIAL_SUCCESS", "FAILED_FINAL"],
+              },
+            },
           },
         },
       ],

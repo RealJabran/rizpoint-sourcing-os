@@ -46,6 +46,12 @@ export const navigationGroups: NavigationGroup[] = [
     icon: "explorer",
     items: [
       {
+        label: "Research product",
+        href: "/product-research",
+        icon: "explorer",
+        keywords: ["asin", "upc", "catalog search", "amazon url"],
+      },
+      {
         label: "Product Explorer",
         href: "/product-explorer",
         icon: "explorer",
@@ -174,6 +180,11 @@ export const navigationGroups: NavigationGroup[] = [
         label: "Integrations",
         href: "/settings/integrations",
         icon: "settings",
+      },
+      {
+        label: "Market history",
+        href: "/settings/integrations/history",
+        icon: "demand",
       },
       {
         label: "Data & providers",
