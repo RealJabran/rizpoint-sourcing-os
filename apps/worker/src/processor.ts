@@ -27,6 +27,10 @@ import { processEnrichment } from "./enrichment.js";
 import { processProfitCalculation } from "./profit.js";
 import { processExport } from "./export.js";
 import { processHistoryRefresh } from "./market-history.js";
+import {
+  failProviderConnectionJob,
+  processProviderConnectionJob,
+} from "./provider-connection.js";
 import { jobFailures, logger, redactText } from "./observability.js";
 import { reportOperationalError } from "./error-tracking.js";
 
@@ -58,6 +62,7 @@ function errorCode(error: unknown): string {
 export const mockScanWorker = new Worker<{
   scanJobId?: string;
   exportJobId?: string;
+  connectionJobId?: string;
   runId?: string;
   kind?:
     | "UPLOAD_INSPECT"
@@ -66,7 +71,8 @@ export const mockScanWorker = new Worker<{
     | "ENRICH"
     | "CALCULATE"
     | "HISTORY_REFRESH"
-    | "EXPORT";
+    | "EXPORT"
+    | "PROVIDER_CONNECTION";
 }>(
   "mock-scan",
   async (job) => {
@@ -74,6 +80,12 @@ export const mockScanWorker = new Worker<{
       if (job.data.kind === "EXPORT") {
         if (!job.data.exportJobId) throw new Error("export_job_id_missing");
         await processExport(job.data.exportJobId);
+        return;
+      }
+      if (job.data.kind === "PROVIDER_CONNECTION") {
+        if (!job.data.connectionJobId)
+          throw new Error("connection_job_id_missing");
+        await processProviderConnectionJob(job.data.connectionJobId);
         return;
       }
       if (!job.data.scanJobId) throw new Error("scan_job_id_missing");
@@ -184,6 +196,7 @@ export const mockScanWorker = new Worker<{
         kind: job.data.kind ?? "MOCK",
         scanJobId: job.data.scanJobId,
         exportJobId: job.data.exportJobId,
+        connectionJobId: job.data.connectionJobId,
         message: error instanceof Error ? redactText(error.message) : "unknown",
       });
       void reportOperationalError({
@@ -193,6 +206,16 @@ export const mockScanWorker = new Worker<{
         ...(job.data.exportJobId ? { exportJobId: job.data.exportJobId } : {}),
       }).catch(() => undefined);
       if (job.data.kind === "EXPORT") throw error;
+      if (job.data.kind === "PROVIDER_CONNECTION") {
+        if (job.data.connectionJobId)
+          await failProviderConnectionJob(
+            job.data.connectionJobId,
+            failureStatusForAttempt(job.attemptsMade, job.opts.attempts) ===
+              "FAILED_FINAL",
+            error,
+          );
+        throw error;
+      }
       if (job.data.kind === "HISTORY_REFRESH") {
         if (job.data.runId)
           await failHistoryRefreshRun({

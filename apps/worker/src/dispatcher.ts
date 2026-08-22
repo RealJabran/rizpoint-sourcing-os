@@ -21,26 +21,36 @@ export async function dispatchOutboxOnce(): Promise<number> {
       const payload = event.payload as {
         scanJobId?: string;
         exportJobId?: string;
-        kind?: Exclude<UploadJobKind, "MOCK"> | "EXPORT";
+        connectionJobId?: string;
+        kind?:
+          Exclude<UploadJobKind, "MOCK"> | "EXPORT" | "PROVIDER_CONNECTION";
         runAttempt?: number;
         runId?: string;
         notBefore?: string;
       };
       if (payload.kind === "EXPORT" && !payload.exportJobId)
         throw new Error("export_job_id_missing");
-      if (payload.kind !== "EXPORT" && !payload.scanJobId)
+      if (payload.kind === "PROVIDER_CONNECTION" && !payload.connectionJobId)
+        throw new Error("connection_job_id_missing");
+      if (
+        payload.kind !== "EXPORT" &&
+        payload.kind !== "PROVIDER_CONNECTION" &&
+        !payload.scanJobId
+      )
         throw new Error("scan_job_id_missing");
       const notBefore = payload.notBefore ? Date.parse(payload.notBefore) : NaN;
       await mockScanQueue.add("mock-scan", payload, {
         jobId:
           payload.kind === "EXPORT"
             ? `export-${payload.exportJobId}`
-            : mockScanQueueJobId(
-                payload.scanJobId!,
-                payload.kind ?? "MOCK",
-                payload.runAttempt,
-                payload.runId,
-              ),
+            : payload.kind === "PROVIDER_CONNECTION"
+              ? `provider-connection-${payload.connectionJobId}`
+              : mockScanQueueJobId(
+                  payload.scanJobId!,
+                  payload.kind ?? "MOCK",
+                  payload.runAttempt,
+                  payload.runId,
+                ),
         attempts: 3,
         backoff: { type: "exponential", delay: 1_000, jitter: 0.25 },
         priority: queuePriorityForKind(payload.kind ?? "MOCK"),

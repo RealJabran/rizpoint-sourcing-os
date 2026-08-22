@@ -1,122 +1,119 @@
-import { NextResponse } from "next/server";
-import { publicSpApiConfigurationStatus } from "@rizpoint/amazon-sp-api";
+import { NextRequest, NextResponse } from "next/server";
+import { amazonOAuthPublicConfigurationAvailable } from "@rizpoint/amazon-sp-api";
 import {
-  ensureMockAmazonConnection,
-  ensurePhaseZeroOrganization,
-  getAmazonProviderConnectionStatus,
-  listProviderCapabilityStates,
+  disconnectAmazonConnection,
+  getAmazonIntegrationStatus,
+  getLatestAmazonConnectionJob,
 } from "@rizpoint/database";
-import type {
-  ProviderCapability,
-  ProviderCapabilityState,
-  ProviderOperationalState,
-} from "@rizpoint/provider-contracts";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { isLocalDemoMode } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 
 export const runtime = "nodejs";
 
-const LIVE_CAPABILITIES: readonly ProviderCapability[] = [
-  "CATALOG",
-  "COMPETITIVE_OFFERS",
-  "FEES",
-  "RESTRICTIONS",
-];
+function publicState(
+  connection: Awaited<ReturnType<typeof getAmazonIntegrationStatus>>,
+  latestJob: Awaited<ReturnType<typeof getLatestAmazonConnectionJob>>,
+) {
+  if (
+    latestJob &&
+    ["PENDING", "RUNNING", "FAILED_RETRYABLE"].includes(latestJob.status)
+  )
+    return "CONNECTING";
+  if (!connection && latestJob?.status === "FAILED_FINAL") {
+    if (latestJob.resultCode === "THROTTLED") return "THROTTLED";
+    if (
+      latestJob.resultCode === "UNAUTHORIZED" ||
+      latestJob.resultCode === "FORBIDDEN"
+    )
+      return "AUTH_REQUIRED";
+    return "ERROR";
+  }
+  if (!connection) return "NOT_CONNECTED";
+  if (connection.status === "REVOKED") return "UNAUTHORIZED";
+  if (connection.lastErrorCode === "THROTTLED") return "THROTTLED";
+  if (connection.status === "AUTH_REQUIRED") return "AUTH_REQUIRED";
+  if (connection.status === "ERROR") return "ERROR";
+  if (connection.status === "PENDING") return "CONNECTING";
+  const participating = connection.marketplaces.filter(
+    (marketplace) => marketplace.isParticipating,
+  );
+  const states = connection.entitlements.map((item) => item.state);
+  const usableStates = new Set(["AUTHORIZED", "CONFIGURED", "HEALTHY"]);
+  if (!participating.length || states.some((state) => !usableStates.has(state)))
+    return "PARTIAL";
+  return "CONNECTED";
+}
 
-function aggregateState(
-  capabilities: readonly ProviderCapabilityState[],
-): ProviderOperationalState {
-  const priority: readonly ProviderOperationalState[] = [
-    "UNAUTHORIZED",
-    "QUOTA_EXHAUSTED",
-    "THROTTLED",
-    "UNAVAILABLE",
-    "PARTIAL",
-    "NOT_CONFIGURED",
-    "CONFIGURED",
-    "AUTHORIZED",
-    "HEALTHY",
-  ];
-  return (
-    priority.find((state) =>
-      capabilities.some((capability) => capability.state === state),
-    ) ?? "NOT_CONFIGURED"
+function safeSellerIdentity(value: string | null) {
+  if (!value) return null;
+  return `Seller account ••••${value.slice(-4)}`;
+}
+
+export async function GET(request: NextRequest) {
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
+  const organization = await organizationForRequest(request);
+  const [connection, latestJob] = await Promise.all([
+    getAmazonIntegrationStatus(organization.id),
+    getLatestAmazonConnectionJob(organization.id),
+  ]);
+  return NextResponse.json(
+    {
+      provider: "amazon-sp-api",
+      providerName: "Amazon Selling Partner API",
+      connectionState: publicState(connection, latestJob),
+      dataOrigin: connection?.status === "ACTIVE" ? "LIVE_PROVIDER" : "NONE",
+      localDemo: isLocalDemoMode(),
+      oauthAvailable: amazonOAuthPublicConfigurationAvailable(),
+      selfAuthorizedReady: connection?.mode === "SELF_AUTHORIZED",
+      connection: connection
+        ? {
+            mode: connection.mode,
+            sellerIdentity: safeSellerIdentity(connection.sellerId),
+            region: connection.region,
+            connectedAt: connection.authorizedAt?.toISOString() ?? null,
+            lastValidatedAt: connection.lastValidatedAt?.toISOString() ?? null,
+            lastSuccessfulValidation:
+              connection.lastSuccessAt?.toISOString() ?? null,
+            lastErrorCode: connection.lastErrorCode,
+            revokedAt: connection.revokedAt?.toISOString() ?? null,
+            marketplaces: connection.marketplaces.map((marketplace) => ({
+              ...marketplace,
+              observedAt: marketplace.observedAt.toISOString(),
+            })),
+            capabilities: connection.entitlements.map((capability) => ({
+              ...capability,
+              checkedAt: capability.checkedAt.toISOString(),
+              lastSuccessAt: capability.lastSuccessAt?.toISOString() ?? null,
+            })),
+          }
+        : null,
+      latestAction: latestJob
+        ? {
+            ...latestJob,
+            requestedAt: latestJob.requestedAt.toISOString(),
+            completedAt: latestJob.completedAt?.toISOString() ?? null,
+          }
+        : null,
+    },
+    { headers: { "cache-control": "no-store" } },
   );
 }
 
-function unavailableCapabilities(
-  marketplaceId: string,
-  checkedAt: string,
-): ProviderCapabilityState[] {
-  return LIVE_CAPABILITIES.map((capability) => ({
-    providerKey: "amazon-sp-api",
-    marketplaceId,
-    capability,
-    mode: "LIVE",
-    state: "NOT_CONFIGURED",
-    checkedAt,
-    reason: "CREDENTIALS_MISSING",
-    completeness: "UNKNOWN",
-  }));
-}
-
-/** This public DTO contains status only; credentials and provider response bodies stay server-side. */
-export async function GET() {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const configured = publicSpApiConfigurationStatus();
-  const organization = await ensurePhaseZeroOrganization();
-  if (configured.mode === "mock") {
-    const connection = await ensureMockAmazonConnection(organization.id);
-    const capabilities = await listProviderCapabilityStates({
-      organizationId: organization.id,
-      providerKey: "mock-amazon",
-      marketplaceId: connection.marketplaceId,
-    });
-    return NextResponse.json({
-      provider: "mock-amazon",
-      mode: "MOCK",
-      status: aggregateState(capabilities),
-      checkedAt: configured.checkedAt,
-      dataOrigin: "MOCK_FIXTURE",
-      capabilities,
-    });
-  }
-  if (configured.status === "MISCONFIGURED") {
-    const capabilities = unavailableCapabilities(
-      process.env.SP_API_MARKETPLACE_ID ?? "ATVPDKIKX0DER",
-      configured.checkedAt,
+export async function DELETE(request: NextRequest) {
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
+  const organization = await organizationForRequest(request);
+  const connection = await getAmazonIntegrationStatus(organization.id);
+  if (!connection)
+    return NextResponse.json(
+      { error: "CONNECTION_NOT_FOUND" },
+      { status: 404 },
     );
-    return NextResponse.json({
-      provider: "amazon-sp-api",
-      mode: "LIVE",
-      status: "NOT_CONFIGURED",
-      checkedAt: configured.checkedAt,
-      reason: "CREDENTIALS_MISSING",
-      capabilities,
-    });
-  }
-  const connection = await getAmazonProviderConnectionStatus(organization.id);
-  const checkedAt =
-    connection?.lastValidatedAt?.toISOString() ?? new Date().toISOString();
-  const capabilities = connection
-    ? await listProviderCapabilityStates({
-        organizationId: organization.id,
-        providerKey: "amazon-sp-api",
-        marketplaceId: connection.marketplaceId,
-      })
-    : unavailableCapabilities(
-        process.env.SP_API_MARKETPLACE_ID ?? "ATVPDKIKX0DER",
-        checkedAt,
-      );
-  return NextResponse.json({
-    provider: "amazon-sp-api",
-    mode: "LIVE",
-    status: aggregateState(capabilities),
-    checkedAt,
-    ...(!connection ? { reason: "CREDENTIALS_MISSING" } : {}),
-    ...(connection?.lastErrorCode
-      ? { lastErrorCode: connection.lastErrorCode }
-      : {}),
-    capabilities,
+  await disconnectAmazonConnection({
+    organizationId: organization.id,
+    connectionId: connection.id,
   });
+  return NextResponse.json({ status: "UNAUTHORIZED" });
 }

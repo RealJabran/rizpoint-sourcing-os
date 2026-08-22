@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "./page-header";
 import {
+  amazonIntegrationDashboardStatus,
   providerStatusPresentation,
   type DashboardSummary,
   type ProviderConnectionStatus,
@@ -96,11 +97,19 @@ export function Dashboard() {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error("PROVIDER_STATUS_UNAVAILABLE");
-        const data = (await response.json()) as {
+        const responseData = (await response.json()) as {
           status: ProviderConnectionStatus;
           mode: "MOCK" | "LIVE";
           checkedAt: string;
+          connectionState?: string;
+          dataOrigin?: string;
+          localDemo?: boolean;
+          connection?: { lastValidatedAt?: string | null } | null;
         };
+        const data =
+          name === "Amazon" && responseData.connectionState
+            ? amazonIntegrationDashboardStatus(responseData)
+            : responseData;
         if (active)
           setProviderState({ kind: "ready", data: { ...data, name } });
       } catch (error) {

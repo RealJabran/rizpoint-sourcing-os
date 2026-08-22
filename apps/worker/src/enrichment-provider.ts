@@ -1,7 +1,7 @@
 import {
   AmazonSpApiProvider,
   LwaAccessTokenProvider,
-  providerMode,
+  SP_API_ENDPOINTS,
   readSpApiConfig,
   vaultFromEnvironment,
 } from "@rizpoint/amazon-sp-api";
@@ -76,16 +76,18 @@ function mockBundle(): EnrichmentProviderBundle {
 export function createEnrichmentProvider(
   connection: EnrichmentConnection | null | undefined,
 ): EnrichmentProviderBundle {
+  const localMockAllowed =
+    process.env.PHASE_ZERO_DEMO_MODE === "true" &&
+    (process.env.PROVIDER_MODE ?? "mock") === "mock";
   if (!connection) {
-    if (providerMode() === "sp_api") throw new ProviderError("UNAUTHORIZED");
+    if (!localMockAllowed) throw new ProviderError("UNAUTHORIZED");
     return mockBundle();
   }
   if (connection.mode === "MOCK") {
-    if (providerMode() === "sp_api") throw new ProviderError("UNAUTHORIZED");
+    if (!localMockAllowed) throw new ProviderError("UNAUTHORIZED");
     return mockBundle();
   }
   if (
-    providerMode() !== "sp_api" ||
     connection.provider !== "AMAZON_SP_API" ||
     connection.status !== "ACTIVE" ||
     !connection.sellerId ||
@@ -94,8 +96,7 @@ export function createEnrichmentProvider(
     !connection.encryptionTag ||
     !connection.encryptionKeyVersion ||
     !process.env.SP_API_LWA_CLIENT_ID ||
-    !process.env.SP_API_LWA_CLIENT_SECRET ||
-    !process.env.SP_API_ENDPOINT
+    !process.env.SP_API_LWA_CLIENT_SECRET
   )
     throw new ProviderError("UNAUTHORIZED");
   if (
@@ -122,7 +123,10 @@ export function createEnrichmentProvider(
   }
   let config: ReturnType<typeof readSpApiConfig>;
   try {
-    config = readSpApiConfig();
+    config = readSpApiConfig({
+      ...process.env,
+      SP_API_ENDPOINT: SP_API_ENDPOINTS[connection.region],
+    });
   } catch {
     throw new ProviderError("INVALID_REQUEST");
   }

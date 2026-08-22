@@ -207,4 +207,19 @@ describe("SP-API transport", () => {
     });
     expect(JSON.stringify(health)).not.toContain("never-expose");
   });
+
+  it("reports throttled validation without replacing prior data with zeros", async () => {
+    const health = await testSpApiConnection(
+      new SpApiTransport(
+        config,
+        async () => "Atza|access-token",
+        async () => jsonResponse({ errors: [] }, 429),
+      ),
+    );
+    expect(health).toMatchObject({
+      status: "THROTTLED",
+      lastErrorCode: "THROTTLED",
+    });
+    expect(health).not.toHaveProperty("marketplaces");
+  });
 });

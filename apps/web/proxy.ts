@@ -8,6 +8,7 @@ const publicPaths = [
   "/api/auth",
   "/api/health",
   "/api/ready",
+  "/api/providers/amazon/oauth/callback",
   "/favicon.ico",
 ];
 
@@ -84,7 +85,10 @@ function unauthorized(request: NextRequest, pathname: string): NextResponse {
   if (pathname.startsWith("/api/"))
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const login = new URL("/login", request.url);
-  login.searchParams.set("callbackUrl", request.nextUrl.pathname);
+  login.searchParams.set(
+    "callbackUrl",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
   return NextResponse.redirect(login);
 }
 

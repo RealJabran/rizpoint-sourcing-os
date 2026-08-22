@@ -1421,28 +1421,17 @@ async function ensureAmazonCapabilityRows(
   },
 ) {
   const mock = connection.provider === "MOCK_AMAZON";
-  const state = mock
+  const connectionState = mock
     ? ("HEALTHY" as const)
-    : connection.status === "ACTIVE" && connection.lastSuccessAt
-      ? ("HEALTHY" as const)
-      : connection.status === "ACTIVE"
-        ? ("AUTHORIZED" as const)
-        : connection.status === "AUTH_REQUIRED" ||
-            connection.status === "REVOKED"
-          ? ("UNAUTHORIZED" as const)
-          : connection.status === "PENDING"
-            ? ("CONFIGURED" as const)
-            : connection.lastErrorCode === "THROTTLED"
-              ? ("THROTTLED" as const)
-              : ("UNAVAILABLE" as const);
-  const reasonCode =
-    state === "UNAUTHORIZED"
-      ? "CONNECTION_NOT_AUTHORIZED"
-      : state === "THROTTLED"
-        ? "PROVIDER_THROTTLED"
-        : state === "UNAVAILABLE"
-          ? "PROVIDER_OUTAGE"
-          : null;
+    : connection.status === "ACTIVE"
+      ? ("AUTHORIZED" as const)
+      : connection.status === "AUTH_REQUIRED" || connection.status === "REVOKED"
+        ? ("UNAUTHORIZED" as const)
+        : connection.status === "PENDING"
+          ? ("CONFIGURED" as const)
+          : connection.lastErrorCode === "THROTTLED"
+            ? ("THROTTLED" as const)
+            : ("UNAVAILABLE" as const);
   const checkedAt =
     connection.lastValidatedAt ?? connection.lastSuccessAt ?? new Date();
   const mockRights = mock ? syntheticFixtureDataRights(checkedAt) : null;
@@ -1469,6 +1458,24 @@ async function ensureAmazonCapabilityRows(
         existing.retryAt > checkedAt
       )
         return existing;
+      // Sellers validation proves the account and marketplace grant, not that
+      // Catalog, Pricing, Fees, or Restrictions has successfully answered.
+      // Preserve a capability's proven HEALTHY state; otherwise expose only
+      // the connection-level authorization until that operation is observed.
+      const state =
+        !mock &&
+        connectionState === "AUTHORIZED" &&
+        existing?.state === "HEALTHY"
+          ? ("HEALTHY" as const)
+          : connectionState;
+      const reasonCode =
+        state === "UNAUTHORIZED"
+          ? "CONNECTION_NOT_AUTHORIZED"
+          : state === "THROTTLED"
+            ? "PROVIDER_THROTTLED"
+            : state === "UNAVAILABLE"
+              ? "PROVIDER_OUTAGE"
+              : null;
       return transaction.providerEntitlement.upsert({
         where: {
           organizationId_providerKey_marketplaceId_capability: {
@@ -1585,21 +1592,36 @@ export async function getAmazonProviderConnectionStatus(
 /** Worker-only connection lookup. The caller receives encrypted material but
  * must decrypt it locally; web routes only use the status projection above. */
 export async function getCatalogProviderConnection(organizationId: string) {
-  if (
-    process.env.PROVIDER_MODE === "sp_api" ||
-    process.env.PROVIDER_MODE === "sp-api"
-  ) {
-    const connection = await db.providerConnection.findFirst({
-      where: { organizationId, provider: "AMAZON_SP_API", status: "ACTIVE" },
-      orderBy: { authorizedAt: "desc" },
-    });
-    if (connection)
-      await db.$transaction((transaction) =>
-        ensureAmazonCapabilityRows(transaction, connection),
-      );
-    return connection;
+  const connection = await db.providerConnection.findFirst({
+    where: { organizationId, provider: "AMAZON_SP_API", status: "ACTIVE" },
+    include: {
+      marketplaces: {
+        where: { isParticipating: true },
+        orderBy: [{ isDefault: "desc" }, { observedAt: "desc" }],
+        take: 1,
+      },
+    },
+    orderBy: { authorizedAt: "desc" },
+  });
+  if (connection) {
+    await db.$transaction((transaction) =>
+      ensureAmazonCapabilityRows(transaction, connection),
+    );
+    return {
+      ...connection,
+      marketplaceId:
+        connection.marketplaces[0]?.marketplaceId ?? connection.marketplaceId,
+    };
   }
-  return ensureMockAmazonConnection(organizationId);
+  const failedLiveConnection = await db.providerConnection.findFirst({
+    where: { organizationId, provider: "AMAZON_SP_API" },
+    select: { id: true },
+  });
+  if (failedLiveConnection) return null;
+  const localMockAllowed =
+    process.env.PHASE_ZERO_DEMO_MODE === "true" &&
+    (process.env.PROVIDER_MODE ?? "mock") === "mock";
+  return localMockAllowed ? ensureMockAmazonConnection(organizationId) : null;
 }
 
 export async function queueEnrichment(
@@ -1636,35 +1658,45 @@ export async function queueEnrichment(
     });
     if (!scan || scan._count.supplierRows === 0) return null;
     if (!["COMPLETED", "PARTIAL_SUCCESS"].includes(scan.status)) return null;
-    const connection =
-      process.env.PROVIDER_MODE === "sp_api" ||
-      process.env.PROVIDER_MODE === "sp-api"
-        ? await transaction.providerConnection.findFirst({
-            where: {
-              organizationId,
-              provider: "AMAZON_SP_API",
-              status: "ACTIVE",
-            },
-            orderBy: { authorizedAt: "desc" },
-          })
-        : await transaction.providerConnection.upsert({
-            where: {
-              organizationId_provider_marketplaceId: {
-                organizationId,
-                provider: "MOCK_AMAZON",
-                marketplaceId: DEFAULT_MARKETPLACE_ID,
-              },
-            },
-            create: {
-              organizationId,
-              provider: "MOCK_AMAZON",
-              mode: "MOCK",
-              status: "ACTIVE",
-              marketplaceId: DEFAULT_MARKETPLACE_ID,
-              region: "NA",
-            },
-            update: {},
-          });
+    let connection = await transaction.providerConnection.findFirst({
+      where: {
+        organizationId,
+        provider: "AMAZON_SP_API",
+        status: "ACTIVE",
+      },
+      orderBy: { authorizedAt: "desc" },
+    });
+    const anyLiveConnection = connection
+      ? true
+      : Boolean(
+          await transaction.providerConnection.findFirst({
+            where: { organizationId, provider: "AMAZON_SP_API" },
+            select: { id: true },
+          }),
+        );
+    const localMockAllowed =
+      !anyLiveConnection &&
+      process.env.PHASE_ZERO_DEMO_MODE === "true" &&
+      (process.env.PROVIDER_MODE ?? "mock") === "mock";
+    if (!connection && localMockAllowed)
+      connection = await transaction.providerConnection.upsert({
+        where: {
+          organizationId_provider_marketplaceId: {
+            organizationId,
+            provider: "MOCK_AMAZON",
+            marketplaceId: DEFAULT_MARKETPLACE_ID,
+          },
+        },
+        create: {
+          organizationId,
+          provider: "MOCK_AMAZON",
+          mode: "MOCK",
+          status: "ACTIVE",
+          marketplaceId: DEFAULT_MARKETPLACE_ID,
+          region: "NA",
+        },
+        update: {},
+      });
     if (!connection) return null;
     await ensureAmazonCapabilityRows(transaction, connection);
     const selected = await transaction.matchDecision.findMany({
@@ -3092,6 +3124,11 @@ export async function recoverPublishedOutboxEvents(
         },
         {
           exportJob: {
+            is: { status: { notIn: ["COMPLETED", "FAILED_FINAL"] } },
+          },
+        },
+        {
+          providerConnectionJob: {
             is: { status: { notIn: ["COMPLETED", "FAILED_FINAL"] } },
           },
         },

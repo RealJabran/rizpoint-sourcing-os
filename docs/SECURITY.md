@@ -53,7 +53,11 @@ The browser is untrusted. Web routes enforce an organization context before quer
 
 ## Amazon SP-API private-application onboarding
 
-Phase 7.6 keeps `PROVIDER_MODE=mock` as the default. Live SP-API connectivity and enrichment are worker-only, explicitly opted-in boundaries.
+Amazon setup and both authorization modes are now documented in
+`docs/AMAZON_CONNECTION.md`. Live SP-API credentials and execution remain
+worker-only. `PROVIDER_MODE=mock` is a local safety override, while tenant
+connection state is resolved from the organization, marketplace, connection,
+and entitlement.
 
 Catalog images remain provider hotlinks rather than copied public objects. The
 production CSP permits only the documented Amazon catalog image origins
@@ -66,7 +70,7 @@ browser allowlist.
 3. View the application's LWA client ID and client secret in the Solution Provider Portal. Amazon requires runtime token exchange at `https://api.amazon.com/auth/o2/token` with `grant_type=refresh_token`, client ID, client secret, and refresh token. The application keeps only the resulting short-lived access token in worker memory.
 4. Create an ignored, owner-only local secret file such as `.env.sp-api.local` (all `.env*` files are ignored) with placeholder variable names from `.env.example`; set mode `0600`. It may contain `SP_API_LWA_CLIENT_ID`, `SP_API_LWA_CLIENT_SECRET`, `SP_API_REFRESH_TOKEN`, `SP_API_MARKETPLACE_ID`, `SP_API_SELLER_ID`, `SP_API_ENDPOINT`, `PROVIDER_CREDENTIAL_KEY_V1`, `DATABASE_URL`, and `RIZPOINT_PRIVATE_ORGANIZATION_SLUG`. Never add these values to `compose.yaml`, `apps/web/.env*`, or a `NEXT_PUBLIC_*` variable.
 5. From a private terminal, load the ignored file and run one server-side, non-destructive validation: `set -a; source .env.sp-api.local; set +a; SP_API_LIVE_SMOKE=1 pnpm --filter @rizpoint/amazon-sp-api test -- live-smoke`. This test is skipped in CI unless the explicit opt-in flag is present. It calls only `GET /sellers/v1/marketplaceParticipations` and prints no provider payload.
-6. After a successful smoke test, run `pnpm sp-api:connect` from the same private environment. It encrypts the refresh token with AES-256-GCM using organization-and-connection authenticated data before writing it to PostgreSQL. It prints only `SP_API_CONNECTION_STATUS=<status>`. The normal Compose runtime does not receive `SP_API_REFRESH_TOKEN`; the worker decrypts the persisted credential only when `PROVIDER_MODE=sp_api` and the organization connection is active.
+6. After a successful smoke test, run `pnpm sp-api:connect` from the same private environment. It encrypts the refresh token with AES-256-GCM using organization-and-connection authenticated data, discovers marketplace participations, and prints only `SP_API_CONNECTION_STATUS=<status>`. The normal Compose runtime does not receive `SP_API_REFRESH_TOKEN`; the worker decrypts the persisted credential only for an active organization connection.
 7. Rotate the LWA client secret on Amazon's required schedule, update only the deployment secret manager/ignored local file, and run the opt-in smoke check before retiring the previous secret. On suspected exposure, revoke or rotate the relevant Amazon credential and follow Amazon's incident process.
 
 The Amazon authorization instructions above are based on Amazon's current [private application self-authorization guide](https://developer-docs.amazon.com/sp-api/docs/self-authorization), [Sellers API role mapping](https://developer-docs.amazon.com/sp-api/lang-tr_TR/docs/sellers-api), and [LWA credential guidance](https://developer-docs.amazon.com/sp-api/docs/lwa-credentials-faq). Amazon may change roles and access terms; confirm them in the official portal before enabling live mode.

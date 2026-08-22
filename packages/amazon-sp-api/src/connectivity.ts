@@ -199,6 +199,57 @@ const tokenSchema = z.object({
   expires_in: z.number().int().positive(),
 });
 
+const authorizationTokenSchema = tokenSchema.extend({
+  refresh_token: z.string().min(1),
+  token_type: z.string().min(1).optional(),
+});
+
+export async function exchangeAuthorizationCode(
+  config: SpApiConfig,
+  authorizationCode: string,
+  redirectUri: string,
+  fetchImplementation: typeof fetch = fetch,
+): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresInSeconds: number;
+}> {
+  let response: Response;
+  try {
+    response = await fetchImplementation(
+      "https://api.amazon.com/auth/o2/token",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: authorizationCode,
+          redirect_uri: redirectUri,
+          client_id: config.clientId,
+          client_secret: config.clientSecret,
+        }),
+      },
+    );
+  } catch {
+    throw new ProviderError("TRANSIENT");
+  }
+  if (!response.ok) throw responseError(response);
+  try {
+    const token = authorizationTokenSchema.parse(await response.json());
+    return {
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      expiresInSeconds: token.expires_in,
+    };
+  } catch {
+    throw new ProviderError("INVALID_RESPONSE", {
+      httpStatus: response.status,
+    });
+  }
+}
+
 export async function exchangeRefreshToken(
   config: SpApiConfig,
   refreshToken: string,
@@ -438,4 +489,78 @@ export async function testSpApiConnection(
       lastErrorCode: code,
     };
   }
+}
+
+const marketplaceParticipationSchema = z.object({
+  marketplace: z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    countryCode: z.string().min(1).optional(),
+    defaultCurrencyCode: z.string().min(1).optional(),
+    defaultLanguageCode: z.string().min(1).optional(),
+    domainName: z.string().min(1).optional(),
+  }),
+  participation: z.object({
+    isParticipating: z.boolean(),
+    hasSuspendedListings: z.boolean(),
+  }),
+});
+
+const marketplaceParticipationsSchema = z.object({
+  payload: z.array(marketplaceParticipationSchema),
+});
+
+export type MarketplaceParticipation = {
+  marketplaceId: string;
+  name: string;
+  countryCode?: string;
+  defaultCurrencyCode?: string;
+  defaultLanguageCode?: string;
+  domainName?: string;
+  isParticipating: boolean;
+  hasSuspendedListings: boolean;
+};
+
+/** Normalizes only the documented Sellers v1 response. Raw payloads never
+ * leave the worker/provider boundary. */
+export async function getMarketplaceParticipations(
+  transport: SpApiTransport,
+): Promise<{
+  participations: MarketplaceParticipation[];
+  observedAt: string;
+  requestId?: string;
+  rateLimitPerSecond?: number;
+}> {
+  const result = await transport.request(
+    "/sellers/v1/marketplaceParticipations",
+  );
+  let body: z.infer<typeof marketplaceParticipationsSchema>;
+  try {
+    body = marketplaceParticipationsSchema.parse(result.body);
+  } catch {
+    throw new ProviderError("INVALID_RESPONSE");
+  }
+  return {
+    participations: body.payload.map(({ marketplace, participation }) => ({
+      marketplaceId: marketplace.id,
+      name: marketplace.name,
+      ...(marketplace.countryCode
+        ? { countryCode: marketplace.countryCode }
+        : {}),
+      ...(marketplace.defaultCurrencyCode
+        ? { defaultCurrencyCode: marketplace.defaultCurrencyCode }
+        : {}),
+      ...(marketplace.defaultLanguageCode
+        ? { defaultLanguageCode: marketplace.defaultLanguageCode }
+        : {}),
+      ...(marketplace.domainName ? { domainName: marketplace.domainName } : {}),
+      isParticipating: participation.isParticipating,
+      hasSuspendedListings: participation.hasSuspendedListings,
+    })),
+    observedAt: result.observedAt,
+    ...(result.requestId ? { requestId: result.requestId } : {}),
+    ...(result.rateLimitPerSecond === undefined
+      ? {}
+      : { rateLimitPerSecond: result.rateLimitPerSecond }),
+  };
 }

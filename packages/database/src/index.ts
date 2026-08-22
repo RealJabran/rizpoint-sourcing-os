@@ -4,6 +4,7 @@ export * from "./research-contracts.js";
 export * from "./repositories/research.js";
 export * from "./repositories/provider-runtime.js";
 export * from "./repositories/provider-data-rights.js";
+export * from "./repositories/amazon-connections.js";
 export * from "./repositories/api-rate-limit.js";
 export * from "./repositories/history-refresh.js";
 export * from "./repositories/history-analytics.js";

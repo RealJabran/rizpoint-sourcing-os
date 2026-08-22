@@ -35,6 +35,7 @@ import {
 
 export * from "./connectivity.js";
 export * from "./credential-vault.js";
+export * from "./oauth.js";
 export * from "./fee-normalizer.js";
 export * from "./offer-policy.js";
 import { amazonRetailPresence } from "./offer-policy.js";

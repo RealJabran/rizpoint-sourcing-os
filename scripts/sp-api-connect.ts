@@ -3,11 +3,11 @@ import {
   LwaAccessTokenProvider,
   SpApiConfigurationError,
   SpApiTransport,
+  getMarketplaceParticipations,
   readSpApiConnectionConfig,
-  testSpApiConnection,
   vaultFromEnvironment,
 } from "@rizpoint/amazon-sp-api";
-import { db } from "@rizpoint/database";
+import { db, persistAmazonMarketplaceParticipations } from "@rizpoint/database";
 
 async function main() {
   const config = readSpApiConnectionConfig();
@@ -36,7 +36,7 @@ async function main() {
     `${organization.id}:${connectionId}`,
   );
   const tokens = new LwaAccessTokenProvider(config, config.refreshToken);
-  const health = await testSpApiConnection(
+  const discovered = await getMarketplaceParticipations(
     new SpApiTransport(
       config,
       Object.assign(() => tokens.getAccessToken(), {
@@ -44,13 +44,8 @@ async function main() {
       }),
     ),
   );
-  const status =
-    health.status === "CONNECTED"
-      ? "ACTIVE"
-      : health.status === "UNAUTHORIZED"
-        ? "AUTH_REQUIRED"
-        : "ERROR";
-  await db.providerConnection.upsert({
+  const observedAt = new Date(discovered.observedAt);
+  const connection = await db.providerConnection.upsert({
     where: {
       organizationId_provider_marketplaceId: {
         organizationId: organization.id,
@@ -63,7 +58,7 @@ async function main() {
       organizationId: organization.id,
       provider: "AMAZON_SP_API",
       mode: "SELF_AUTHORIZED",
-      status,
+      status: "ACTIVE",
       sellerId: config.sellerId,
       marketplaceId: config.marketplaceId,
       region: config.region,
@@ -72,13 +67,12 @@ async function main() {
       encryptionTag: encrypted.tag,
       encryptionKeyVersion: encrypted.keyVersion,
       authorizedAt: new Date(),
-      lastValidatedAt: new Date(health.checkedAt),
-      ...(health.status === "CONNECTED" ? { lastSuccessAt: new Date() } : {}),
-      ...(health.lastErrorCode ? { lastErrorCode: health.lastErrorCode } : {}),
+      lastValidatedAt: observedAt,
+      lastSuccessAt: observedAt,
     },
     update: {
       mode: "SELF_AUTHORIZED",
-      status,
+      status: "ACTIVE",
       sellerId: config.sellerId,
       region: config.region,
       encryptedRefreshToken: encrypted.ciphertext,
@@ -86,14 +80,33 @@ async function main() {
       encryptionTag: encrypted.tag,
       encryptionKeyVersion: encrypted.keyVersion,
       authorizedAt: new Date(),
-      lastValidatedAt: new Date(health.checkedAt),
-      lastSuccessAt: health.status === "CONNECTED" ? new Date() : null,
-      lastErrorCode: health.lastErrorCode ?? null,
+      lastValidatedAt: observedAt,
+      lastSuccessAt: observedAt,
+      lastErrorCode: null,
+      revokedAt: null,
+    },
+  });
+  await persistAmazonMarketplaceParticipations({
+    organizationId: organization.id,
+    connectionId: connection.id,
+    participations: discovered.participations,
+    observedAt,
+    preferredMarketplaceId: config.marketplaceId,
+  });
+  await db.workflowAuditEvent.create({
+    data: {
+      organizationId: organization.id,
+      entityType: "ProviderConnection",
+      entityId: connection.id,
+      eventType: "amazon.self_authorized_connected",
+      payload: {
+        mode: "SELF_AUTHORIZED",
+        marketplaceCount: discovered.participations.length,
+      },
     },
   });
   // Deliberately report only the normalized status; never print identifiers or credentials.
-  process.stdout.write(`SP_API_CONNECTION_STATUS=${health.status}\n`);
-  if (health.status !== "CONNECTED") process.exitCode = 1;
+  process.stdout.write("SP_API_CONNECTION_STATUS=CONNECTED\n");
 }
 
 main()

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  amazonIntegrationDashboardStatus,
   relativeTimestamp,
   providerStatusPresentation,
   scanDisplayName,
@@ -25,6 +26,34 @@ const scan: ScanSummary = {
 };
 
 describe("dashboard presentation state", () => {
+  it("adapts tenant Amazon state without presenting demo data as live", () => {
+    expect(
+      amazonIntegrationDashboardStatus({
+        connectionState: "NOT_CONNECTED",
+        dataOrigin: "NONE",
+        localDemo: true,
+      }),
+    ).toMatchObject({ status: "NOT_CONFIGURED", mode: "MOCK" });
+    expect(
+      amazonIntegrationDashboardStatus({
+        connectionState: "CONNECTED",
+        dataOrigin: "LIVE_PROVIDER",
+        localDemo: true,
+        connection: { lastValidatedAt: "2026-08-22T01:00:00.000Z" },
+      }),
+    ).toEqual({
+      status: "HEALTHY",
+      mode: "LIVE",
+      checkedAt: "2026-08-22T01:00:00.000Z",
+    });
+    expect(
+      amazonIntegrationDashboardStatus({
+        connectionState: "AUTH_REQUIRED",
+        dataOrigin: "NONE",
+      }),
+    ).toMatchObject({ status: "UNAUTHORIZED", mode: "LIVE" });
+  });
+
   it("maps persisted scan states to explicit, non-financial labels", () => {
     expect(scanStatusPresentation("COMPLETED")).toMatchObject({
       label: "Completed",

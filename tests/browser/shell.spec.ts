@@ -43,6 +43,9 @@ test.describe("RizPoint application shell", () => {
     await expect(
       page.getByRole("link", { name: "Learning & help" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Integrations" }),
+    ).toBeVisible();
   });
 
   test("redirects legacy diagnostic pages to product workflows", async ({

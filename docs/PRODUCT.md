@@ -143,6 +143,17 @@ infer unavailable metrics. Licensed provider selection beyond optional history,
 research calculation engines, and broader research workflows remain later
 prompts.
 
+## Amazon connection onboarding
+
+Settings → Integrations → Amazon is the organization-scoped control plane for
+live SP-API. It shows a masked seller identity, normalized connection state,
+Sellers-discovered marketplaces, selected marketplace, capability status, and
+background validation results. Private owners connect with the secure
+self-authorization CLI; the complete public-application website OAuth boundary
+is available when Amazon public credentials are configured. Mock evidence is
+restricted to explicit local demo mode and is never presented as a connected
+Amazon source. See `docs/AMAZON_CONNECTION.md`.
+
 ## Licensed market history
 
 Prompt 04 adds an optional, vendor-neutral market-history boundary. The first

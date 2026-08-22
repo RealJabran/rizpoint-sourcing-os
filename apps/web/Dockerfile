@@ -20,6 +20,7 @@ ENV NODE_ENV=production
 # exists only while building; Compose supplies the real runtime connection.
 ARG PRISMA_GENERATE_DATABASE_URL=postgresql://prisma_build:prisma_build@localhost:5432/prisma_build?schema=public
 RUN DATABASE_URL="$PRISMA_GENERATE_DATABASE_URL" pnpm --filter @rizpoint/database prisma:generate && \
+    pnpm --filter @rizpoint/amazon-sp-api build && \
     pnpm --filter @rizpoint/database build && \
     pnpm --filter @rizpoint/web build
 RUN cp -R /app/apps/web/.next/static /app/apps/web/.next/standalone/apps/web/.next/static && \

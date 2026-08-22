@@ -7,6 +7,7 @@ describe("enrichment provider selection", () => {
 
   it("uses the fixture adapter without credentials for mock connections", () => {
     vi.stubEnv("PROVIDER_MODE", "mock");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
     const bundle = createEnrichmentProvider(null);
     expect(bundle.providerKind).toBe("MOCK_AMAZON");
     expect(bundle.mode).toBe("MOCK");
@@ -15,8 +16,30 @@ describe("enrichment provider selection", () => {
   });
 
   it("never disguises a missing live connection as the mock provider", () => {
-    vi.stubEnv("PROVIDER_MODE", "sp_api");
+    vi.stubEnv("PROVIDER_MODE", "mock");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "false");
     expect(() => createEnrichmentProvider(null)).toThrow(ProviderError);
+  });
+
+  it("does not fall back to fixtures when a local live connection is revoked", () => {
+    vi.stubEnv("PROVIDER_MODE", "mock");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "true");
+    expect(() =>
+      createEnrichmentProvider({
+        id: "connection",
+        organizationId: "organization",
+        provider: "AMAZON_SP_API",
+        mode: "SELF_AUTHORIZED",
+        status: "REVOKED",
+        sellerId: "seller",
+        marketplaceId: "ATVPDKIKX0DER",
+        region: "NA",
+        encryptedRefreshToken: null,
+        encryptionNonce: null,
+        encryptionTag: null,
+        encryptionKeyVersion: null,
+      }),
+    ).toThrow(ProviderError);
   });
 
   it("fails closed instead of silently falling back for an inactive SP-API connection", () => {

@@ -169,7 +169,14 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: "Settings",
     icon: "settings",
-    items: [{ label: "Learning & help", href: "/learning", icon: "learn" }],
+    items: [
+      {
+        label: "Integrations",
+        href: "/settings/integrations",
+        icon: "settings",
+      },
+      { label: "Learning & help", href: "/learning", icon: "learn" },
+    ],
   },
 ];
 

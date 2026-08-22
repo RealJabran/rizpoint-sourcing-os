@@ -49,18 +49,24 @@ The matching worker calls the typed catalog interface, validates provider payloa
 
 Provider contracts are implemented in `packages/provider-contracts`. Any observed external metric requires provider, observation time, and freshness. Mock/recorded adapters are the default; the optional Amazon SP-API adapter is isolated in `packages/amazon-sp-api`, server-side only, and configuration-gated. The scanner HTTP boundary is validated at runtime by a TypeScript client owned by the worker.
 
-Catalog resolution selects the mock connection by default. In `sp_api` mode it
-uses only an active encrypted SP-API connection for the organization. Catalog
+Catalog resolution selects an active encrypted SP-API connection for the
+organization and its selected discovered marketplace. Only an explicitly
+enabled local demo without a live Amazon connection may select mock. Catalog
 Items raw responses are private persistence data; web DTOs use the normalized
 typed projection and its provenance only.
 
-The worker selects the fixture adapter unless `PROVIDER_MODE=sp_api` and an
-active organization-scoped Amazon connection has a valid encrypted refresh
-token. Decryption happens only in the worker using the connection's
+The worker selects live Amazon whenever an active organization-scoped
+connection has a valid encrypted refresh token. Decryption happens only in the worker using the connection's
 organization-and-connection authenticated context. Missing, revoked, or
 misconfigured connections fail as explicit provider data; they never fall back
 silently to mock data. Provider-attempt idempotency is scoped to one enrichment
 run so later scans cannot overwrite prior audit evidence.
+
+Amazon website authorization persists only hashed, short-lived, one-time state.
+The callback encrypts the LWA authorization code with a public key and writes an
+ID-only outbox event; the worker alone owns the private key, exchanges the code,
+encrypts the refresh token, validates Sellers marketplace participations, and
+records the audit trail. See `docs/AMAZON_CONNECTION.md` and ADR-0014.
 
 The provider runtime control plane is shared by wholesale and research. A
 `ProviderEntitlement` records one provider/marketplace/capability state and

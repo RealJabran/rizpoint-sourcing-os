@@ -20,6 +20,43 @@ export type ProviderConnectionStatus =
   | "PARTIAL"
   | "HEALTHY";
 
+type AmazonIntegrationSummary = {
+  connectionState?: string;
+  dataOrigin?: string;
+  localDemo?: boolean;
+  connection?: {
+    lastValidatedAt?: string | null;
+  } | null;
+};
+
+export function amazonIntegrationDashboardStatus(
+  value: AmazonIntegrationSummary,
+): {
+  status: ProviderConnectionStatus;
+  mode: "MOCK" | "LIVE";
+  checkedAt: string;
+} {
+  const isLive = value.dataOrigin === "LIVE_PROVIDER";
+  const isExplicitLocalDemo = value.localDemo === true && !isLive;
+  const statusByConnectionState: Record<string, ProviderConnectionStatus> = {
+    CONNECTED: "HEALTHY",
+    PARTIAL: "PARTIAL",
+    CONNECTING: "CONFIGURED",
+    AUTH_REQUIRED: "UNAUTHORIZED",
+    UNAUTHORIZED: "UNAUTHORIZED",
+    THROTTLED: "THROTTLED",
+    ERROR: "UNAVAILABLE",
+    NOT_CONNECTED: "NOT_CONFIGURED",
+  };
+
+  return {
+    status:
+      statusByConnectionState[value.connectionState ?? ""] ?? "UNAVAILABLE",
+    mode: isExplicitLocalDemo ? "MOCK" : "LIVE",
+    checkedAt: value.connection?.lastValidatedAt ?? new Date(0).toISOString(),
+  };
+}
+
 export function providerStatusPresentation(
   status: ProviderConnectionStatus,
   mode: "MOCK" | "LIVE" = "LIVE",
