@@ -6,6 +6,7 @@ import {
 import {
   DEFAULT_PROVIDER_FRESHNESS_POLICIES,
   providerFailureState,
+  resolveProviderFreshnessPolicy,
 } from "../src/runtime-policy.js";
 
 describe("provider runtime contracts", () => {
@@ -55,6 +56,28 @@ describe("provider runtime contracts", () => {
         policy.freshForSeconds,
       );
     }
+  });
+
+  it("allows bounded freshness overrides without permitting impossible retention", () => {
+    expect(
+      resolveProviderFreshnessPolicy("CATALOG", {
+        freshForSeconds: 60,
+        staleWhileRevalidateSeconds: 30,
+        retainForSeconds: 90,
+      }),
+    ).toMatchObject({
+      capability: "CATALOG",
+      freshForSeconds: 60,
+      staleWhileRevalidateSeconds: 30,
+      retainForSeconds: 90,
+    });
+    expect(() =>
+      resolveProviderFreshnessPolicy("CATALOG", {
+        freshForSeconds: 60,
+        staleWhileRevalidateSeconds: 31,
+        retainForSeconds: 90,
+      }),
+    ).toThrow("PROVIDER_RETENTION_WINDOW_INVALID");
   });
 
   it("rejects payload-shaped telemetry while accepting sanitized hashes and Decimal costs", () => {

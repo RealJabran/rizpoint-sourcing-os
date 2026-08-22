@@ -1647,6 +1647,7 @@ export async function queueEnrichment(
   organizationId: string,
   scanJobId: string,
   idempotencyKey?: string,
+  options: { forceRefresh?: boolean } = {},
 ) {
   return db.$transaction(async (transaction) => {
     // A user-visible refresh can be retried by the browser. Preserve the first
@@ -1746,11 +1747,13 @@ export async function queueEnrichment(
         providerConnectionId: connection.id,
         status: "PENDING",
         attemptCount: 1,
+        forceRefresh: options.forceRefresh ?? false,
       },
       update: {
         status: "PENDING",
         completedAt: null,
         attemptCount: { increment: 1 },
+        forceRefresh: options.forceRefresh ?? false,
       },
     });
     await transaction.enrichmentItem.createMany({
@@ -1768,7 +1771,10 @@ export async function queueEnrichment(
       skipDuplicates: true,
     });
     await transaction.enrichmentItem.updateMany({
-      where: { enrichmentRunId: run.id, status: "PARTIAL_SUCCESS" },
+      where: {
+        enrichmentRunId: run.id,
+        ...(options.forceRefresh ? {} : { status: "PARTIAL_SUCCESS" }),
+      },
       data: { status: "PENDING" },
     });
     await transaction.scanJob.update({
@@ -2160,6 +2166,7 @@ export async function completeEnrichmentRun(enrichmentRunId: string) {
         missingMetricCount: run.items.filter(
           (item) => item.status !== "COMPLETED",
         ).length,
+        forceRefresh: false,
       },
     });
     await transaction.scanJob.update({

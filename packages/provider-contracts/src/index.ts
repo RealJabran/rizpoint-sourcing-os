@@ -331,7 +331,14 @@ export const providerCostEstimateSchema = z.object({
 export type ProviderCostEstimate = z.infer<typeof providerCostEstimateSchema>;
 
 export const providerCacheLookupSchema = z.object({
-  outcome: z.enum(["MISS", "FRESH_HIT", "STALE_HIT", "EXPIRED"]),
+  outcome: z.enum([
+    "MISS",
+    "FRESH_HIT",
+    "STALE_HIT",
+    "EXPIRED",
+    "FORCED_REFRESH",
+    "STALE_REFRESH",
+  ]),
   observedAt: z.iso.datetime().optional(),
   freshUntil: z.iso.datetime().optional(),
   staleUntil: z.iso.datetime().optional(),

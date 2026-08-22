@@ -33,6 +33,7 @@ export type CachedEnrichmentResult = {
   currency?: string;
   provider: "AMAZON_SP_API" | "MOCK_AMAZON" | "MOCK_HISTORY";
   observedAt: Date;
+  freshUntil?: Date;
   freshnessState: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
   providerReference?: string;
   pricing?: {

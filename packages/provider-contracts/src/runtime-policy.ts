@@ -8,6 +8,13 @@ import type {
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
 
+export type ProviderFreshnessPolicyOverride = Partial<
+  Pick<
+    ProviderFreshnessPolicy,
+    "freshForSeconds" | "staleWhileRevalidateSeconds" | "retainForSeconds"
+  >
+>;
+
 /** Product defaults, not claims about provider service levels. A licensed
  * adapter may use a stricter policy when its contract or data class requires it. */
 export const DEFAULT_PROVIDER_FRESHNESS_POLICIES: Readonly<
@@ -92,6 +99,39 @@ export const DEFAULT_PROVIDER_FRESHNESS_POLICIES: Readonly<
     retainForSeconds: 90 * DAY,
   },
 };
+
+/**
+ * Resolves an explicit deployment/adapter override without mutating the
+ * product defaults. Retention must cover both the fresh and stale-serving
+ * windows so a value can never be labelled reusable after it was discarded.
+ */
+export function resolveProviderFreshnessPolicy(
+  capability: ProviderCapability,
+  override: ProviderFreshnessPolicyOverride = {},
+): ProviderFreshnessPolicy {
+  const resolved = {
+    ...DEFAULT_PROVIDER_FRESHNESS_POLICIES[capability],
+    ...override,
+    capability,
+  };
+  if (
+    !Number.isInteger(resolved.freshForSeconds) ||
+    resolved.freshForSeconds < 1
+  )
+    throw new Error("PROVIDER_FRESHNESS_WINDOW_INVALID");
+  if (
+    !Number.isInteger(resolved.staleWhileRevalidateSeconds) ||
+    resolved.staleWhileRevalidateSeconds < 0
+  )
+    throw new Error("PROVIDER_STALE_WINDOW_INVALID");
+  if (
+    !Number.isInteger(resolved.retainForSeconds) ||
+    resolved.retainForSeconds <
+      resolved.freshForSeconds + resolved.staleWhileRevalidateSeconds
+  )
+    throw new Error("PROVIDER_RETENTION_WINDOW_INVALID");
+  return resolved;
+}
 
 export function providerFailureState(errorCode: string): {
   state: ProviderOperationalState;

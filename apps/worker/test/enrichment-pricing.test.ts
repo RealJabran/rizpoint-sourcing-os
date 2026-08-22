@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   scheduleEnrichmentRetry: vi.fn(),
   createEnrichmentProvider: vi.fn(),
   providerCallsInc: vi.fn(),
+  accessProviderData: vi.fn(),
+  providerDataCacheState: vi.fn(),
 }));
 
 vi.mock("@rizpoint/database", () => ({
@@ -23,6 +25,10 @@ vi.mock("../src/enrichment-provider.js", () => ({
 }));
 vi.mock("../src/observability.js", () => ({
   providerCalls: { inc: mocks.providerCallsInc },
+}));
+vi.mock("../src/provider-data-access.js", () => ({
+  accessProviderData: mocks.accessProviderData,
+  providerDataCacheState: mocks.providerDataCacheState,
 }));
 
 const observedAt = "2026-07-18T12:00:00.000Z";
@@ -80,7 +86,24 @@ function restrictionResult(
 }
 
 describe("competitive-pricing enrichment", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.providerDataCacheState.mockResolvedValue({ outcome: "MISS" });
+    mocks.accessProviderData.mockImplementation(async (input) => {
+      const fetched = await input.fetch();
+      return {
+        projection: fetched.projection,
+        source: "PROVIDER",
+        cacheOutcome: "MISS",
+        providerCalled: true,
+        observedAt: fetched.observedAt,
+        freshUntil: new Date(fetched.observedAt.getTime() + 15 * 60_000),
+        staleUntil: new Date(fetched.observedAt.getTime() + 60 * 60_000),
+        completeness: fetched.completeness,
+        refreshScheduled: false,
+      };
+    });
+  });
 
   it("honors an explicit Retry-After and jitters only a missing deadline", async () => {
     const { providerRetryDeadline } = await import("../src/enrichment.js");

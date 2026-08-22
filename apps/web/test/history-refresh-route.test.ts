@@ -4,18 +4,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const ensurePhaseZeroOrganization = vi.fn();
 const queueHistoryRefresh = vi.fn();
 const phaseZeroDemoEnabled = vi.fn();
+const requirePrivateAccess = vi.fn();
+const organizationForRequest = vi.fn();
 
 vi.mock("@rizpoint/database", () => ({
   ensurePhaseZeroOrganization,
   queueHistoryRefresh,
 }));
 vi.mock("@/src/phase-zero", () => ({ phaseZeroDemoEnabled }));
+vi.mock("@/src/private-access", () => ({ requirePrivateAccess }));
+vi.mock("@/src/request-organization", () => ({ organizationForRequest }));
 
 describe("history refresh background boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     phaseZeroDemoEnabled.mockReturnValue(true);
     ensurePhaseZeroOrganization.mockResolvedValue({ id: "org-1" });
+    requirePrivateAccess.mockReturnValue(null);
+    organizationForRequest.mockResolvedValue({ id: "org-1" });
     queueHistoryRefresh.mockResolvedValue({
       id: "run-1",
       status: "PENDING",

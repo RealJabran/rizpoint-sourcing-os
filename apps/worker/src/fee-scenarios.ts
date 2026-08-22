@@ -5,6 +5,7 @@ import {
 } from "@rizpoint/database";
 import {
   ProviderError,
+  feeEstimateSchema,
   type FeeEstimate,
   type FeeScenarioSource,
 } from "@rizpoint/provider-contracts";
@@ -15,6 +16,7 @@ import {
   type EnrichmentConnection,
 } from "./enrichment-provider.js";
 import type { FeeQuote } from "@rizpoint/profit-engine";
+import { accessProviderData } from "./provider-data-access.js";
 
 const FEE_FRESH_FOR_MS = 15 * 60_000;
 const inFlightFeeRequests = new Map<string, Promise<FeeQuote | null>>();
@@ -202,6 +204,7 @@ function normalizedObservation(
   provider: "AMAZON_SP_API" | "MOCK_AMAZON",
   requestInputs: Record<string, unknown>,
   requestHash: string,
+  policyFreshUntil?: Date,
 ) {
   const observedAt = new Date(estimate.provenance.observedAt);
   if (Number.isNaN(observedAt.getTime()))
@@ -212,7 +215,8 @@ function normalizedObservation(
     provider,
     observationKey: `FEE:${value.scenarioSource}:${requestHash}`,
     observedAt,
-    freshUntil: new Date(observedAt.getTime() + FEE_FRESH_FOR_MS),
+    freshUntil:
+      policyFreshUntil ?? new Date(observedAt.getTime() + FEE_FRESH_FOR_MS),
     freshnessState: estimate.provenance.freshnessState,
     marketplaceId: value.marketplaceId,
     ...(estimate.provenance.providerReference
@@ -293,17 +297,38 @@ export async function ensureExactFeeQuote(input: {
   if (active) return active;
   const task = (async () => {
     try {
-      const estimate = await bundle.provider.estimateFees({
-        asin: input.item.asin,
-        marketplace: bundle.marketplace,
-        fulfillmentChannel: input.fulfillmentChannel,
-        price: input.price,
-        listingPrice: input.price,
-        shippingPrice: "0",
-        currency: input.currency,
-        scenarioSource: input.scenarioSource,
-        requestId: `${input.item.enrichmentRun.id}:${requestHash.slice(0, 24)}`,
+      const accessed = await accessProviderData({
+        organizationId: input.organizationId,
+        providerKey: bundle.providerKey,
+        marketplaceId: bundle.marketplace.marketplaceId,
+        capability: "FEES",
+        operation: "getMyFeesEstimateForASIN",
+        request: requestInputs,
+        mode: bundle.mode,
+        parse: (projection) => feeEstimateSchema.parse(projection),
+        fetch: async () => {
+          const estimate = await bundle.provider.estimateFees({
+            asin: input.item.asin,
+            marketplace: bundle.marketplace,
+            fulfillmentChannel: input.fulfillmentChannel,
+            price: input.price,
+            listingPrice: input.price,
+            shippingPrice: "0",
+            currency: input.currency,
+            scenarioSource: input.scenarioSource,
+            requestId: `${input.item.enrichmentRun.id}:${requestHash.slice(0, 24)}`,
+          });
+          const cacheProjection = structuredClone(estimate);
+          delete cacheProjection.rawProviderObservation;
+          return {
+            projection: estimate,
+            cacheProjection,
+            observedAt: new Date(estimate.provenance.observedAt),
+            completeness: estimate.value.completeness,
+          };
+        },
       });
+      const estimate = accessed.projection;
       if (
         estimate.value.asin !== input.item.asin ||
         estimate.value.marketplaceId !== bundle.marketplace.marketplaceId ||
@@ -318,6 +343,7 @@ export async function ensureExactFeeQuote(input: {
         bundle.providerKind,
         requestInputs,
         requestHash,
+        accessed.freshUntil,
       );
       await persistEnrichmentItem({
         enrichmentItemId: input.item.id,

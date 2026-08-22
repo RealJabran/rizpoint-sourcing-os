@@ -14,6 +14,7 @@ export type QueueHistoryRefreshInput = {
   idempotencyKey: string;
   asins?: readonly string[];
   historyDays?: number;
+  forceRefresh?: boolean;
 };
 
 /** Re-arms only due retryable history runs. The attempt-specific outbox key,
@@ -140,6 +141,7 @@ export async function queueHistoryRefresh(input: QueueHistoryRefreshInput) {
       marketplaceId,
       historyDays,
       providerKey,
+      forceRefresh: input.forceRefresh ?? false,
     });
     const existing = await transaction.historyRefreshRun.findFirst({
       where: {
@@ -162,6 +164,7 @@ export async function queueHistoryRefresh(input: QueueHistoryRefreshInput) {
         idempotencyKey: input.idempotencyKey,
         requestHash: fingerprint,
         historyDays,
+        forceRefresh: input.forceRefresh ?? false,
         items: {
           create: selected.map(([asin, item]) => ({
             asin,

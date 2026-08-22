@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   scheduleEnrichmentRetry: vi.fn(),
   createEnrichmentProvider: vi.fn(),
   providerCallsInc: vi.fn(),
+  accessProviderData: vi.fn(),
+  providerDataCacheState: vi.fn(),
 }));
 
 vi.mock("@rizpoint/database", () => ({
@@ -23,6 +25,10 @@ vi.mock("../src/enrichment-provider.js", () => ({
 }));
 vi.mock("../src/observability.js", () => ({
   providerCalls: { inc: mocks.providerCallsInc },
+}));
+vi.mock("../src/provider-data-access.js", () => ({
+  accessProviderData: mocks.accessProviderData,
+  providerDataCacheState: mocks.providerDataCacheState,
 }));
 
 describe("enrichment provider setup failures", () => {

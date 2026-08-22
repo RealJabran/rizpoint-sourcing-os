@@ -21,10 +21,80 @@ import {
   type EnrichmentMetric as Metric,
 } from "./enrichment-policy.js";
 import { providerCalls } from "./observability.js";
+import {
+  accessProviderData,
+  providerDataCacheState,
+} from "./provider-data-access.js";
 
 export { providerRetryDeadline } from "./enrichment-policy.js";
 
 const FRESH_FOR_MS = 15 * 60_000;
+
+function capabilityForMetric(metric: Metric) {
+  return metric === "CATALOG"
+    ? ("CATALOG" as const)
+    : metric === "PRICING"
+      ? ("COMPETITIVE_OFFERS" as const)
+      : metric === "FEES"
+        ? ("FEES" as const)
+        : metric === "RESTRICTIONS"
+          ? ("RESTRICTIONS" as const)
+          : ("MARKET_HISTORY" as const);
+}
+
+function cacheableEnrichmentResult(result: CachedResult): CachedResult {
+  const copy = structuredClone(result);
+  if (
+    copy.value &&
+    typeof copy.value === "object" &&
+    !Array.isArray(copy.value)
+  )
+    delete (copy.value as { rawProviderObservation?: unknown })
+      .rawProviderObservation;
+  if (copy.pricing) delete copy.pricing.rawEvidence;
+  if (copy.fee) delete copy.fee.rawEvidence;
+  if (copy.restrictions) delete copy.restrictions.rawEvidence;
+  return copy;
+}
+
+function parseCachedEnrichmentResult(value: unknown): CachedResult {
+  if (!value || typeof value !== "object")
+    throw new ProviderError("INVALID_RESPONSE");
+  const candidate = value as Omit<CachedResult, "observedAt" | "freshUntil"> & {
+    observedAt: string | Date;
+    freshUntil?: string | Date;
+  };
+  if (
+    !["CATALOG", "PRICING", "FEES", "RESTRICTIONS", "HISTORY"].includes(
+      candidate.metric,
+    )
+  )
+    throw new ProviderError("INVALID_RESPONSE");
+  const observedAt = new Date(candidate.observedAt);
+  const freshUntil = candidate.freshUntil
+    ? new Date(candidate.freshUntil)
+    : undefined;
+  if (
+    Number.isNaN(observedAt.getTime()) ||
+    (freshUntil && Number.isNaN(freshUntil.getTime()))
+  )
+    throw new ProviderError("INVALID_RESPONSE");
+  return {
+    ...candidate,
+    observedAt,
+    ...(freshUntil ? { freshUntil } : {}),
+  } as CachedResult;
+}
+
+function resultCompleteness(result: CachedResult) {
+  if (result.pricing) return result.pricing.completeness;
+  if (result.fee) return result.fee.completeness;
+  if (result.restrictions) return result.restrictions.completeness;
+  const value = result.value as
+    | { value?: { completeness?: "COMPLETE" | "PARTIAL" | "UNKNOWN" } }
+    | undefined;
+  return value?.value?.completeness ?? "UNKNOWN";
+}
 
 /** Fixture-first, deterministic enrichment. Cache is run-scoped so duplicate ASIN rows do not duplicate provider calls. */
 export async function processEnrichment(scanJobId: string) {
@@ -194,7 +264,7 @@ export async function processEnrichment(scanJobId: string) {
   }
   const pricingPrefetch = new Map<string, Promise<unknown>>();
   if (provider.getCompetitivePricingBatch) {
-    const pendingAsins = [
+    const candidates = [
       ...new Set(
         run.items
           .filter(
@@ -205,6 +275,25 @@ export async function processEnrichment(scanJobId: string) {
           .map((item) => item.asin),
       ),
     ];
+    const pendingAsins = run.forceRefresh
+      ? candidates
+      : (
+          await Promise.all(
+            candidates.map(async (asin) => ({
+              asin,
+              state: await providerDataCacheState({
+                organizationId: run.organizationId,
+                providerKey: bundle.providerKey,
+                marketplaceId: marketplace.marketplaceId,
+                capability: "COMPETITIVE_OFFERS",
+                operation: "getCompetitiveSummary",
+                request: pricingRequestInputs(asin, marketplace.marketplaceId),
+              }),
+            })),
+          )
+        )
+          .filter(({ state }) => state.outcome !== "FRESH_HIT")
+          .map(({ asin }) => asin);
     let previousBatch: Promise<unknown> = Promise.resolve();
     for (let offset = 0; offset < pendingAsins.length; offset += 20) {
       const batchAsins = pendingAsins.slice(offset, offset + 20);
@@ -251,349 +340,407 @@ export async function processEnrichment(scanJobId: string) {
       return task;
     }
     const task = (async () => {
-      const value =
-        metric === "CATALOG"
-          ? await provider.getItem(asin, marketplace)
-          : metric === "PRICING"
-            ? await (pricingPrefetch.get(asin) ??
-                provider.getCompetitivePricing(asin, marketplace))
-            : metric === "FEES"
-              ? await (async () => {
-                  const pricing = await call(asin, "PRICING");
-                  const offer = (
-                    pricing.value as {
-                      value?: {
-                        featuredOfferState?: string;
-                        featuredOffer?: {
-                          listingPrice?: string;
-                          shippingPrice?: string;
-                          landedPrice?: string;
-                          currency?: string;
-                          fulfillmentChannel?: string;
-                        };
-                      };
-                    }
-                  ).value;
-                  const featured = offer?.featuredOffer;
-                  if (
-                    offer?.featuredOfferState !== "PRESENT" ||
-                    !featured?.landedPrice ||
-                    !featured.currency ||
-                    !["AMAZON", "MERCHANT"].includes(
-                      featured.fulfillmentChannel ?? "",
-                    )
-                  )
-                    throw new ProviderError("NOT_FOUND");
-                  const request = {
-                    asin,
-                    marketplace,
-                    fulfillmentChannel: featured.fulfillmentChannel as
-                      "AMAZON" | "MERCHANT",
-                    price: featured.landedPrice,
-                    ...(featured.listingPrice
-                      ? { listingPrice: featured.listingPrice }
-                      : {}),
-                    shippingPrice: featured.shippingPrice ?? "0",
-                    currency: featured.currency,
-                    scenarioSource: "CURRENT_FEATURED_OFFER" as const,
-                    requestId: `${run.id}:${asin}:CURRENT_FEATURED_OFFER:${featured.landedPrice}`,
-                  };
-                  return provider.estimateFees(request);
-                })()
-              : metric === "RESTRICTIONS"
-                ? await provider.getRestrictions(asin, marketplace)
-                : await provider.getHistory(asin, marketplace);
-      if (value == null) throw new ProviderError("NOT_FOUND");
-      const observed = value as {
-        provenance?: {
-          providerReference?: string;
-          observedAt?: string;
-          freshnessState?: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
+      let preparedFeeRequest:
+        Parameters<typeof provider.estimateFees>[0] | undefined;
+      if (metric === "FEES") {
+        const pricing = await call(asin, "PRICING");
+        const offer = (
+          pricing.value as {
+            value?: {
+              featuredOfferState?: string;
+              featuredOffer?: {
+                listingPrice?: string;
+                shippingPrice?: string;
+                landedPrice?: string;
+                currency?: string;
+                fulfillmentChannel?: string;
+              };
+            };
+          }
+        ).value;
+        const featured = offer?.featuredOffer;
+        if (
+          offer?.featuredOfferState !== "PRESENT" ||
+          !featured?.landedPrice ||
+          !featured.currency ||
+          !["AMAZON", "MERCHANT"].includes(featured.fulfillmentChannel ?? "")
+        )
+          throw new ProviderError("NOT_FOUND");
+        preparedFeeRequest = {
+          asin,
+          marketplace,
+          fulfillmentChannel: featured.fulfillmentChannel as
+            "AMAZON" | "MERCHANT",
+          price: featured.landedPrice,
+          ...(featured.listingPrice
+            ? { listingPrice: featured.listingPrice }
+            : {}),
+          shippingPrice: featured.shippingPrice ?? "0",
+          currency: featured.currency,
+          scenarioSource: "CURRENT_FEATURED_OFFER",
+          requestId: `${run.id}:${asin}:CURRENT_FEATURED_OFFER:${featured.landedPrice}`,
         };
-        value?:
-          | {
-              lowestPrice?: string;
-              totalFee?: string;
-              quotedPrice?: string;
-              listingPrice?: string;
-              shippingPrice?: string;
-              currency?: string;
-              operation?: string;
-              asin?: string;
-              marketplaceId?: string;
-              fulfillmentChannel?: "AMAZON" | "MERCHANT";
-              scenarioSource?:
-                "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
-              completeness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-              components?: Array<{
-                feeType: string;
-                parentFeeType?: string;
-                currency: string;
-                feeAmount: string;
-                promotion?: string;
-                tax?: string;
-                finalFee: string;
-              }>;
-              state?:
-                | "ELIGIBLE"
-                | "RESTRICTED"
-                | "APPROVAL_REQUIRED"
-                | "INCOMPLETE"
-                | "UNAUTHORIZED"
-                | "THROTTLED"
-                | "UNKNOWN";
-              reasons?: Array<{ code?: string }>;
-              conditionType?: string;
-            }
-          | Array<{ currency?: string }>;
-        rawProviderObservation?: unknown;
-      };
-      const observedAt = new Date(observed.provenance?.observedAt ?? "");
-      if (Number.isNaN(observedAt.getTime())) {
-        throw new ProviderError("INVALID_RESPONSE");
       }
-      const amount =
+      const requestIdentity =
         metric === "PRICING"
-          ? (
-              observed.value as
-                { featuredOffer?: { landedPrice?: string } } | undefined
-            )?.featuredOffer?.landedPrice
-          : metric === "FEES"
-            ? (observed.value as { totalFee?: string } | undefined)?.totalFee
-            : undefined;
-      const currency =
-        metric === "PRICING" || metric === "FEES"
-          ? (observed.value as { currency?: string } | undefined)?.currency
-          : metric === "HISTORY"
-            ? (observed.value as Array<{ currency?: string }> | undefined)?.[0]
-                ?.currency
-            : undefined;
-      const pricingValue =
-        metric === "PRICING"
-          ? (observed.value as
-              | {
-                  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-                  featuredOfferState: "PRESENT" | "ABSENT" | "UNKNOWN";
-                  featuredOffer?: {
-                    landedPrice?: string;
-                    currency?: string;
-                    fulfillmentChannel: "AMAZON" | "MERCHANT" | "UNKNOWN";
-                    sellerId?: string;
-                  };
-                  amazonRetailPresence: "PRESENT" | "ABSENT" | "UNKNOWN";
-                  totalVisibleOffers: {
-                    value?: number;
-                    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-                  };
-                  fbaVisibleOffers: {
-                    value?: number;
-                    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-                  };
-                  fbmVisibleOffers: {
-                    value?: number;
-                    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-                  };
-                  lowestFbaPrice?: string;
-                  lowestFbmPrice?: string;
-                }
-              | undefined)
-          : undefined;
-      const requestInputs = pricingRequestInputs(
-        asin,
-        marketplace.marketplaceId,
-      );
-      const feeValue =
-        metric === "FEES"
-          ? (observed.value as
-              | {
-                  quotedPrice: string;
-                  listingPrice: string;
-                  shippingPrice: string;
+          ? pricingRequestInputs(asin, marketplace.marketplaceId)
+          : metric === "FEES" && preparedFeeRequest
+            ? feeRequestInputs({
+                asin,
+                marketplaceId: marketplace.marketplaceId,
+                price: preparedFeeRequest.price,
+                ...(preparedFeeRequest.listingPrice
+                  ? { listingPrice: preparedFeeRequest.listingPrice }
+                  : {}),
+                shippingPrice: preparedFeeRequest.shippingPrice,
+                currency: preparedFeeRequest.currency,
+                fulfillmentChannel: preparedFeeRequest.fulfillmentChannel,
+                scenarioSource: preparedFeeRequest.scenarioSource,
+              })
+            : metric === "RESTRICTIONS"
+              ? restrictionRequestInputs(asin, marketplace.marketplaceId)
+              : {
+                  operation: operationForMetric(metric),
+                  asin,
+                  marketplaceId: marketplace.marketplaceId,
+                };
+      const fetchResult = async (): Promise<CachedResult> => {
+        const value =
+          metric === "CATALOG"
+            ? await provider.getItem(asin, marketplace)
+            : metric === "PRICING"
+              ? await (pricingPrefetch.get(asin) ??
+                  provider.getCompetitivePricing(asin, marketplace))
+              : metric === "FEES"
+                ? await provider.estimateFees(preparedFeeRequest!)
+                : metric === "RESTRICTIONS"
+                  ? await provider.getRestrictions(asin, marketplace)
+                  : await provider.getHistory(asin, marketplace);
+        if (value == null) throw new ProviderError("NOT_FOUND");
+        const observed = value as {
+          provenance?: {
+            providerReference?: string;
+            observedAt?: string;
+            freshnessState?: "FRESH" | "STALE" | "EXPIRED" | "UNKNOWN";
+          };
+          value?:
+            | {
+                lowestPrice?: string;
+                totalFee?: string;
+                quotedPrice?: string;
+                listingPrice?: string;
+                shippingPrice?: string;
+                currency?: string;
+                operation?: string;
+                asin?: string;
+                marketplaceId?: string;
+                fulfillmentChannel?: "AMAZON" | "MERCHANT";
+                scenarioSource?:
+                  "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
+                completeness?: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                components?: Array<{
+                  feeType: string;
+                  parentFeeType?: string;
                   currency: string;
-                  fulfillmentChannel: "AMAZON" | "MERCHANT";
-                  scenarioSource:
-                    "CURRENT_FEATURED_OFFER" | "CONSERVATIVE" | "USER_ENTERED";
-                  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-                  components: Array<{
-                    feeType: string;
-                    parentFeeType?: string;
+                  feeAmount: string;
+                  promotion?: string;
+                  tax?: string;
+                  finalFee: string;
+                }>;
+                state?:
+                  | "ELIGIBLE"
+                  | "RESTRICTED"
+                  | "APPROVAL_REQUIRED"
+                  | "INCOMPLETE"
+                  | "UNAUTHORIZED"
+                  | "THROTTLED"
+                  | "UNKNOWN";
+                reasons?: Array<{ code?: string }>;
+                conditionType?: string;
+              }
+            | Array<{ currency?: string }>;
+          rawProviderObservation?: unknown;
+        };
+        const observedAt = new Date(observed.provenance?.observedAt ?? "");
+        if (Number.isNaN(observedAt.getTime())) {
+          throw new ProviderError("INVALID_RESPONSE");
+        }
+        const amount =
+          metric === "PRICING"
+            ? (
+                observed.value as
+                  { featuredOffer?: { landedPrice?: string } } | undefined
+              )?.featuredOffer?.landedPrice
+            : metric === "FEES"
+              ? (observed.value as { totalFee?: string } | undefined)?.totalFee
+              : undefined;
+        const currency =
+          metric === "PRICING" || metric === "FEES"
+            ? (observed.value as { currency?: string } | undefined)?.currency
+            : metric === "HISTORY"
+              ? (
+                  observed.value as Array<{ currency?: string }> | undefined
+                )?.[0]?.currency
+              : undefined;
+        const pricingValue =
+          metric === "PRICING"
+            ? (observed.value as
+                | {
+                    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                    featuredOfferState: "PRESENT" | "ABSENT" | "UNKNOWN";
+                    featuredOffer?: {
+                      landedPrice?: string;
+                      currency?: string;
+                      fulfillmentChannel: "AMAZON" | "MERCHANT" | "UNKNOWN";
+                      sellerId?: string;
+                    };
+                    amazonRetailPresence: "PRESENT" | "ABSENT" | "UNKNOWN";
+                    totalVisibleOffers: {
+                      value?: number;
+                      completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                    };
+                    fbaVisibleOffers: {
+                      value?: number;
+                      completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                    };
+                    fbmVisibleOffers: {
+                      value?: number;
+                      completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                    };
+                    lowestFbaPrice?: string;
+                    lowestFbmPrice?: string;
+                  }
+                | undefined)
+            : undefined;
+        const requestInputs = pricingRequestInputs(
+          asin,
+          marketplace.marketplaceId,
+        );
+        const feeValue =
+          metric === "FEES"
+            ? (observed.value as
+                | {
+                    quotedPrice: string;
+                    listingPrice: string;
+                    shippingPrice: string;
                     currency: string;
-                    feeAmount: string;
-                    promotion?: string;
-                    tax?: string;
-                    finalFee: string;
-                  }>;
-                }
-              | undefined)
+                    fulfillmentChannel: "AMAZON" | "MERCHANT";
+                    scenarioSource:
+                      | "CURRENT_FEATURED_OFFER"
+                      | "CONSERVATIVE"
+                      | "USER_ENTERED";
+                    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                    components: Array<{
+                      feeType: string;
+                      parentFeeType?: string;
+                      currency: string;
+                      feeAmount: string;
+                      promotion?: string;
+                      tax?: string;
+                      finalFee: string;
+                    }>;
+                  }
+                | undefined)
+            : undefined;
+        const feeInputs = feeValue
+          ? feeRequestInputs({
+              asin,
+              marketplaceId: marketplace.marketplaceId,
+              price: feeValue.quotedPrice,
+              listingPrice: feeValue.listingPrice,
+              shippingPrice: feeValue.shippingPrice,
+              currency: feeValue.currency,
+              fulfillmentChannel: feeValue.fulfillmentChannel,
+              scenarioSource: feeValue.scenarioSource,
+            })
           : undefined;
-      const feeInputs = feeValue
-        ? feeRequestInputs({
-            asin,
-            marketplaceId: marketplace.marketplaceId,
-            price: feeValue.quotedPrice,
-            listingPrice: feeValue.listingPrice,
-            shippingPrice: feeValue.shippingPrice,
-            currency: feeValue.currency,
-            fulfillmentChannel: feeValue.fulfillmentChannel,
-            scenarioSource: feeValue.scenarioSource,
-          })
-        : undefined;
-      const restrictionValue =
-        metric === "RESTRICTIONS"
-          ? (observed.value as
-              | {
-                  state:
-                    | "ELIGIBLE"
-                    | "RESTRICTED"
-                    | "APPROVAL_REQUIRED"
-                    | "INCOMPLETE"
-                    | "UNAUTHORIZED"
-                    | "THROTTLED"
-                    | "UNKNOWN";
-                  completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
-                  reasons: Array<{ code?: string }>;
-                  conditionType?: string;
-                }
-              | undefined)
+        const restrictionValue =
+          metric === "RESTRICTIONS"
+            ? (observed.value as
+                | {
+                    state:
+                      | "ELIGIBLE"
+                      | "RESTRICTED"
+                      | "APPROVAL_REQUIRED"
+                      | "INCOMPLETE"
+                      | "UNAUTHORIZED"
+                      | "THROTTLED"
+                      | "UNKNOWN";
+                    completeness: "COMPLETE" | "PARTIAL" | "UNKNOWN";
+                    reasons: Array<{ code?: string }>;
+                    conditionType?: string;
+                  }
+                | undefined)
+            : undefined;
+        const restrictionInputs = restrictionValue
+          ? restrictionRequestInputs(asin, marketplace.marketplaceId)
           : undefined;
-      const restrictionInputs = restrictionValue
-        ? restrictionRequestInputs(asin, marketplace.marketplaceId)
-        : undefined;
-      return {
-        metric,
-        value,
-        observedAt,
-        freshnessState: observed.provenance?.freshnessState ?? "UNKNOWN",
-        provider: (metric === "HISTORY" && providerKind === "MOCK_AMAZON"
-          ? "MOCK_HISTORY"
-          : providerKind) as CachedResult["provider"],
-        ...(observed.provenance?.providerReference
-          ? { providerReference: observed.provenance.providerReference }
-          : {}),
-        ...(amount ? { primaryAmount: amount } : {}),
-        ...(metric === "FEES" &&
-        (observed.value as { quotedPrice?: string } | undefined)?.quotedPrice
-          ? {
-              quotedPrice: (observed.value as { quotedPrice: string })
-                .quotedPrice,
-            }
-          : {}),
-        ...(currency ? { currency } : {}),
-        ...(pricingValue
-          ? {
-              pricing: {
-                requestHash: stableHash(requestInputs),
-                requestInputs,
-                ...(observed.rawProviderObservation !== undefined
-                  ? {
-                      rawEvidence: observed.rawProviderObservation,
-                      rawEvidenceReference: stableHash(
-                        observed.rawProviderObservation,
-                      ),
-                    }
-                  : {}),
-                completeness: pricingValue.completeness,
-                featuredOfferState: pricingValue.featuredOfferState,
-                ...(pricingValue.featuredOffer?.landedPrice
-                  ? { featuredPrice: pricingValue.featuredOffer.landedPrice }
-                  : {}),
-                ...(pricingValue.featuredOffer?.currency
-                  ? { featuredCurrency: pricingValue.featuredOffer.currency }
-                  : {}),
-                ...(pricingValue.featuredOffer
-                  ? {
-                      featuredFulfillment:
-                        pricingValue.featuredOffer.fulfillmentChannel,
-                    }
-                  : {}),
-                ...(pricingValue.featuredOffer?.sellerId
-                  ? { featuredSellerId: pricingValue.featuredOffer.sellerId }
-                  : {}),
-                amazonRetailPresence: pricingValue.amazonRetailPresence,
-                ...(pricingValue.totalVisibleOffers.value !== undefined
-                  ? {
-                      visibleOfferCount: pricingValue.totalVisibleOffers.value,
-                    }
-                  : {}),
-                visibleOfferCountCompleteness:
-                  pricingValue.totalVisibleOffers.completeness,
-                ...(pricingValue.fbaVisibleOffers.value !== undefined
-                  ? { fbaOfferCount: pricingValue.fbaVisibleOffers.value }
-                  : {}),
-                fbaOfferCountCompleteness:
-                  pricingValue.fbaVisibleOffers.completeness,
-                ...(pricingValue.fbmVisibleOffers.value !== undefined
-                  ? { fbmOfferCount: pricingValue.fbmVisibleOffers.value }
-                  : {}),
-                fbmOfferCountCompleteness:
-                  pricingValue.fbmVisibleOffers.completeness,
-                ...(pricingValue.lowestFbaPrice
-                  ? { lowestFbaPrice: pricingValue.lowestFbaPrice }
-                  : {}),
-                ...(pricingValue.lowestFbmPrice
-                  ? { lowestFbmPrice: pricingValue.lowestFbmPrice }
-                  : {}),
-              },
-            }
-          : {}),
-        ...(feeValue && feeInputs
-          ? {
-              fee: {
-                requestHash: stableHash(feeInputs),
-                requestInputs: feeInputs,
-                ...(observed.rawProviderObservation !== undefined
-                  ? {
-                      rawEvidence: observed.rawProviderObservation,
-                      rawEvidenceReference: stableHash(
-                        observed.rawProviderObservation,
-                      ),
-                    }
-                  : {}),
-                completeness: feeValue.completeness,
-                scenarioSource: feeValue.scenarioSource,
-                fulfillment: feeValue.fulfillmentChannel,
-                components: feeValue.components.map((component) => ({
-                  feeType: component.feeType,
-                  currency: component.currency,
-                  feeAmount: component.feeAmount,
-                  finalFee: component.finalFee,
-                  ...(component.parentFeeType
-                    ? { parentFeeType: component.parentFeeType }
+        return {
+          metric,
+          value,
+          observedAt,
+          freshnessState: observed.provenance?.freshnessState ?? "UNKNOWN",
+          provider: (metric === "HISTORY" && providerKind === "MOCK_AMAZON"
+            ? "MOCK_HISTORY"
+            : providerKind) as CachedResult["provider"],
+          ...(observed.provenance?.providerReference
+            ? { providerReference: observed.provenance.providerReference }
+            : {}),
+          ...(amount ? { primaryAmount: amount } : {}),
+          ...(metric === "FEES" &&
+          (observed.value as { quotedPrice?: string } | undefined)?.quotedPrice
+            ? {
+                quotedPrice: (observed.value as { quotedPrice: string })
+                  .quotedPrice,
+              }
+            : {}),
+          ...(currency ? { currency } : {}),
+          ...(pricingValue
+            ? {
+                pricing: {
+                  requestHash: stableHash(requestInputs),
+                  requestInputs,
+                  ...(observed.rawProviderObservation !== undefined
+                    ? {
+                        rawEvidence: observed.rawProviderObservation,
+                        rawEvidenceReference: stableHash(
+                          observed.rawProviderObservation,
+                        ),
+                      }
                     : {}),
-                  ...(component.promotion
-                    ? { promotionAmount: component.promotion }
+                  completeness: pricingValue.completeness,
+                  featuredOfferState: pricingValue.featuredOfferState,
+                  ...(pricingValue.featuredOffer?.landedPrice
+                    ? { featuredPrice: pricingValue.featuredOffer.landedPrice }
                     : {}),
-                  ...(component.tax ? { taxAmount: component.tax } : {}),
-                })),
-              },
-            }
-          : {}),
-        ...(restrictionValue && restrictionInputs
-          ? {
-              restrictions: {
-                requestHash: stableHash(restrictionInputs),
-                requestInputs: restrictionInputs,
-                ...(observed.rawProviderObservation !== undefined
-                  ? {
-                      rawEvidence: observed.rawProviderObservation,
-                      rawEvidenceReference: stableHash(
-                        observed.rawProviderObservation,
-                      ),
-                    }
-                  : {}),
-                completeness: restrictionValue.completeness,
-                state: restrictionValue.state,
-                reasonCodes: restrictionValue.reasons.flatMap((reason) =>
-                  reason.code ? [reason.code] : [],
-                ),
-                reasons: restrictionValue.reasons,
-                ...(restrictionValue.conditionType
-                  ? { conditionType: restrictionValue.conditionType }
-                  : {}),
-              },
-            }
-          : {}),
+                  ...(pricingValue.featuredOffer?.currency
+                    ? { featuredCurrency: pricingValue.featuredOffer.currency }
+                    : {}),
+                  ...(pricingValue.featuredOffer
+                    ? {
+                        featuredFulfillment:
+                          pricingValue.featuredOffer.fulfillmentChannel,
+                      }
+                    : {}),
+                  ...(pricingValue.featuredOffer?.sellerId
+                    ? { featuredSellerId: pricingValue.featuredOffer.sellerId }
+                    : {}),
+                  amazonRetailPresence: pricingValue.amazonRetailPresence,
+                  ...(pricingValue.totalVisibleOffers.value !== undefined
+                    ? {
+                        visibleOfferCount:
+                          pricingValue.totalVisibleOffers.value,
+                      }
+                    : {}),
+                  visibleOfferCountCompleteness:
+                    pricingValue.totalVisibleOffers.completeness,
+                  ...(pricingValue.fbaVisibleOffers.value !== undefined
+                    ? { fbaOfferCount: pricingValue.fbaVisibleOffers.value }
+                    : {}),
+                  fbaOfferCountCompleteness:
+                    pricingValue.fbaVisibleOffers.completeness,
+                  ...(pricingValue.fbmVisibleOffers.value !== undefined
+                    ? { fbmOfferCount: pricingValue.fbmVisibleOffers.value }
+                    : {}),
+                  fbmOfferCountCompleteness:
+                    pricingValue.fbmVisibleOffers.completeness,
+                  ...(pricingValue.lowestFbaPrice
+                    ? { lowestFbaPrice: pricingValue.lowestFbaPrice }
+                    : {}),
+                  ...(pricingValue.lowestFbmPrice
+                    ? { lowestFbmPrice: pricingValue.lowestFbmPrice }
+                    : {}),
+                },
+              }
+            : {}),
+          ...(feeValue && feeInputs
+            ? {
+                fee: {
+                  requestHash: stableHash(feeInputs),
+                  requestInputs: feeInputs,
+                  ...(observed.rawProviderObservation !== undefined
+                    ? {
+                        rawEvidence: observed.rawProviderObservation,
+                        rawEvidenceReference: stableHash(
+                          observed.rawProviderObservation,
+                        ),
+                      }
+                    : {}),
+                  completeness: feeValue.completeness,
+                  scenarioSource: feeValue.scenarioSource,
+                  fulfillment: feeValue.fulfillmentChannel,
+                  components: feeValue.components.map((component) => ({
+                    feeType: component.feeType,
+                    currency: component.currency,
+                    feeAmount: component.feeAmount,
+                    finalFee: component.finalFee,
+                    ...(component.parentFeeType
+                      ? { parentFeeType: component.parentFeeType }
+                      : {}),
+                    ...(component.promotion
+                      ? { promotionAmount: component.promotion }
+                      : {}),
+                    ...(component.tax ? { taxAmount: component.tax } : {}),
+                  })),
+                },
+              }
+            : {}),
+          ...(restrictionValue && restrictionInputs
+            ? {
+                restrictions: {
+                  requestHash: stableHash(restrictionInputs),
+                  requestInputs: restrictionInputs,
+                  ...(observed.rawProviderObservation !== undefined
+                    ? {
+                        rawEvidence: observed.rawProviderObservation,
+                        rawEvidenceReference: stableHash(
+                          observed.rawProviderObservation,
+                        ),
+                      }
+                    : {}),
+                  completeness: restrictionValue.completeness,
+                  state: restrictionValue.state,
+                  reasonCodes: restrictionValue.reasons.flatMap((reason) =>
+                    reason.code ? [reason.code] : [],
+                  ),
+                  reasons: restrictionValue.reasons,
+                  ...(restrictionValue.conditionType
+                    ? { conditionType: restrictionValue.conditionType }
+                    : {}),
+                },
+              }
+            : {}),
+        };
       };
+      const accessed = await accessProviderData({
+        organizationId: run.organizationId,
+        providerKey: bundle.providerKey,
+        marketplaceId: marketplace.marketplaceId,
+        capability: capabilityForMetric(metric),
+        operation: operationForMetric(metric),
+        request: requestIdentity,
+        mode: bundle.mode,
+        forceRefresh: run.forceRefresh,
+        parse: parseCachedEnrichmentResult,
+        fetch: async () => {
+          const result = await fetchResult();
+          return {
+            projection: result,
+            cacheProjection: cacheableEnrichmentResult(result),
+            observedAt: result.observedAt,
+            completeness: resultCompleteness(result),
+          };
+        },
+      });
+      return {
+        ...accessed.projection,
+        observedAt: accessed.observedAt,
+        freshUntil: accessed.freshUntil,
+        freshnessState:
+          accessed.source === "PERSISTED_STALE"
+            ? ("STALE" as const)
+            : ("FRESH" as const),
+      } satisfies CachedResult;
     })();
     cache.set(key, task);
     return task;
@@ -613,6 +760,7 @@ export async function processEnrichment(scanJobId: string) {
       "HISTORY",
     ] as const) {
       if (
+        !run.forceRefresh &&
         item.observations.some(
           (observation) =>
             observation.metricType === metric &&
@@ -655,7 +803,9 @@ export async function processEnrichment(scanJobId: string) {
           metricType: metric,
           provider: result.provider,
           observedAt: result.observedAt,
-          freshUntil: new Date(result.observedAt.getTime() + FRESH_FOR_MS),
+          freshUntil:
+            result.freshUntil ??
+            new Date(result.observedAt.getTime() + FRESH_FOR_MS),
           freshnessState: result.freshnessState,
           marketplaceId: marketplace.marketplaceId,
           payload: JSON.parse(JSON.stringify(result.value)),

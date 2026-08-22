@@ -22,6 +22,7 @@ import {
   type CatalogProvider,
 } from "@rizpoint/provider-contracts";
 import { createEnrichmentProvider } from "./enrichment-provider.js";
+import { accessProviderData } from "./provider-data-access.js";
 
 type MatchingOffer = {
   asin: string | null;
@@ -65,6 +66,13 @@ async function cachedLookup(
   source: CandidateSource,
   providerName: string,
   lookupKey: string,
+  runtime: {
+    providerKey: "amazon-sp-api" | "mock-amazon";
+    mode: "LIVE" | "MOCK";
+    marketplaceId: string;
+    operation: string;
+    requestIdentity: unknown;
+  },
   request: () => Promise<readonly CatalogProduct[]>,
 ): Promise<readonly CatalogProduct[]> {
   const cached = await getCompletedMatchLookup(
@@ -76,7 +84,47 @@ async function cachedLookup(
   if (cached?.status === "COMPLETED") {
     return catalogProductSchema.array().parse(cached.payload);
   }
-  const products = catalogProductSchema.array().parse(await request());
+  // Scan-local lookup persistence is sufficient for deterministic demo data.
+  // Keeping MOCK out of the organization provider cache also prevents demo
+  // fixtures from inflating live-call/cache telemetry and avoids thousands of
+  // unnecessary cache rows in the large wholesale fixture. Every LIVE lookup
+  // still goes through the shared persistent policy below.
+  const products =
+    runtime.mode === "MOCK"
+      ? catalogProductSchema.array().parse(await request())
+      : (
+          await accessProviderData({
+            organizationId,
+            providerKey: runtime.providerKey,
+            marketplaceId: runtime.marketplaceId,
+            capability: "CATALOG",
+            operation: runtime.operation,
+            request: runtime.requestIdentity,
+            mode: runtime.mode,
+            parse: (projection) =>
+              catalogProductSchema.array().parse(projection),
+            fetch: async () => {
+              const fetched = catalogProductSchema
+                .array()
+                .parse(await request());
+              const first = fetched[0];
+              return {
+                projection: fetched,
+                cacheProjection: fetched.map((product) => {
+                  const normalized = structuredClone(product);
+                  delete normalized.rawProviderObservation;
+                  return normalized;
+                }),
+                observedAt: new Date(
+                  first?.provenance.observedAt ?? new Date().toISOString(),
+                ),
+                completeness:
+                  first?.provenance.responseCompleteness ??
+                  ("UNKNOWN" as const),
+              };
+            },
+          })
+        ).projection;
   const first = products[0];
   await saveMatchLookup({
     organizationId,
@@ -101,6 +149,10 @@ async function cascade(
   provider: CatalogProvider,
   providerName: string,
   marketplace: import("@rizpoint/provider-contracts").MarketplaceContext,
+  runtime: {
+    providerKey: "amazon-sp-api" | "mock-amazon";
+    mode: "LIVE" | "MOCK";
+  },
 ) {
   const candidates = new Map<
     string,
@@ -117,6 +169,16 @@ async function cascade(
       "SUPPLIED_ASIN",
       providerName,
       asin,
+      {
+        ...runtime,
+        marketplaceId: marketplace.marketplaceId,
+        operation: "getCatalogItem",
+        requestIdentity: {
+          operation: "getCatalogItem",
+          asin,
+          marketplaceId: marketplace.marketplaceId,
+        },
+      },
       async () => {
         const product = await provider.getItem(asin, marketplace);
         return product ? [product] : [];
@@ -135,6 +197,16 @@ async function cascade(
         "EXACT_IDENTIFIER",
         providerName,
         `${identifier.type}:${identifier.value}`,
+        {
+          ...runtime,
+          marketplaceId: marketplace.marketplaceId,
+          operation: "searchCatalogByIdentifier",
+          requestIdentity: {
+            operation: "searchCatalogByIdentifier",
+            identifier,
+            marketplaceId: marketplace.marketplaceId,
+          },
+        },
         () => provider.searchByIdentifier(identifier, marketplace),
       );
       for (const product of products)
@@ -149,6 +221,16 @@ async function cascade(
       "MPN_BRAND",
       providerName,
       `${value}:${normalizeText(input.brand)}`,
+      {
+        ...runtime,
+        marketplaceId: marketplace.marketplaceId,
+        operation: "searchCatalogByKeywords",
+        requestIdentity: {
+          operation: "searchCatalogByKeywords",
+          query: `${input.brand} ${value}`,
+          marketplaceId: marketplace.marketplaceId,
+        },
+      },
       () => provider.searchByKeywords(`${input.brand} ${value}`, marketplace),
     );
     for (const product of products) {
@@ -163,6 +245,16 @@ async function cascade(
       "TITLE_SEARCH",
       providerName,
       input.description,
+      {
+        ...runtime,
+        marketplaceId: marketplace.marketplaceId,
+        operation: "searchCatalogByKeywords",
+        requestIdentity: {
+          operation: "searchCatalogByKeywords",
+          query: input.description,
+          marketplaceId: marketplace.marketplaceId,
+        },
+      },
       () => provider.searchByKeywords(input.description!, marketplace),
     );
     for (const product of products)
@@ -187,6 +279,7 @@ export async function processMatching(scanJobId: string) {
       bundle.provider,
       providerName,
       bundle.marketplace,
+      { providerKey: bundle.providerKey, mode: bundle.mode },
     );
     const scored = candidates.map(({ product, source }) =>
       scoreCandidate(input, product, source),

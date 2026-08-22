@@ -90,6 +90,15 @@ payloads or credentials. Existing scan-bound `ProviderObservation` remains the
 wholesale evidence record, and `ResearchObservation` remains the research
 evidence envelope.
 
+The worker-only provider data-access coordinator is the single read-through
+policy for product enrichment and licensed history. It canonicalizes and hashes
+requests, hydrates the organization-scoped PostgreSQL cache first, applies
+explicit freshness/stale/retention policy, coalesces misses through the existing
+lease, and appends sanitized usage telemetry. Forced refresh bypasses freshness
+only; entitlements, provider throttles, rate budgets, tenant predicates, and
+deduplication remain mandatory. Web render paths do not import this boundary or
+call providers. See `docs/PROVIDER_RESEARCH_MEMORY.md`.
+
 SP-API call attempts are dual-recorded into the legacy scan audit and the
 normalized runtime telemetry. The worker bundle declares provider key, mode,
 and capabilities. Live mode fails closed when an authorized live connection is

@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  ensurePhaseZeroOrganization,
-  queueEnrichment,
-} from "@rizpoint/database";
+import { queueEnrichment } from "@rizpoint/database";
 import { z } from "zod";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 
 export const runtime = "nodejs";
 
@@ -18,8 +16,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ scanId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = refreshSchema.safeParse(
     await request.json().catch(() => null),
   );
@@ -28,11 +26,12 @@ export async function POST(
       { error: "INVALID_REFRESH_REQUEST" },
       { status: 400 },
     );
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   const run = await queueEnrichment(
     organization.id,
     (await params).scanId,
     parsed.data.idempotencyKey,
+    { forceRefresh: true },
   );
   if (!run)
     return NextResponse.json(

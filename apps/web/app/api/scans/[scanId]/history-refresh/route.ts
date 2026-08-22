@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  ensurePhaseZeroOrganization,
-  queueHistoryRefresh,
-} from "@rizpoint/database";
+import { queueHistoryRefresh } from "@rizpoint/database";
 import { z } from "zod";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 
 export const runtime = "nodejs";
 
@@ -16,6 +14,7 @@ const requestSchema = z.object({
     .max(100)
     .optional(),
   historyDays: z.number().int().min(1).max(730).optional(),
+  forceRefresh: z.boolean().optional(),
 });
 
 /** Optional, scan-owned history refresh. It never changes matching or profit
@@ -24,8 +23,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ scanId: string }> },
 ) {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
   const parsed = requestSchema.safeParse(
     await request.json().catch(() => null),
   );
@@ -35,7 +34,7 @@ export async function POST(
       { status: 400 },
     );
   try {
-    const organization = await ensurePhaseZeroOrganization();
+    const organization = await organizationForRequest(request);
     const run = await queueHistoryRefresh({
       organizationId: organization.id,
       scanJobId: (await params).scanId,
@@ -44,6 +43,9 @@ export async function POST(
       ...(parsed.data.historyDays
         ? { historyDays: parsed.data.historyDays }
         : {}),
+      ...(parsed.data.forceRefresh === undefined
+        ? {}
+        : { forceRefresh: parsed.data.forceRefresh }),
     });
     if (!run)
       return NextResponse.json(

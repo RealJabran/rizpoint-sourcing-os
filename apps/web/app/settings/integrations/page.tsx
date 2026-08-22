@@ -32,6 +32,23 @@ export default function IntegrationsPage() {
           Manage Amazon
         </ButtonLink>
       </Card>
+      <Card className="integration-directory-card">
+        <div className="amazon-provider-mark" aria-hidden="true">
+          ↻
+        </div>
+        <div>
+          <div className="badge-stack">
+            <Badge tone="info">Research memory</Badge>
+            <Badge tone="neutral">Tenant scoped</Badge>
+          </div>
+          <h2>Data & provider usage</h2>
+          <p>
+            Review cache savings, live calls, refreshes, throttles, and
+            configured provider credit or cost estimates.
+          </p>
+        </div>
+        <ButtonLink href="/settings/data-providers">View usage</ButtonLink>
+      </Card>
     </main>
   );
 }

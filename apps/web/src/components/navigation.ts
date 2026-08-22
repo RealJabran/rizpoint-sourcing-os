@@ -175,6 +175,11 @@ export const navigationGroups: NavigationGroup[] = [
         href: "/settings/integrations",
         icon: "settings",
       },
+      {
+        label: "Data & providers",
+        href: "/settings/data-providers",
+        icon: "analysis",
+      },
       { label: "Learning & help", href: "/learning", icon: "learn" },
     ],
   },

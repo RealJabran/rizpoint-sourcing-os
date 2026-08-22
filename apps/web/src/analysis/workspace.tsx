@@ -88,6 +88,8 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
   const [viewName, setViewName] = useState("");
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [refreshState, setRefreshState] = useState("");
+  const [historyRefreshState, setHistoryRefreshState] = useState("");
+  const [allRefreshState, setAllRefreshState] = useState("");
   const [exportState, setExportState] = useState("");
   const [exportJob, setExportJob] = useState<{
     id: string;
@@ -541,6 +543,42 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
     window.setTimeout(() => setRefreshNonce((current) => current + 1), 1_500);
   }
 
+  async function refreshHistory(): Promise<void> {
+    setHistoryRefreshState("queued");
+    const response = await fetch(`/api/scans/${scanId}/history-refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: crypto.randomUUID(),
+        historyDays: 365,
+        forceRefresh: true,
+      }),
+    });
+    if (!response.ok) {
+      setHistoryRefreshState("failed");
+      notify(
+        "History refresh requires accepted products and a configured licensed history capability.",
+        "danger",
+      );
+      return;
+    }
+    setHistoryRefreshState("queued");
+    notify(
+      "History refresh queued. Freshness is bypassed intentionally; provider budgets and request deduplication still apply.",
+      "info",
+    );
+    window.setTimeout(() => {
+      setHistoryRefreshState("submitted");
+      setRefreshNonce((current) => current + 1);
+    }, 1_500);
+  }
+
+  async function refreshAllData(): Promise<void> {
+    setAllRefreshState("running");
+    await Promise.all([refreshEvidence(), refreshHistory()]);
+    setAllRefreshState("submitted");
+  }
+
   function activeViewState() {
     return {
       schemaVersion: 1 as const,
@@ -667,11 +705,26 @@ export function AnalysisWorkspace({ scanId }: { scanId: string }) {
           <>
             <Button
               type="button"
+              loading={allRefreshState === "running"}
+              onClick={() => void refreshAllData()}
+            >
+              Refresh data
+            </Button>
+            <Button
+              type="button"
               variant="secondary"
               loading={refreshState === "queued" || refreshState === "running"}
               onClick={() => void refreshEvidence()}
             >
-              Refresh evidence
+              Refresh Amazon data
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={historyRefreshState === "queued"}
+              onClick={() => void refreshHistory()}
+            >
+              Refresh history
             </Button>
             <Button
               type="button"

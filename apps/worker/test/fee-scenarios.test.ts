@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   persistEnrichmentItem: vi.fn(),
   recordProviderCallAttempt: vi.fn(),
   createEnrichmentProvider: vi.fn(),
+  accessProviderData: vi.fn(),
 }));
 
 vi.mock("@rizpoint/database", () => ({
@@ -13,6 +14,9 @@ vi.mock("@rizpoint/database", () => ({
 }));
 vi.mock("../src/enrichment-provider.js", () => ({
   createEnrichmentProvider: mocks.createEnrichmentProvider,
+}));
+vi.mock("../src/provider-data-access.js", () => ({
+  accessProviderData: mocks.accessProviderData,
 }));
 
 const calculatedAt = new Date("2026-07-18T12:00:00.000Z");
@@ -62,7 +66,23 @@ function estimate(price: string, scenarioSource = "CONSERVATIVE" as const) {
 }
 
 describe("exact-price fee scenario acquisition", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.accessProviderData.mockImplementation(async (input) => {
+      const fetched = await input.fetch();
+      return {
+        projection: fetched.projection,
+        observedAt: fetched.observedAt,
+        freshUntil: new Date(fetched.observedAt.getTime() + 6 * 60 * 60_000),
+        staleUntil: new Date(fetched.observedAt.getTime() + 24 * 60 * 60_000),
+        completeness: fetched.completeness,
+        source: "PROVIDER",
+        cacheOutcome: "MISS",
+        providerCalled: true,
+        refreshScheduled: false,
+      };
+    });
+  });
 
   it("single-flights a scenario request and persists typed evidence without changing enrichment status", async () => {
     const estimateFees = vi.fn(async () => {

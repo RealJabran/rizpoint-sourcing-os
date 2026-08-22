@@ -1081,5 +1081,37 @@ export async function getAnalysisResult(
         take: 3,
       })
     : [];
-  return { ...result, auditEvents, historyEvidence, historyAnalytics };
+  // This repository method is an API projection boundary. Prisma BigInt values
+  // cannot be JSON-stringified, and leaking driver-specific Decimal/Date
+  // objects makes evidence replay depend on the web runtime. Keep exact numeric
+  // values as strings and timestamps as ISO-8601.
+  const serializedHistoryEvidence = historyEvidence.map((series) => ({
+    ...series,
+    points: series.points.map((point) => ({
+      ...point,
+      metricAt: point.metricAt.toISOString(),
+      decimalValue: point.decimalValue?.toString() ?? null,
+      integerValue: point.integerValue?.toString() ?? null,
+      sourceObservation: point.sourceObservation
+        ? {
+            ...point.sourceObservation,
+            observedAt: point.sourceObservation.observedAt.toISOString(),
+            expiresAt: point.sourceObservation.expiresAt?.toISOString() ?? null,
+          }
+        : null,
+    })),
+  }));
+  const serializedHistoryAnalytics = historyAnalytics.map((assessment) => ({
+    ...assessment,
+    windowStart: assessment.windowStart?.toISOString() ?? null,
+    windowEnd: assessment.windowEnd?.toISOString() ?? null,
+    coveragePercent: assessment.coveragePercent?.toString() ?? null,
+    calculatedAt: assessment.calculatedAt.toISOString(),
+  }));
+  return {
+    ...result,
+    auditEvents,
+    historyEvidence: serializedHistoryEvidence,
+    historyAnalytics: serializedHistoryAnalytics,
+  };
 }

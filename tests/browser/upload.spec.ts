@@ -232,7 +232,9 @@ test.describe("catalog upload", () => {
       exportAlert.getByRole("link", { name: /Download/ }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Refresh evidence" }).click();
+    await page
+      .getByRole("button", { name: "Refresh data", exact: true })
+      .click();
     await expect(
       page.getByRole("status").filter({ hasText: /Evidence refresh status/i }),
     ).toBeVisible();

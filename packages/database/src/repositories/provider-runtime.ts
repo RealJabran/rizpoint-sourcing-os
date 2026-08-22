@@ -723,6 +723,7 @@ export async function getProviderCacheEntry(
   ProviderCacheLookup & {
     normalizedProjection?: Prisma.JsonValue;
     rawEvidenceReference?: string;
+    updatedAt?: string;
   }
 > {
   const row = await db.providerCacheEntry.findUnique({
@@ -752,6 +753,7 @@ export async function getProviderCacheEntry(
     freshUntil: row.freshUntil.toISOString(),
     staleUntil: row.staleUntil.toISOString(),
     completeness: row.completeness,
+    updatedAt: row.updatedAt.toISOString(),
     ...(row.normalizedProjection === null
       ? {}
       : { normalizedProjection: row.normalizedProjection }),
@@ -950,7 +952,13 @@ export async function recordProviderRequestTelemetry(input: {
   httpStatus?: number;
   errorCode?: string;
   providerRequestId?: string;
-  cacheOutcome?: "MISS" | "FRESH_HIT" | "STALE_HIT" | "EXPIRED";
+  cacheOutcome?:
+    | "MISS"
+    | "FRESH_HIT"
+    | "STALE_HIT"
+    | "EXPIRED"
+    | "FORCED_REFRESH"
+    | "STALE_REFRESH";
   cost?: ProviderCostEstimate;
 }) {
   if (input.attempt < 1) throw new Error("PROVIDER_ATTEMPT_INVALID");
@@ -1036,6 +1044,120 @@ export async function recordProviderRequestTelemetry(input: {
       completedAt: true,
     },
   });
+}
+
+/** Appends one sanitized access event. Unlike the idempotent probe recorder,
+ * this allocator preserves repeated cache reads so usage reporting is not
+ * understated across separate jobs or process restarts. */
+export async function appendProviderRequestTelemetry(
+  input: Omit<Parameters<typeof recordProviderRequestTelemetry>[0], "attempt">,
+) {
+  for (let retry = 1; retry <= 4; retry += 1) {
+    const latest = await db.providerRequestAttempt.aggregate({
+      where: {
+        organizationId: input.organizationId,
+        providerKey: input.providerKey,
+        marketplaceId: input.marketplaceId,
+        capability: input.capability,
+        operation: input.operation,
+        requestHash: input.requestHash,
+      },
+      _max: { attempt: true },
+    });
+    try {
+      return await recordProviderRequestTelemetry({
+        ...input,
+        attempt: (latest._max.attempt ?? 0) + 1,
+      });
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : undefined;
+      if (code !== "P2002" || retry === 4) throw error;
+    }
+  }
+  throw new Error("PROVIDER_TELEMETRY_SEQUENCE_EXHAUSTED");
+}
+
+/** Bounded, credential-free cache/provider usage projection for Settings. */
+export async function getProviderUsageSummary(input: {
+  organizationId: string;
+  since?: Date;
+}) {
+  const since = input.since ?? new Date(Date.now() - 30 * 24 * 60 * 60_000);
+  const groups = await db.providerRequestAttempt.groupBy({
+    by: [
+      "providerKey",
+      "marketplaceId",
+      "mode",
+      "capability",
+      "state",
+      "cacheOutcome",
+      "budgetUnit",
+      "costCurrency",
+    ],
+    where: {
+      organizationId: input.organizationId,
+      startedAt: { gte: since },
+    },
+    _count: { _all: true },
+    _sum: { estimatedUnits: true, estimatedCost: true },
+  });
+  const totals = {
+    liveProviderCalls: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    staleHits: 0,
+    refreshes: 0,
+    throttles: 0,
+  };
+  const credits = new Map<string, Prisma.Decimal>();
+  const costs = new Map<string, Prisma.Decimal>();
+  for (const group of groups) {
+    const count = group._count._all;
+    if (
+      group.mode === "LIVE" &&
+      ["MISS", "EXPIRED", "FORCED_REFRESH", "STALE_REFRESH"].includes(
+        group.cacheOutcome ?? "",
+      )
+    )
+      totals.liveProviderCalls += count;
+    if (group.cacheOutcome === "FRESH_HIT") totals.cacheHits += count;
+    if (group.cacheOutcome === "MISS") totals.cacheMisses += count;
+    if (group.cacheOutcome === "STALE_HIT") totals.staleHits += count;
+    if (["FORCED_REFRESH", "STALE_REFRESH"].includes(group.cacheOutcome ?? ""))
+      totals.refreshes += count;
+    if (group.state === "THROTTLED") totals.throttles += count;
+    if (group.budgetUnit && group._sum.estimatedUnits) {
+      const key = group.budgetUnit;
+      credits.set(
+        key,
+        (credits.get(key) ?? new Prisma.Decimal(0)).plus(
+          group._sum.estimatedUnits,
+        ),
+      );
+    }
+    if (group.costCurrency && group._sum.estimatedCost) {
+      costs.set(
+        group.costCurrency,
+        (costs.get(group.costCurrency) ?? new Prisma.Decimal(0)).plus(
+          group._sum.estimatedCost,
+        ),
+      );
+    }
+  }
+  return {
+    since: since.toISOString(),
+    ...totals,
+    estimatedUsage: [...credits.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([unit, value]) => ({ unit, value: value.toFixed(4) })),
+    estimatedCost: [...costs.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([currency, value]) => ({ currency, value: value.toFixed(8) })),
+    providers: [...new Set(groups.map((group) => group.providerKey))].sort(),
+  };
 }
 
 export async function providerCapabilityAvailability(input: {

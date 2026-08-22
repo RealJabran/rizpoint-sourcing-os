@@ -5,6 +5,8 @@ const ensurePhaseZeroOrganization = vi.fn();
 const queueEnrichment = vi.fn();
 const queueExport = vi.fn();
 const phaseZeroDemoEnabled = vi.fn();
+const requirePrivateAccess = vi.fn();
+const organizationForRequest = vi.fn();
 
 vi.mock("@rizpoint/database", () => ({
   ensurePhaseZeroOrganization,
@@ -12,6 +14,8 @@ vi.mock("@rizpoint/database", () => ({
   queueExport,
 }));
 vi.mock("@/src/phase-zero", () => ({ phaseZeroDemoEnabled }));
+vi.mock("@/src/private-access", () => ({ requirePrivateAccess }));
+vi.mock("@/src/request-organization", () => ({ organizationForRequest }));
 vi.mock(
   "@/src/analysis/contracts",
   async () => import("../src/analysis/contracts.js"),
@@ -32,6 +36,8 @@ describe("analysis refresh and export routes", () => {
     vi.clearAllMocks();
     phaseZeroDemoEnabled.mockReturnValue(true);
     ensurePhaseZeroOrganization.mockResolvedValue({ id: "org-current" });
+    requirePrivateAccess.mockReturnValue(null);
+    organizationForRequest.mockResolvedValue({ id: "org-current" });
   });
 
   it("queues a tenant-scoped active-view export with its complete typed state", async () => {
@@ -128,6 +134,7 @@ describe("analysis refresh and export routes", () => {
       "org-current",
       "scan-current",
       idempotencyKey,
+      { forceRefresh: true },
     );
     expect(await response.json()).toEqual({
       id: "enrichment-1",
