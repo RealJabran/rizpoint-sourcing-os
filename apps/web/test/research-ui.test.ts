@@ -32,6 +32,51 @@ describe("next-level research UI architecture", () => {
       "/shortlists",
       "/purchase-orders",
     ]);
+    expect(
+      navigationGroups
+        .find((group) => group.label === "Monitoring")
+        ?.items.map((item) => item.href),
+    ).toEqual(["/product-tracker", "/alerts"]);
+  });
+
+  it("keeps every primary navigation destination backed by a page", async () => {
+    await Promise.all(
+      navigationGroups
+        .flatMap((group) => group.items)
+        .map((item) =>
+          expect(
+            readFile(
+              new URL(
+                `../app${item.href === "/" ? "" : item.href}/page.tsx`,
+                import.meta.url,
+              ),
+              "utf8",
+            ),
+          ).resolves.toContain("export default"),
+        ),
+    );
+  });
+
+  it("deep-links created research projects instead of requiring copied IDs", async () => {
+    const [hub, explorer, tracker] = await Promise.all([
+      readFile(
+        new URL("../src/project-hub/workspace.tsx", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../src/product-explorer/workspace.tsx", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../src/product-tracker/workspace.tsx", import.meta.url),
+        "utf8",
+      ),
+    ]);
+    expect(hub).toContain('request("/api/research-projects")');
+    expect(hub).toContain("new URLSearchParams(window.location.search).get(");
+    expect(hub).toContain('"projectId"');
+    expect(explorer).toContain("/research-projects?projectId=");
+    expect(tracker).toContain("/research-projects?projectId=");
   });
 
   it("formats metric state and context without color-only meaning", () => {

@@ -746,85 +746,93 @@ export async function persistNormalizedRows(
     }>;
   }>,
 ) {
-  await db.$transaction(async (transaction) => {
-    const scan = await transaction.scanJob.findUnique({
-      where: { id: scanJobId },
-      include: { upload: true },
-    });
-    if (!scan?.upload) return;
-    await transaction.supplierRow.deleteMany({ where: { scanJobId } });
-    const createdRows = rows.map((row) => ({
+  const createdRows = rows.map((row) => ({
+    id: randomUUID(),
+    scanJobId,
+    uploadSheetId,
+    sourceRowNumber: row.sourceRowNumber,
+    rawData: row.rawData,
+    rowChecksum: row.rowChecksum,
+    normalizationStatus:
+      row.warnings.length === 0
+        ? ("NORMALIZED" as const)
+        : ("WARNING" as const),
+  }));
+  const offers = rows.map((row, index) => ({
+    supplierRowId: createdRows[index]!.id,
+    asin: stringOrNull(row.offer.asin),
+    upc: stringOrNull(row.offer.upc),
+    ean: stringOrNull(row.offer.ean),
+    gtin: stringOrNull(row.offer.gtin),
+    mpn: stringOrNull(row.offer.mpn),
+    itemNumber: stringOrNull(row.offer.item_number),
+    description: stringOrNull(row.offer.description),
+    brand: stringOrNull(row.offer.brand),
+    unitCost: decimalOrNull(row.offer.unit_cost),
+    currency: stringOrNull(row.offer.currency),
+    quantity: integerOrNull(row.offer.quantity),
+    caseCount: integerOrNull(row.offer.case_count),
+    packCount: integerOrNull(row.offer.pack_count),
+    weight: decimalOrNull(row.offer.weight),
+    length: decimalOrNull(row.offer.length),
+    width: decimalOrNull(row.offer.width),
+    height: decimalOrNull(row.offer.height),
+  }));
+  const warningRows = rows.flatMap((row, index) =>
+    row.warnings.map((warning) => ({
       id: randomUUID(),
-      scanJobId,
-      uploadSheetId,
-      sourceRowNumber: row.sourceRowNumber,
-      rawData: row.rawData,
-      rowChecksum: row.rowChecksum,
-      normalizationStatus:
-        row.warnings.length === 0
-          ? ("NORMALIZED" as const)
-          : ("WARNING" as const),
-    }));
-    await transaction.supplierRow.createMany({ data: createdRows });
-    await transaction.normalizedOffer.createMany({
-      data: rows.map((row, index) => ({
-        supplierRowId: createdRows[index]!.id,
-        asin: stringOrNull(row.offer.asin),
-        upc: stringOrNull(row.offer.upc),
-        ean: stringOrNull(row.offer.ean),
-        gtin: stringOrNull(row.offer.gtin),
-        mpn: stringOrNull(row.offer.mpn),
-        itemNumber: stringOrNull(row.offer.item_number),
-        description: stringOrNull(row.offer.description),
-        brand: stringOrNull(row.offer.brand),
-        unitCost: decimalOrNull(row.offer.unit_cost),
-        currency: stringOrNull(row.offer.currency),
-        quantity: integerOrNull(row.offer.quantity),
-        caseCount: integerOrNull(row.offer.case_count),
-        packCount: integerOrNull(row.offer.pack_count),
-        weight: decimalOrNull(row.offer.weight),
-        length: decimalOrNull(row.offer.length),
-        width: decimalOrNull(row.offer.width),
-        height: decimalOrNull(row.offer.height),
-      })),
-    });
-    const warningRows = rows.flatMap((row, index) =>
-      row.warnings.map((warning) => ({
-        id: randomUUID(),
-        supplierRowId: createdRows[index]!.id,
-        code: warning.code,
-        severity: warning.severity,
-        field: warning.field,
-      })),
-    );
-    if (warningRows.length > 0)
-      await transaction.normalizationWarning.createMany({ data: warningRows });
-    await transaction.upload.update({
-      where: { id: scan.upload.id },
-      data: { status: "COMPLETED" },
-    });
-    await transaction.scanJob.update({
-      where: { id: scanJobId },
-      data: { status: "COMPLETED", completedAt: new Date() },
-    });
-    await transaction.scanCheckpoint.upsert({
-      where: { scanJobId_stage: { scanJobId, stage: "NORMALIZE" } },
-      create: {
-        scanJobId,
-        stage: "NORMALIZE",
-        checksum: rows.length.toString(),
-        payload: { rowCount: rows.length },
-      },
-      update: { payload: { rowCount: rows.length } },
-    });
-    await transaction.scanEvent.create({
-      data: {
-        scanJobId,
-        eventType: "COMPLETED",
-        payload: { rowCount: rows.length },
-      },
-    });
-  });
+      supplierRowId: createdRows[index]!.id,
+      code: warning.code,
+      severity: warning.severity,
+      field: warning.field,
+    })),
+  );
+  await db.$transaction(
+    async (transaction) => {
+      const scan = await transaction.scanJob.findUnique({
+        where: { id: scanJobId },
+        include: { upload: true },
+      });
+      if (!scan?.upload) return;
+      await transaction.supplierRow.deleteMany({ where: { scanJobId } });
+      await transaction.supplierRow.createMany({ data: createdRows });
+      await transaction.normalizedOffer.createMany({ data: offers });
+      if (warningRows.length > 0)
+        await transaction.normalizationWarning.createMany({
+          data: warningRows,
+        });
+      await transaction.upload.update({
+        where: { id: scan.upload.id },
+        data: { status: "COMPLETED" },
+      });
+      await transaction.scanJob.update({
+        where: { id: scanJobId },
+        data: { status: "COMPLETED", completedAt: new Date() },
+      });
+      await transaction.scanCheckpoint.upsert({
+        where: { scanJobId_stage: { scanJobId, stage: "NORMALIZE" } },
+        create: {
+          scanJobId,
+          stage: "NORMALIZE",
+          checksum: rows.length.toString(),
+          payload: { rowCount: rows.length },
+        },
+        update: { payload: { rowCount: rows.length } },
+      });
+      await transaction.scanEvent.create({
+        data: {
+          scanJobId,
+          eventType: "COMPLETED",
+          payload: { rowCount: rows.length },
+        },
+      });
+    },
+    // Normalization intentionally commits several bounded bulk inserts and the
+    // checkpoint atomically. Prisma's 5s default is too short on a cold local or
+    // production connection; preprocessing above keeps non-database work out of
+    // the transaction while this explicit ceiling prevents an unbounded hold.
+    { maxWait: 10_000, timeout: 30_000 },
+  );
 }
 
 export async function queueMatching(organizationId: string, scanJobId: string) {

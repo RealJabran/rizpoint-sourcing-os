@@ -16,6 +16,7 @@ export * from "./repositories/sales-estimation.js";
 export * from "./repositories/keyword-explorer.js";
 export * from "./repositories/reverse-asin.js";
 export * from "./repositories/rank-tracker.js";
+export * from "./repositories/product-tracker.js";
 export * from "./repositories/market-tracker.js";
 export * from "./repositories/brand-intelligence.js";
 export * from "./repositories/seller-intelligence.js";

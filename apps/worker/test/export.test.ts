@@ -4,6 +4,7 @@ import {
   analysisFiltersFromViewState,
   poSummaryTable,
   poTable,
+  providerEntitlementKey,
 } from "../src/export.js";
 
 const order = {
@@ -79,6 +80,11 @@ const order = {
 describe("purchase-order export tables", () => {
   it("uses a bounded worker export window without changing the interactive API limit", () => {
     expect(ANALYSIS_EXPORT_PAGE_SIZE).toBe(5_000);
+  });
+
+  it("resolves the mock catalog surface to its configured fixture entitlement", () => {
+    expect(providerEntitlementKey("mock-catalog")).toBe("mock-amazon");
+    expect(providerEntitlementKey("amazon-sp-api")).toBe("amazon-sp-api");
   });
 
   it("includes canonical summary totals and selected-scenario audit provenance", () => {

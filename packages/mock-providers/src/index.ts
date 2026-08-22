@@ -33,6 +33,7 @@ const observedAt = () => new Date().toISOString();
 
 function toCatalogProduct(
   product: (typeof mockCatalogProducts)[number],
+  marketplace?: MarketplaceContext,
 ): CatalogProduct {
   const extended = product as (typeof mockCatalogProducts)[number] & {
     productTypes?: readonly string[];
@@ -65,6 +66,7 @@ function toCatalogProduct(
       observedAt: observedAt(),
       freshnessState: "FRESH",
       providerReference: product.asin,
+      ...(marketplace ? { marketplaceId: marketplace.marketplaceId } : {}),
     },
   });
 }
@@ -72,6 +74,7 @@ function toCatalogProduct(
 export class MockCatalogProvider implements CatalogProvider {
   async searchByIdentifier(
     identifier: CatalogIdentifier,
+    marketplace?: MarketplaceContext,
   ): Promise<readonly CatalogProduct[]> {
     const target = identifier.value.trim().toUpperCase();
     return mockCatalogProducts
@@ -86,24 +89,30 @@ export class MockCatalogProvider implements CatalogProvider {
             product.mpn?.toUpperCase() === target) ||
           (identifier.type === "ASIN" && product.asin === target),
       )
-      .map(toCatalogProduct);
+      .map((product) => toCatalogProduct(product, marketplace));
   }
 
-  async searchByKeywords(keywords: string): Promise<readonly CatalogProduct[]> {
+  async searchByKeywords(
+    keywords: string,
+    marketplace?: MarketplaceContext,
+  ): Promise<readonly CatalogProduct[]> {
     const tokens = keywords.toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return mockCatalogProducts
       .filter((product) => {
         const title = product.title.toLocaleLowerCase();
         return tokens.some((token) => title.includes(token));
       })
-      .map(toCatalogProduct);
+      .map((product) => toCatalogProduct(product, marketplace));
   }
 
-  async getItem(asin: string): Promise<CatalogProduct | null> {
+  async getItem(
+    asin: string,
+    marketplace?: MarketplaceContext,
+  ): Promise<CatalogProduct | null> {
     const product = mockCatalogProducts.find(
       (candidate) => candidate.asin === asin,
     );
-    return product ? toCatalogProduct(product) : null;
+    return product ? toCatalogProduct(product, marketplace) : null;
   }
 }
 
@@ -121,26 +130,23 @@ export class MockAmazonProvider
 
   async searchByIdentifier(
     identifier: CatalogIdentifier,
-    _marketplace?: MarketplaceContext,
+    marketplace?: MarketplaceContext,
   ): Promise<readonly CatalogProduct[]> {
-    void _marketplace;
-    return this.catalog.searchByIdentifier(identifier);
+    return this.catalog.searchByIdentifier(identifier, marketplace);
   }
 
   async searchByKeywords(
     keywords: string,
-    _marketplace?: MarketplaceContext,
+    marketplace?: MarketplaceContext,
   ): Promise<readonly CatalogProduct[]> {
-    void _marketplace;
-    return this.catalog.searchByKeywords(keywords);
+    return this.catalog.searchByKeywords(keywords, marketplace);
   }
 
   async getItem(
     asin: string,
-    _marketplace?: MarketplaceContext,
+    marketplace?: MarketplaceContext,
   ): Promise<CatalogProduct | null> {
-    void _marketplace;
-    return this.catalog.getItem(asin);
+    return this.catalog.getItem(asin, marketplace);
   }
 
   async getCurrentOffers(

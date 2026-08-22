@@ -14,6 +14,15 @@ describe("mock catalog provider", () => {
     });
   });
 
+  it("preserves the requested marketplace in catalog provenance", async () => {
+    const provider = new MockCatalogProvider();
+    const [product] = await provider.searchByIdentifier(
+      { type: "ASIN", value: "B000000001" },
+      { marketplaceId: "ATVPDKIKX0DER", region: "NA" },
+    );
+    expect(product?.provenance.marketplaceId).toBe("ATVPDKIKX0DER");
+  });
+
   it("supports the MPN and title-search cascade boundaries", async () => {
     const provider = new MockCatalogProvider();
     expect(

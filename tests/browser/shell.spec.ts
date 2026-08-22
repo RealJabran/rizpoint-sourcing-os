@@ -23,7 +23,7 @@ test.describe("RizPoint application shell", () => {
     await expect(
       page.getByRole("region", { name: "Amazon provider status" }),
     ).toContainText("Mock");
-    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "256px");
+    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "272px");
   });
 
   test("opens accessible navigation at mobile width", async ({ page }) => {
@@ -33,9 +33,15 @@ test.describe("RizPoint application shell", () => {
     await expect(menu).toBeVisible();
     await menu.click();
     await expect(menu).toHaveAttribute("aria-expanded", "true");
+    const wholesale = page.getByRole("button", { name: "Wholesale" });
+    await wholesale.click();
+    await expect(wholesale).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("link", { name: "Shortlists" })).toBeVisible();
+    const settings = page.getByRole("button", { name: "Settings" });
+    await settings.click();
+    await expect(settings).toHaveAttribute("aria-expanded", "true");
     await expect(
-      page.getByRole("link", { name: "Learning & help Coming soon" }),
+      page.getByRole("link", { name: "Learning & help" }),
     ).toBeVisible();
   });
 

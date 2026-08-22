@@ -1,7 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { Alert, Badge, Button, Card, TextInput } from "@/src/components/ui";
+import { FormEvent, useEffect, useState } from "react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  SelectControl,
+  TextInput,
+} from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
 
 type Project = {
@@ -100,6 +107,14 @@ function countCard(label: string, value: number) {
 }
 
 export function ProjectHubWorkspace() {
+  const [projects, setProjects] = useState<
+    Array<{
+      id: string;
+      name: string;
+      marketplaceId: string;
+      status: string;
+    }>
+  >([]);
   const [projectId, setProjectId] = useState("");
   const [project, setProject] = useState<Project | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
@@ -107,14 +122,21 @@ export function ProjectHubWorkspace() {
   const [selectedNiches, setSelectedNiches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = async () => {
+  const load = async (targetId = projectId) => {
+    if (!targetId.trim()) return;
     setBusy(true);
     setError(null);
     try {
       setProject(
         await request(
-          `/api/project-hub?projectId=${encodeURIComponent(projectId)}`,
+          `/api/project-hub?projectId=${encodeURIComponent(targetId)}`,
         ),
+      );
+      setProjectId(targetId);
+      window.history.replaceState(
+        null,
+        "",
+        `/research-projects?projectId=${encodeURIComponent(targetId)}`,
       );
       setComparison(null);
       setSelectedProducts([]);
@@ -125,6 +147,29 @@ export function ProjectHubWorkspace() {
       setBusy(false);
     }
   };
+  useEffect(() => {
+    let cancelled = false;
+    void request("/api/research-projects")
+      .then((items) => {
+        if (cancelled) return;
+        setProjects(items);
+        const linkedId = new URLSearchParams(window.location.search).get(
+          "projectId",
+        );
+        if (linkedId) void load(linkedId);
+      })
+      .catch((cause) => {
+        if (!cancelled)
+          setError(
+            cause instanceof Error ? cause.message : "PROJECT_LIST_FAILED",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Loading a deep-linked project once on mount is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const submit = async (event: FormEvent<HTMLFormElement>, action: string) => {
     event.preventDefault();
     if (!project) return;
@@ -194,18 +239,28 @@ export function ProjectHubWorkspace() {
       <PageHeader
         title="Research Projects"
         description="Evidence-backed project boards, deterministic comparisons, and immutable decision snapshots."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Research Projects" },
+        ]}
       />
       <Card>
         <div className="form-grid">
-          <TextInput
-            aria-label="Research project ID"
+          <SelectControl
+            aria-label="Research project"
             value={projectId}
             onChange={(event) => setProjectId(event.target.value)}
-            placeholder="Project ID from Product Explorer"
-          />
+          >
+            <option value="">Choose a research project</option>
+            {projects.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {item.marketplaceId} · {item.status}
+              </option>
+            ))}
+          </SelectControl>
           <Button
             type="button"
-            onClick={load}
+            onClick={() => void load()}
             disabled={busy || !projectId.trim()}
           >
             {busy ? "Loading…" : "Open project"}
@@ -222,9 +277,16 @@ export function ProjectHubWorkspace() {
           <h2>Open a project board</h2>
           <p>
             Projects keep candidates, evidence, assumptions, linked research
-            outputs, and historical decisions together. No project data is shown
-            until a tenant-scoped project ID is supplied.
+            outputs, and historical decisions together. Choose a tenant-scoped
+            project above or follow a project link from Product Explorer or
+            Product Tracker.
           </p>
+          {!projects.length && !busy ? (
+            <p>
+              No projects exist in this organization yet. Create one from
+              Product Explorer before saving research evidence.
+            </p>
+          ) : null}
         </Card>
       ) : (
         <>

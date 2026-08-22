@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Button,
+  ButtonLink,
   SelectControl,
   TextInput,
   useToast,
@@ -373,6 +374,15 @@ export function ProductExplorerWorkspace() {
           >
             Save to project
           </Button>
+          {projectId ? (
+            <ButtonLink
+              href={`/research-projects?projectId=${encodeURIComponent(projectId)}`}
+              size="sm"
+              variant="quiet"
+            >
+              Open project
+            </ButtonLink>
+          ) : null}
           <Button
             type="button"
             size="sm"

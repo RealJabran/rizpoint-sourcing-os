@@ -30,10 +30,13 @@ function stringList(value: unknown): string[] {
     : [];
 }
 
-function providerKey(value: unknown): string | null {
+export function providerEntitlementKey(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   if (value === "AMAZON_SP_API") return "amazon-sp-api";
   if (value === "MOCK_AMAZON") return "mock-amazon";
+  // MockCatalogProvider is the catalog surface of the credential-free
+  // mock-amazon connection and therefore shares its synthetic fixture rights.
+  if (value === "mock-catalog") return "mock-amazon";
   if (value === "MOCK_HISTORY") return "recorded-history";
   return value;
 }
@@ -47,7 +50,7 @@ function addRightsRequest(
     fields: readonly string[];
   },
 ) {
-  const provider = providerKey(input.provider);
+  const provider = providerEntitlementKey(input.provider);
   if (!provider) return;
   if (typeof input.marketplaceId !== "string" || !input.marketplaceId)
     throw new Error("PROVIDER_EXPORT_MARKETPLACE_MISSING");

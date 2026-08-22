@@ -127,14 +127,32 @@ export async function recordKeywordRankObservation(input: {
   });
 }
 
-export async function listKeywordRankTracks(organizationId: string) {
-  return db.keywordRankTrack.findMany({
-    where: { organizationId },
-    include: {
-      keyword: true,
-      catalogProduct: true,
-      observations: { orderBy: { observedAt: "desc" }, take: 30 },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+export const RANK_TRACKER_PAGE_LIMIT = 200;
+
+export async function listKeywordRankTracks(input: {
+  organizationId: string;
+  offset?: number;
+  limit?: number;
+}) {
+  const offset = Math.max(0, input.offset ?? 0);
+  const limit = Math.min(
+    RANK_TRACKER_PAGE_LIMIT,
+    Math.max(1, input.limit ?? 100),
+  );
+  const where = { organizationId: input.organizationId };
+  const [total, rows] = await db.$transaction([
+    db.keywordRankTrack.count({ where }),
+    db.keywordRankTrack.findMany({
+      where,
+      include: {
+        keyword: true,
+        catalogProduct: true,
+        observations: { orderBy: { observedAt: "desc" }, take: 30 },
+      },
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      skip: offset,
+      take: limit,
+    }),
+  ]);
+  return { total, offset, limit, rows };
 }

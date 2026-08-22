@@ -39,6 +39,15 @@ provider calls. History refreshes use cached/coalesced provider batches,
 priority-aware background jobs, bounded persistence concurrency, durable retry
 scheduling, and explicit retention policy. See [Performance](PERFORMANCE.md).
 
+Watched products now have a tenant-scoped Product Tracker read surface. It
+shows only persisted `ProductWatch`, catalog, demand-estimate, and history
+assessment records with source, observation time, freshness, coverage, and
+model/calculation version. The Rank Tracker similarly presents existing
+provider observations and deterministic rank/share-of-voice analytics. Neither
+page initiates provider calls, and absent provider entitlement disables new
+collection without erasing history. Capability-specific scheduled collection is
+still incomplete and is not implied by the read surfaces.
+
 Provider access and provider redistribution are separate decisions. Capability
 entitlements now retain reviewed terms metadata, contractual retention,
 internal-use versus redistributable scope, and an effective field-level export
@@ -53,6 +62,11 @@ selection. It also rejects uncited or unsafe AI claims and exercises recorded
 provider drift, partial, throttle, and entitlement failures. Synthetic sales
 backtests measure error and interval coverage; they are not evidence of live
 market accuracy. See [Research evaluation](RESEARCH_EVALUATION.md).
+
+The cross-platform release conclusion, incomplete workflows, live dependencies,
+accuracy limits, risks, and 90-day validation plan are recorded in
+[Next-level release audit](NEXT_LEVEL_RELEASE_AUDIT.md). The expanded private
+platform is not production-ready without live-provider and real-user validation.
 
 ## Product principles
 

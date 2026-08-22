@@ -31,6 +31,12 @@ The transactional outbox prevents a request from creating a database job without
 
 The initial and upload migrations are additive and include reviewed manual `rollback.sql` files for disposable/local recovery. Production rollback requires a backup and change-review decision because it deletes job history and uploaded-row state.
 
+Normalized row projections are prepared before the database transaction. Their
+bounded bulk inserts, upload/scan terminal state, checkpoint, and audit event
+commit atomically under an explicit 30-second transaction timeout (10-second
+acquisition wait), avoiding Prisma's 5-second cold-start default without
+allowing an unbounded transaction.
+
 ## State model
 
 The upload slice uses `UPLOADED → MAPPING_REQUIRED → READY → NORMALIZING → MATCHING → ENRICHING → CALCULATING → COMPLETED|PARTIAL_SUCCESS`. Mapping confirmation stores a checksum checkpoint and is serialized per scan, so repeat submissions return the same persisted state. After each successful worker checkpoint, the workflow queues only the next missing stage; a restart or explicit resume consults those checkpoints rather than repeating completed work. Unsafe or malformed inspection/normalization input sets the upload to `REJECTED` and scan to `FAILED_FINAL`. Transient scanner failures retain the private object and in-progress upload state; BullMQ retries automatically, and an operator can requeue a completed retry budget using a new deterministic run-attempt job ID without uploading a duplicate. A duplicate request is represented by one outbox event per stage and idempotent persistence. Exactly one upload sheet may be selected for normalization.
@@ -190,6 +196,18 @@ labeled as hypotheses. Provider evaluation replays redacted/synthetic response
 shapes through adapters and contract schemas for complete, partial, drifted,
 throttled, and unentitled cases. `pnpm release-gate:research` is the canonical
 local and CI gate.
+
+### Monitoring read paths
+
+Product Tracker reads a bounded organization/marketplace window of persisted
+`ProductWatch` records and selects only the latest tenant-owned sales estimate
+and history assessment for presentation. Rank Tracker groups stored
+`KeywordRankTrack` observations by keyword and calls the same versioned pure
+rank analytics used by the golden evaluation. Both routes expose source,
+observation time, freshness, coverage, and model/calculation version; neither
+route performs or fans out provider requests. Collection remains a separate,
+future entitlement- and quota-gated background concern; capability-specific
+scheduled handlers are not implemented by these read paths.
 
 ## Runtime baselines
 

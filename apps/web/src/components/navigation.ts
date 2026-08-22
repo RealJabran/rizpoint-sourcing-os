@@ -144,6 +144,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: "Monitoring",
     icon: "analysis",
     items: [
+      { label: "Product tracker", href: "/product-tracker", icon: "demand" },
       { label: "Alerts & notifications", href: "/alerts", icon: "analysis" },
     ],
   },
