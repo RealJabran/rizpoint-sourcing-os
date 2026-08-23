@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Card, TextInput, useToast } from "@/src/components/ui";
+import { Alert, Button, Card, useToast } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
 import { DataStateBadge, SourceBadge } from "@/src/components/research-ui";
+import { MarketplacePicker } from "@/src/components/entity-pickers";
 
 type TrackerRow = {
   id: string;
@@ -110,9 +111,8 @@ export function ProductTrackerWorkspace() {
       </Alert>
       <Card>
         <div className="explorer-filter-grid">
-          <TextInput
-            aria-label="Marketplace ID"
-            placeholder="Marketplace ID (optional)"
+          <MarketplacePicker
+            aria-label="Marketplace"
             value={marketplaceId}
             onChange={(event) => setMarketplaceId(event.target.value)}
           />

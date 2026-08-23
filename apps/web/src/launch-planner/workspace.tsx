@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Badge,
@@ -10,6 +10,7 @@ import {
   TextInput,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProjectPicker } from "@/src/components/entity-pickers";
 
 type Stage = {
   id: string;
@@ -66,6 +67,7 @@ const list = (value: string) =>
 export function LaunchPlanner() {
   const [projectId, setProjectId] = useState("");
   const [planId, setPlanId] = useState("");
+  const [plans, setPlans] = useState<Array<{ id: string; name: string }>>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [stage, setStage] = useState(stageNames[0]!);
   const [status, setStatus] = useState("NOT_STARTED");
@@ -77,6 +79,18 @@ export function LaunchPlanner() {
   const [risks, setRisks] = useState("");
   const [evidence, setEvidence] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!projectId) return;
+    const controller = new AbortController();
+    void fetch(`/api/project-hub?projectId=${encodeURIComponent(projectId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => setPlans(payload?.launchPlans ?? []))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [projectId]);
   async function load(id = planId) {
     const response = await fetch(
       `/api/launch-planner?planId=${encodeURIComponent(id)}`,
@@ -152,26 +166,36 @@ export function LaunchPlanner() {
         Later project changes do not rewrite launch approval evidence.
       </Alert>
       <Card>
-        <label htmlFor="launch-project">Validated ResearchProject ID</label>
+        <label htmlFor="launch-project">Validated research project</label>
         <div className="inline-actions">
-          <TextInput
+          <ProjectPicker
             id="launch-project"
             value={projectId}
-            onChange={(event) => setProjectId(event.target.value)}
-            placeholder="ResearchProject ID"
+            onChange={(event) => {
+              setProjectId(event.target.value);
+              setPlans([]);
+              setPlanId("");
+              setPlan(null);
+            }}
           />
           <Button type="button" onClick={create} disabled={!projectId}>
             Create stage-gated plan
           </Button>
         </div>
-        <label htmlFor="launch-plan">Existing LaunchPlan ID</label>
+        <label htmlFor="launch-plan">Existing launch plan</label>
         <div className="inline-actions">
-          <TextInput
+          <SelectControl
             id="launch-plan"
             value={planId}
             onChange={(event) => setPlanId(event.target.value)}
-            placeholder="LaunchPlan ID"
-          />
+          >
+            <option value="">Choose a plan from this project</option>
+            {plans.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name || "Stage-gated launch plan"}
+              </option>
+            ))}
+          </SelectControl>
           <Button
             type="button"
             variant="secondary"

@@ -264,6 +264,88 @@ export async function getDashboardScanSummary(organizationId: string) {
   return { totalScans, processingScans, attentionScans, recentScans };
 }
 
+export async function getDashboardResearchSummary(organizationId: string) {
+  const now = new Date();
+  const [
+    activeProjects,
+    activeWatches,
+    openAlerts,
+    staleEvidence,
+    recentResearch,
+    recentAlerts,
+  ] = await db.$transaction([
+    db.researchProject.count({
+      where: { organizationId, status: "ACTIVE" },
+    }),
+    db.productWatch.count({
+      where: { organizationId, status: "ACTIVE" },
+    }),
+    db.alertEvent.count({
+      where: { organizationId, status: "OPEN" },
+    }),
+    db.productResearchRunItem.count({
+      where: {
+        organizationId,
+        OR: [
+          { freshnessState: { in: ["STALE", "EXPIRED"] } },
+          { freshUntil: { lt: now } },
+        ],
+      },
+    }),
+    db.productResearchRun.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        kind: true,
+        status: true,
+        marketplaceId: true,
+        queryType: true,
+        queryText: true,
+        resultCount: true,
+        providerMode: true,
+        errorCode: true,
+        createdAt: true,
+        completedAt: true,
+        items: {
+          take: 1,
+          orderBy: { ordinal: "asc" },
+          select: {
+            catalogProduct: {
+              select: { title: true, asin: true },
+            },
+            freshnessState: true,
+          },
+        },
+      },
+    }),
+    db.alertEvent.findMany({
+      where: { organizationId },
+      orderBy: { triggeredAt: "desc" },
+      take: 4,
+      select: {
+        id: true,
+        status: true,
+        severity: true,
+        observedAt: true,
+        triggeredAt: true,
+        alertRule: {
+          select: { metricKey: true, subjectType: true, marketplaceId: true },
+        },
+      },
+    }),
+  ]);
+  return {
+    activeProjects,
+    activeWatches,
+    openAlerts,
+    staleEvidence,
+    recentResearch,
+    recentAlerts,
+  };
+}
+
 export async function listSuppliers(organizationId: string) {
   return db.supplier.findMany({
     where: { organizationId },

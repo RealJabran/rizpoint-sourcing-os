@@ -231,4 +231,49 @@ test.describe("live product research vertical slice", () => {
       page.getByText(/Secrets must never be pasted into this browser/i),
     ).toBeVisible();
   });
+
+  test("presents a product as a tabbed evidence workspace", async ({
+    page,
+  }) => {
+    await page.route("**/api/product-research*", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "run-1",
+          kind: "PRODUCT_LOOKUP",
+          status: "COMPLETED",
+          marketplaceId: "ATVPDKIKX0DER",
+          providerMode: "LIVE",
+          queryType: "ASIN",
+          queryText: "B000000001",
+          resultCount: 1,
+          errorCode: null,
+          createdAt: "2026-08-22T10:00:00.000Z",
+          completedAt: "2026-08-22T10:00:02.000Z",
+          items: [product],
+        }),
+      }),
+    );
+    await page.goto("/product-research/run-1?product=product-1");
+    await expect(
+      page.getByRole("heading", { name: "Verified catalog product", level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Offers/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Economics" })).toBeVisible();
+    await expect(page.getByText("Historical price and rank")).toBeVisible();
+    await expect(
+      page.getByText("Keyword demand and reverse-ASIN ranks"),
+    ).toBeVisible();
+    await page.getByRole("tab", { name: "Evidence" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Evidence ledger" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Amazon Selling Partner API").first(),
+    ).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+  });
 });

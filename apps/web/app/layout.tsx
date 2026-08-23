@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./styles.css";
+import "./styles/design-system.css";
 import { assertProductionConfiguration } from "@/src/runtime-config";
 import { AppShell } from "@/src/components/app-shell";
 

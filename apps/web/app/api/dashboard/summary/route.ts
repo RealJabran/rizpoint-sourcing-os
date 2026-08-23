@@ -1,20 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
-  ensurePhaseZeroOrganization,
+  getDashboardResearchSummary,
   getDashboardScanSummary,
 } from "@rizpoint/database";
-import { phaseZeroDemoEnabled } from "@/src/phase-zero";
+import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 import { toScanSummary } from "../../../../src/scan-summary";
 
 export const runtime = "nodejs";
 
-export async function GET() {
-  if (!phaseZeroDemoEnabled())
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const organization = await ensurePhaseZeroOrganization();
-  const summary = await getDashboardScanSummary(organization.id);
+export async function GET(request: NextRequest) {
+  const denied = requirePrivateAccess(request);
+  if (denied) return denied;
+  const organization = await organizationForRequest(request);
+  const [summary, research] = await Promise.all([
+    getDashboardScanSummary(organization.id),
+    getDashboardResearchSummary(organization.id),
+  ]);
   return NextResponse.json({
     ...summary,
+    ...research,
     recentScans: summary.recentScans.map(toScanSummary),
   });
 }

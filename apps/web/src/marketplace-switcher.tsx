@@ -1,5 +1,6 @@
 "use client";
 
+import { Globe2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type Marketplace = {
@@ -49,8 +50,9 @@ export function MarketplaceSwitcher() {
       });
   }, []);
   return (
-    <label>
-      Marketplace
+    <label className="marketplace-control">
+      <Globe2 aria-hidden="true" />
+      <span className="sr-only">Marketplace</span>
       <select
         className="rp-select"
         aria-label="Default research marketplace"

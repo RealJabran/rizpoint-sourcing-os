@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createDifferentiationBrief,
-  ensurePhaseZeroOrganization,
   exportDifferentiationBrief,
 } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const catalogProductId = request.nextUrl.searchParams.get("productId");
   if (!catalogProductId)
     return NextResponse.json({ error: "PRODUCT_ID_REQUIRED" }, { status: 400 });
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   try {
     return NextResponse.json(
       await createDifferentiationBrief({
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       { error: "PRODUCT_AND_PROJECT_REQUIRED" },
       { status: 400 },
     );
-  const organization = await ensurePhaseZeroOrganization();
+  const organization = await organizationForRequest(request);
   try {
     const brief = await createDifferentiationBrief({
       organizationId: organization.id,

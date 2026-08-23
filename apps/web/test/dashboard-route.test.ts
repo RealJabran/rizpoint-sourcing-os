@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextRequest, NextResponse } from "next/server";
 
-const ensurePhaseZeroOrganization = vi.fn();
 const getDashboardScanSummary = vi.fn();
-const phaseZeroDemoEnabled = vi.fn();
+const getDashboardResearchSummary = vi.fn();
+const organizationForRequest = vi.fn();
+const requirePrivateAccess = vi.fn();
 
 vi.mock("@rizpoint/database", () => ({
-  ensurePhaseZeroOrganization,
   getDashboardScanSummary,
+  getDashboardResearchSummary,
 }));
-vi.mock("@/src/phase-zero", () => ({ phaseZeroDemoEnabled }));
+vi.mock("@/src/request-organization", () => ({ organizationForRequest }));
+vi.mock("@/src/private-access", () => ({ requirePrivateAccess }));
 
 describe("dashboard summary route", () => {
   afterEach(() => {
@@ -16,8 +19,8 @@ describe("dashboard summary route", () => {
   });
 
   it("returns only the current organization dashboard summary", async () => {
-    phaseZeroDemoEnabled.mockReturnValue(true);
-    ensurePhaseZeroOrganization.mockResolvedValue({ id: "org_current" });
+    requirePrivateAccess.mockReturnValue(null);
+    organizationForRequest.mockResolvedValue({ id: "org_current" });
     getDashboardScanSummary.mockResolvedValue({
       totalScans: 3,
       processingScans: 1,
@@ -43,8 +46,18 @@ describe("dashboard summary route", () => {
         },
       ],
     });
+    getDashboardResearchSummary.mockResolvedValue({
+      activeProjects: 2,
+      activeWatches: 4,
+      openAlerts: 1,
+      staleEvidence: 3,
+      recentResearch: [],
+      recentAlerts: [],
+    });
     const { GET } = await import("../app/api/dashboard/summary/route.js");
-    const response = await GET();
+    const response = await GET(
+      new NextRequest("http://localhost/api/dashboard/summary"),
+    );
     expect(response.status).toBe(200);
     expect(getDashboardScanSummary).toHaveBeenCalledWith("org_current");
     const body = await response.json();
@@ -52,6 +65,12 @@ describe("dashboard summary route", () => {
       totalScans: 3,
       processingScans: 1,
       attentionScans: 1,
+      activeProjects: 2,
+      activeWatches: 4,
+      openAlerts: 1,
+      staleEvidence: 3,
+      recentResearch: [],
+      recentAlerts: [],
       recentScans: [
         expect.objectContaining({
           id: "scan_1",
@@ -63,11 +82,15 @@ describe("dashboard summary route", () => {
     expect(body).not.toHaveProperty("recentScans.0.idempotencyKey");
   });
 
-  it("does not expose a dashboard when the local/private boundary is disabled", async () => {
-    phaseZeroDemoEnabled.mockReturnValue(false);
+  it("does not expose a dashboard outside the authenticated organization boundary", async () => {
+    requirePrivateAccess.mockReturnValue(
+      NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    );
     const { GET } = await import("../app/api/dashboard/summary/route.js");
-    const response = await GET();
-    expect(response.status).toBe(404);
+    const response = await GET(
+      new NextRequest("http://localhost/api/dashboard/summary"),
+    );
+    expect(response.status).toBe(403);
     expect(getDashboardScanSummary).not.toHaveBeenCalled();
   });
 });

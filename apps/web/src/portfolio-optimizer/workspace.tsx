@@ -10,6 +10,7 @@ import {
   TextInput,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProjectPicker } from "@/src/components/entity-pickers";
 
 type Allocation = {
   id: string;
@@ -241,8 +242,8 @@ export function PortfolioOptimizerWorkspace() {
         <h2>Project and constraint policy</h2>
         <div className="form-grid">
           <label>
-            ResearchProject ID
-            <TextInput
+            Research project
+            <ProjectPicker
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
             />

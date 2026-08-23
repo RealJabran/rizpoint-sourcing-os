@@ -347,3 +347,14 @@ recommended portfolio plus alternatives, expected profit ranges,
 diversification, and risk concentration. The bounded Decimal branch-and-bound
 solver is deterministic and fails closed when it cannot prove optimality; an
 LLM never selects or calculates the portfolio.
+
+## Product experience
+
+The Prompt 36E experience pass reorganizes the application into a restrained
+Home, Sourcing, Research, Intelligence, Projects, Monitoring, Launch, and
+Settings hierarchy without removing routes or weakening wholesale. The Home
+dashboard now surfaces Amazon health, active marketplace context, recent
+research, running scans, attention items, stale evidence, and a recommended
+next action. Product research has an evidence-aware detail workspace, and the
+differentiation flow uses named products/projects rather than pasted database
+identifiers. See [Product experience](PRODUCT_EXPERIENCE.md).

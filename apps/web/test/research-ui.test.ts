@@ -9,13 +9,10 @@ import {
 describe("next-level research UI architecture", () => {
   it("keeps the requested information architecture and wholesale routes", () => {
     expect(navigationGroups.map((group) => group.label)).toEqual([
-      "Dashboard",
-      "Wholesale",
-      "Product Research",
-      "Niches",
-      "Keywords",
-      "Markets",
-      "Brands & Sellers",
+      "Home",
+      "Sourcing",
+      "Research",
+      "Intelligence",
       "Projects",
       "Monitoring",
       "Launch",
@@ -23,7 +20,7 @@ describe("next-level research UI architecture", () => {
     ]);
     expect(
       navigationGroups
-        .find((group) => group.label === "Wholesale")
+        .find((group) => group.label === "Sourcing")
         ?.items.map((item) => item.href),
     ).toEqual([
       "/uploads",
@@ -36,7 +33,7 @@ describe("next-level research UI architecture", () => {
       navigationGroups
         .find((group) => group.label === "Monitoring")
         ?.items.map((item) => item.href),
-    ).toEqual(["/product-tracker", "/alerts"]);
+    ).toEqual(["/product-tracker", "/rank-tracker", "/alerts"]);
   });
 
   it("keeps every primary navigation destination backed by a page", async () => {
@@ -79,6 +76,42 @@ describe("next-level research UI architecture", () => {
     expect(tracker).toContain("/research-projects?projectId=");
   });
 
+  it("uses tenant-scoped entity pickers instead of internal identifier fields", async () => {
+    const picker = await readFile(
+      new URL("../src/components/entity-pickers.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(picker).toContain('fetch("/api/product-explorer?limit=100"');
+    expect(picker).toContain('fetch("/api/research-projects"');
+    expect(picker).toContain('fetch("/api/marketplaces"');
+
+    const workspaces = await Promise.all(
+      [
+        "listing-builder",
+        "listing-analyzer",
+        "review-intelligence",
+        "product-relationships",
+        "product-tracker",
+        "opportunity-finder",
+        "category-intelligence/browser",
+        "compliance-risk",
+        "portfolio-optimizer",
+        "private-label-profitability",
+        "launch-planner",
+      ].map((workspace) =>
+        readFile(
+          new URL(`../src/${workspace}/workspace.tsx`, import.meta.url),
+          "utf8",
+        ).catch(() =>
+          readFile(new URL(`../src/${workspace}.tsx`, import.meta.url), "utf8"),
+        ),
+      ),
+    );
+    expect(workspaces.join("\n")).not.toMatch(
+      /CatalogProduct ID|Catalog product ID|ResearchProject ID|Research project ID|Marketplace ID|LaunchPlan ID/,
+    );
+  });
+
   it("formats metric state and context without color-only meaning", () => {
     expect(statePresentation.STALE).toEqual({
       symbol: "△",
@@ -95,7 +128,7 @@ describe("next-level research UI architecture", () => {
   });
 
   it("keeps keyboard, drawer, responsive, and view-toggle affordances in source", async () => {
-    const [researchUi, palette, styles] = await Promise.all([
+    const [researchUi, palette, styles, responsiveStyles] = await Promise.all([
       readFile(
         new URL("../src/components/research-ui.tsx", import.meta.url),
         "utf8",
@@ -105,14 +138,18 @@ describe("next-level research UI architecture", () => {
         "utf8",
       ),
       readFile(new URL("../app/styles.css", import.meta.url), "utf8"),
+      readFile(
+        new URL("../app/styles/responsive.css", import.meta.url),
+        "utf8",
+      ),
     ]);
     expect(researchUi).toContain('role="dialog"');
     expect(researchUi).toContain('event.key === "Escape"');
     expect(researchUi).toContain('aria-pressed={value === "table"}');
     expect(palette).toContain("event.metaKey || event.ctrlKey");
     expect(palette).toContain('aria-modal="true"');
-    expect(styles).toContain("@media (max-width: 840px)");
-    expect(styles).toContain("@media (max-width: 620px)");
+    expect(responsiveStyles).toContain("@media (max-width: 840px)");
+    expect(responsiveStyles).toContain("@media (max-width: 620px)");
     expect(styles).toContain("prefers-reduced-motion");
   });
 });

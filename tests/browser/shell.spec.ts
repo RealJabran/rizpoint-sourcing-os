@@ -7,7 +7,7 @@ test.describe("RizPoint application shell", () => {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: "Sourcing dashboard" }),
+      page.getByRole("heading", { name: "Research with confidence" }),
     ).toBeVisible();
     await expect(
       page.getByRole("navigation", { name: "Primary navigation" }),
@@ -16,14 +16,10 @@ test.describe("RizPoint application shell", () => {
       page.getByRole("link", { name: "New scan" }).first(),
     ).toBeVisible();
     await expect(
-      page.getByText(
-        "No revenue, profit, or winner metrics are inferred here.",
-      ),
+      page.getByRole("heading", { name: "Recently researched" }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("region", { name: "Amazon provider status" }),
-    ).toContainText("Mock");
-    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "272px");
+    await expect(page.locator(".dashboard-connection")).toContainText("Mock");
+    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "252px");
   });
 
   test("opens accessible navigation at mobile width", async ({ page }) => {
@@ -33,9 +29,8 @@ test.describe("RizPoint application shell", () => {
     await expect(menu).toBeVisible();
     await menu.click();
     await expect(menu).toHaveAttribute("aria-expanded", "true");
-    const wholesale = page.getByRole("button", { name: "Wholesale" });
-    await wholesale.click();
-    await expect(wholesale).toHaveAttribute("aria-expanded", "true");
+    const sourcing = page.getByRole("button", { name: "Sourcing" });
+    await expect(sourcing).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("link", { name: "Shortlists" })).toBeVisible();
     const settings = page.getByRole("button", { name: "Settings" });
     await settings.click();

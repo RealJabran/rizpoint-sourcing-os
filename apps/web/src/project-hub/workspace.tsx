@@ -305,7 +305,7 @@ export function ProjectHubWorkspace() {
         new Date(left.observedAt).getTime(),
     )[0];
   return (
-    <div className="page-stack">
+    <main className="content-page project-workspace">
       <PageHeader
         title="Research Projects"
         description="Evidence-backed project boards, deterministic comparisons, and immutable decision snapshots."
@@ -314,7 +314,7 @@ export function ProjectHubWorkspace() {
           { label: "Research Projects" },
         ]}
       />
-      <Card>
+      <Card className="project-picker">
         <div className="form-grid">
           <SelectControl
             aria-label="Research project"
@@ -324,7 +324,10 @@ export function ProjectHubWorkspace() {
             <option value="">Choose a research project</option>
             {projects.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {item.marketplaceId} · {item.status}
+                {item.name} ·{" "}
+                {projectMarketplaces.find(
+                  (marketplace) => marketplace.id === item.marketplaceId,
+                )?.label ?? "Marketplace unavailable"}
               </option>
             ))}
           </SelectControl>
@@ -371,7 +374,7 @@ export function ProjectHubWorkspace() {
         </Alert>
       ) : null}
       {!project ? (
-        <Card>
+        <Card className="project-empty">
           <h2>Open a project board</h2>
           <p>
             Projects keep candidates, evidence, assumptions, linked research
@@ -382,18 +385,21 @@ export function ProjectHubWorkspace() {
           {!projects.length && !busy ? (
             <p>
               No projects exist in this organization yet. Create one above, then
-              add products without copying an internal ID.
+              add products directly from research and monitoring workflows.
             </p>
           ) : null}
         </Card>
       ) : (
         <>
-          <Card>
+          <Card className="project-hero">
             <div className="split-row">
               <div>
                 <h2>{project.name}</h2>
                 <p>
-                  {project.marketplaceId} · version {project.version}
+                  {projectMarketplaces.find(
+                    (marketplace) => marketplace.id === project.marketplaceId,
+                  )?.label ?? "Marketplace unavailable"}{" "}
+                  · evidence version {project.version}
                 </p>
               </div>
               <Badge tone="neutral">{project.status}</Badge>
@@ -428,7 +434,7 @@ export function ProjectHubWorkspace() {
               </ButtonLink>
             </div>
           </Card>
-          <div className="metric-grid">
+          <div className="metric-grid project-metrics">
             {[
               ["Candidates", project.items.length],
               ["Evidence", project.evidenceReferences.length],
@@ -438,7 +444,7 @@ export function ProjectHubWorkspace() {
               ["Launch plans", project.launchPlans.length],
             ].map(([label, value]) => countCard(String(label), Number(value)))}
           </div>
-          <div className="two-column">
+          <div className="two-column project-candidates">
             <Card>
               <h2>Candidate products</h2>
               {project.items.filter((item) => item.kind === "PRODUCT")
@@ -572,7 +578,7 @@ export function ProjectHubWorkspace() {
               ))}
             </Card>
           ) : null}
-          <div className="two-column">
+          <div className="two-column project-decision-grid">
             <Card>
               <h2>Economics</h2>
               <p>
@@ -603,7 +609,7 @@ export function ProjectHubWorkspace() {
               </ButtonLink>
             </Card>
           </div>
-          <div className="two-column">
+          <div className="two-column project-records">
             <Card>
               <h2>Notes</h2>
               <form
@@ -690,11 +696,11 @@ export function ProjectHubWorkspace() {
               </ul>
             </Card>
           </div>
-          <Card>
+          <Card className="project-memo">
             <h2>Decision memo</h2>
             <p>
-              A memo stores its source IDs and compact snapshot at creation. It
-              is not overwritten when live research changes.
+              A memo stores its source references and compact snapshot at
+              creation. It is not overwritten when live research changes.
             </p>
             <form
               className="page-stack"
@@ -772,12 +778,12 @@ export function ProjectHubWorkspace() {
                 <small>
                   {memo.decisionOwner} ·{" "}
                   {new Date(memo.decidedAt).toLocaleString()} ·{" "}
-                  {memo.sources.length} stored source IDs
+                  {memo.sources.length} stored source references
                 </small>
               </article>
             ))}
           </Card>
-          <Card>
+          <Card className="project-linked-outputs">
             <h2>Linked research outputs</h2>
             <p>
               {project.productFacts.length} facts ·{" "}
@@ -791,6 +797,6 @@ export function ProjectHubWorkspace() {
           </Card>
         </>
       )}
-    </div>
+    </main>
   );
 }

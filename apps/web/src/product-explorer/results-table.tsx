@@ -10,6 +10,7 @@ import {
 } from "@/src/components/research-ui";
 import { explorerDataState } from "./query";
 import type { ExplorerRow } from "./types";
+import { marketplaceLabel } from "@/src/marketplace-presentation";
 
 export function ExplorerResultsTable({
   rows,
@@ -73,7 +74,9 @@ export function ExplorerResultsTable({
                         {row.asin ?? "ASIN unavailable"} ·{" "}
                         {row.brand ?? "Brand unavailable"}
                         {row.category ? ` · ${row.category}` : ""}
-                        {row.marketplaceId ? ` · ${row.marketplaceId}` : ""}
+                        {row.marketplaceId
+                          ? ` · ${marketplaceLabel(row.marketplaceId)}`
+                          : ""}
                       </small>
                     </td>
                     <td>
@@ -187,7 +190,7 @@ export function ExplorerResultsTable({
             </p>
             <p>
               <strong>Marketplace:</strong>{" "}
-              {evidence.marketplaceId ?? "Unavailable"}
+              {marketplaceLabel(evidence.marketplaceId)}
             </p>
             <p>
               <strong>Observed:</strong>{" "}

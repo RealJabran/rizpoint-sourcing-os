@@ -478,3 +478,19 @@ constraint audit, exclusions, concentration, and exactness; and
 `PortfolioAllocation` stores NUMERIC cash/profit rows plus MOQ/case and evidence
 references. These derived records never mutate source profit, compliance,
 demand, or provider observations. See [Portfolio optimizer](PORTFOLIO_OPTIMIZER.md).
+
+## Web product-experience boundary
+
+The shared application shell owns navigation hierarchy, marketplace context,
+Amazon connection visibility, notifications, theme, command search, and mobile
+drawer behavior. It does not fetch domain evidence. Domain routes continue to
+read tenant-scoped persisted projections through their existing APIs; page
+rendering does not introduce provider fan-out.
+
+Visual tokens, generic primitives, shell layout, domain workspace styling, and
+responsive overrides are separate CSS layers under `apps/web/app/styles/`.
+This keeps domain presentation additive while the older route-specific styles
+are migrated incrementally. Dashboard aggregation combines tenant-scoped scan
+and research summaries in one bounded API response. Product-detail routes load
+one persisted research run and expose only the normalized evidence families it
+contains. See [Product experience](PRODUCT_EXPERIENCE.md).

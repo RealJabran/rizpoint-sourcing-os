@@ -11,6 +11,7 @@ import {
   type HTMLAttributes,
   type InputHTMLAttributes,
   type PropsWithChildren,
+  type ReactNode,
   type SelectHTMLAttributes,
 } from "react";
 
@@ -91,6 +92,26 @@ export function Card({
   );
 }
 
+export function IconButton({
+  label,
+  className,
+  children,
+  ...props
+}: PropsWithChildren<
+  ButtonHTMLAttributes<HTMLButtonElement> & { label: string }
+>) {
+  return (
+    <button
+      {...props}
+      className={classNames("rp-icon-button", className)}
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function Badge({
   tone = "neutral",
   children,
@@ -150,6 +171,135 @@ export function SelectControl({
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={classNames("rp-select", className)} />;
+}
+
+export function Field({
+  label,
+  hint,
+  htmlFor,
+  children,
+  className,
+}: PropsWithChildren<{
+  label: string;
+  hint?: string;
+  htmlFor?: string;
+  className?: string;
+}>) {
+  return (
+    <label className={classNames("rp-field", className)} htmlFor={htmlFor}>
+      <span className="rp-field__label">{label}</span>
+      {children}
+      {hint ? <small>{hint}</small> : null}
+    </label>
+  );
+}
+
+export function EmptyState({
+  eyebrow,
+  title,
+  description,
+  icon,
+  actions,
+  compact = false,
+}: {
+  eyebrow?: string;
+  title: string;
+  description: string;
+  icon?: ReactNode;
+  actions?: ReactNode;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`empty-state ${compact ? "empty-state--compact" : ""}`}>
+      {icon ? <span className="empty-state__icon">{icon}</span> : null}
+      {eyebrow ? <span className="empty-state__eyebrow">{eyebrow}</span> : null}
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {actions ? <div className="empty-state__actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+export type TabOption<T extends string> = {
+  id: T;
+  label: string;
+  count?: number;
+  disabled?: boolean;
+};
+
+export function Tabs<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: Array<TabOption<T>>;
+  onChange(value: T): void;
+  label: string;
+}) {
+  return (
+    <div className="rp-tabs" role="tablist" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          role="tab"
+          aria-selected={value === option.id}
+          disabled={option.disabled}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+          {option.count !== undefined ? <span>{option.count}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Tooltip({
+  label,
+  children,
+}: PropsWithChildren<{ label: string }>) {
+  return (
+    <span className="rp-tooltip" tabIndex={0} aria-label={label}>
+      {children}
+      <span role="tooltip">{label}</span>
+    </span>
+  );
+}
+
+export function FreshnessIndicator({
+  state,
+  observedAt,
+}: {
+  state: string;
+  observedAt?: string | null;
+}) {
+  const normalized = state.toUpperCase();
+  const tone =
+    normalized === "FRESH"
+      ? "success"
+      : normalized === "STALE"
+        ? "warning"
+        : "neutral";
+  return (
+    <span className={`freshness-indicator freshness-indicator--${tone}`}>
+      <i aria-hidden="true" />
+      <span>
+        {normalized === "FRESH"
+          ? "Fresh"
+          : normalized === "STALE"
+            ? "Stale"
+            : "Unknown"}
+      </span>
+      {observedAt ? (
+        <time dateTime={observedAt}>
+          {new Date(observedAt).toLocaleDateString()}
+        </time>
+      ) : null}
+    </span>
+  );
 }
 
 type Toast = { id: number; message: string; tone: Tone };

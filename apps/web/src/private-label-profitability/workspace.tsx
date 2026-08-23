@@ -14,6 +14,7 @@ import {
   TextInput,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProjectPicker } from "@/src/components/entity-pickers";
 
 type CostDraft = {
   allocation: "PER_UNIT" | "BATCH_TOTAL" | "PERCENT_OF_PRICE";
@@ -193,9 +194,9 @@ export function PrivateLabelProfitability() {
       </Alert>
       <Card>
         <h2>Project and supplier quote</h2>
-        <label htmlFor="pl-project">Private-label ResearchProject ID</label>
+        <label htmlFor="pl-project">Private-label research project</label>
         <div className="inline-actions">
-          <TextInput
+          <ProjectPicker
             id="pl-project"
             value={projectId}
             onChange={(event) => setProjectId(event.target.value)}

@@ -7,6 +7,39 @@ export type DashboardSummary = {
   processingScans: number;
   attentionScans: number;
   recentScans: ScanSummary[];
+  activeProjects: number;
+  activeWatches: number;
+  openAlerts: number;
+  staleEvidence: number;
+  recentResearch: Array<{
+    id: string;
+    kind: "PRODUCT_LOOKUP" | "CATALOG_SEARCH";
+    status: string;
+    marketplaceId: string;
+    queryType: string;
+    queryText: string;
+    resultCount: number;
+    providerMode: "LIVE" | "MOCK";
+    errorCode: string | null;
+    createdAt: string;
+    completedAt: string | null;
+    items: Array<{
+      catalogProduct: { title: string; asin: string | null };
+      freshnessState: string;
+    }>;
+  }>;
+  recentAlerts: Array<{
+    id: string;
+    status: string;
+    severity: string;
+    observedAt: string;
+    triggeredAt: string;
+    alertRule: {
+      metricKey: string;
+      subjectType: string;
+      marketplaceId: string;
+    };
+  }>;
 };
 
 export type ProviderConnectionStatus =
@@ -36,7 +69,8 @@ export function amazonIntegrationDashboardStatus(
   mode: "MOCK" | "LIVE";
   checkedAt: string;
 } {
-  const isLive = value.dataOrigin === "LIVE_PROVIDER";
+  const isLive =
+    value.dataOrigin === "LIVE_AMAZON" || value.dataOrigin === "LIVE_PROVIDER";
   const isExplicitLocalDemo = value.localDemo === true && !isLive;
   const statusByConnectionState: Record<string, ProviderConnectionStatus> = {
     CONNECTED: "HEALTHY",

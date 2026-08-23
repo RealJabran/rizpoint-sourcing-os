@@ -10,6 +10,11 @@ import {
   TextInput,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import {
+  MarketplacePicker,
+  ProductPicker,
+  ProjectPicker,
+} from "@/src/components/entity-pickers";
 
 type Evidence = {
   kind: string;
@@ -203,19 +208,19 @@ export function ComplianceRiskWorkspace() {
         <h2>Screen a research product</h2>
         <div className="form-grid">
           <label>
-            ResearchProject ID
-            <TextInput
+            Research project
+            <ProjectPicker
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
-              placeholder="Required for assessment"
+              emptyLabel="Choose a project for this assessment"
             />
           </label>
           <label>
-            Marketplace ID
-            <TextInput
+            Marketplace
+            <MarketplacePicker
               value={marketplaceId}
               onChange={(event) => setMarketplaceId(event.target.value)}
-              placeholder="e.g. ATVPDKIKX0DER"
+              emptyLabel="Choose a connected marketplace"
             />
           </label>
           <label>
@@ -229,11 +234,11 @@ export function ComplianceRiskWorkspace() {
             />
           </label>
           <label>
-            CatalogProduct ID (optional)
-            <TextInput
+            Researched product (optional)
+            <ProductPicker
               value={catalogProductId}
               onChange={(event) => setCatalogProductId(event.target.value)}
-              placeholder="Must be saved to this project"
+              emptyLabel="Choose a product saved to this project"
             />
           </label>
         </div>

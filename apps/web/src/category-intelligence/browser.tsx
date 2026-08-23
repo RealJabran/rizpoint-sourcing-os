@@ -2,15 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  TextInput,
-  useToast,
-} from "@/src/components/ui";
+import { Alert, Badge, Button, Card, useToast } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { MarketplacePicker } from "@/src/components/entity-pickers";
 
 type Category = {
   categoryReference: string;
@@ -62,9 +56,8 @@ export function CategoryBrowser() {
       </Alert>
       <Card className="explorer-controls">
         <div className="explorer-filter-grid">
-          <TextInput
+          <MarketplacePicker
             aria-label="Marketplace"
-            placeholder="Marketplace ID (optional)"
             value={marketplaceId}
             onChange={(event) => setMarketplaceId(event.target.value)}
           />

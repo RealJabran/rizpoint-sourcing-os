@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Alert, Badge, Button, Card, TextInput } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProjectPicker } from "@/src/components/entity-pickers";
 
 type Fact = {
   id: string;
@@ -116,13 +117,12 @@ export function ListingBuilder() {
         to verified evidence; approval is blocked server-side.
       </Alert>
       <Card>
-        <label htmlFor="builder-project">Research project ID</label>
+        <label htmlFor="builder-project">Research project</label>
         <div className="inline-actions">
-          <TextInput
+          <ProjectPicker
             id="builder-project"
             value={projectId}
             onChange={(event) => setProjectId(event.target.value)}
-            placeholder="ResearchProject ID"
           />
           <Button type="button" onClick={load} disabled={!projectId.trim()}>
             Load project

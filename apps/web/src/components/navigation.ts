@@ -1,18 +1,38 @@
 export type NavigationIcon =
-  | "dashboard"
+  | "home"
   | "scan"
   | "analysis"
-  | "explorer"
-  | "category"
-  | "opportunity"
-  | "demand"
   | "shortlist"
   | "order"
-  | "learn"
-  | "settings";
+  | "search"
+  | "explorer"
+  | "category"
+  | "keyword"
+  | "market"
+  | "brand"
+  | "seller"
+  | "review"
+  | "project"
+  | "copilot"
+  | "product"
+  | "alert"
+  | "listing"
+  | "profit"
+  | "shield"
+  | "planner"
+  | "settings"
+  | "database"
+  | "history"
+  | "learning"
+  | "differentiation"
+  | "advertising"
+  | "relationship"
+  | "estimate"
+  | "portfolio";
 
 export type NavigationItem = {
   label: string;
+  shortLabel?: string;
   href: string;
   icon: NavigationIcon;
   keywords?: string[];
@@ -24,31 +44,33 @@ export type NavigationGroup = {
   items: NavigationItem[];
 };
 
+/** Product-oriented IA: all routes remain reachable, but adjacent tools are
+ * grouped by the decision the user is trying to make rather than by prompt. */
 export const navigationGroups: NavigationGroup[] = [
   {
-    label: "Dashboard",
-    icon: "dashboard",
-    items: [{ label: "Overview", href: "/", icon: "dashboard" }],
+    label: "Home",
+    icon: "home",
+    items: [{ label: "Home", href: "/", icon: "home" }],
   },
   {
-    label: "Wholesale",
+    label: "Sourcing",
     icon: "scan",
     items: [
-      { label: "New scan", href: "/uploads", icon: "scan" },
-      { label: "Scan list", href: "/scans", icon: "scan" },
+      { label: "Supplier scans", href: "/uploads", icon: "scan" },
+      { label: "Scan history", href: "/scans", icon: "history" },
       { label: "Analysis", href: "/analysis", icon: "analysis" },
       { label: "Shortlists", href: "/shortlists", icon: "shortlist" },
       { label: "Purchase orders", href: "/purchase-orders", icon: "order" },
     ],
   },
   {
-    label: "Product Research",
-    icon: "explorer",
+    label: "Research",
+    icon: "search",
     items: [
       {
         label: "Research product",
         href: "/product-research",
-        icon: "explorer",
+        icon: "search",
         keywords: ["asin", "upc", "catalog search", "amazon url"],
       },
       {
@@ -57,119 +79,93 @@ export const navigationGroups: NavigationGroup[] = [
         icon: "explorer",
       },
       {
-        label: "Category intelligence",
+        label: "Opportunity Finder",
+        href: "/opportunity-finder",
+        icon: "portfolio",
+      },
+      {
+        label: "Categories",
         href: "/category-intelligence",
         icon: "category",
       },
-      { label: "Sales estimation", href: "/sales-estimation", icon: "demand" },
+      { label: "Keywords", href: "/keyword-explorer", icon: "keyword" },
+      { label: "Reverse ASIN", href: "/reverse-asin", icon: "relationship" },
       {
-        label: "Relationships",
+        label: "Product relationships",
         href: "/product-relationships",
-        icon: "analysis",
+        icon: "relationship",
       },
       {
-        label: "Review intelligence",
-        href: "/review-intelligence",
-        icon: "learn",
+        label: "Differentiation",
+        href: "/differentiation",
+        icon: "differentiation",
       },
-    ],
-  },
-  {
-    label: "Niches",
-    icon: "opportunity",
-    items: [
       {
-        label: "Opportunity Finder",
-        href: "/opportunity-finder",
-        icon: "opportunity",
-      },
-      { label: "Differentiation", href: "/differentiation", icon: "analysis" },
-      { label: "Compliance risk", href: "/compliance-risk", icon: "settings" },
-      {
-        label: "Portfolio optimizer",
-        href: "/portfolio-optimizer",
-        icon: "analysis",
+        label: "Sales estimation",
+        href: "/sales-estimation",
+        icon: "estimate",
       },
     ],
   },
   {
-    label: "Keywords",
-    icon: "learn",
+    label: "Intelligence",
+    icon: "market",
     items: [
+      { label: "Markets", href: "/market-tracker", icon: "market" },
+      { label: "Brands", href: "/brand-intelligence", icon: "brand" },
+      { label: "Sellers", href: "/seller-intelligence", icon: "seller" },
+      { label: "Reviews", href: "/review-intelligence", icon: "review" },
       {
-        label: "Keyword Explorer",
-        href: "/keyword-explorer",
-        icon: "explorer",
-      },
-      { label: "Reverse ASIN", href: "/reverse-asin", icon: "analysis" },
-      { label: "Brand Analytics", href: "/brand-analytics", icon: "demand" },
-      { label: "Rank tracker", href: "/rank-tracker", icon: "analysis" },
-    ],
-  },
-  {
-    label: "Markets",
-    icon: "demand",
-    items: [
-      { label: "Market tracker", href: "/market-tracker", icon: "demand" },
-      {
-        label: "Advertising intelligence",
+        label: "Advertising",
         href: "/advertising-intelligence",
-        icon: "analysis",
+        icon: "advertising",
       },
-    ],
-  },
-  {
-    label: "Brands & Sellers",
-    icon: "category",
-    items: [
-      {
-        label: "Brand intelligence",
-        href: "/brand-intelligence",
-        icon: "category",
-      },
-      {
-        label: "Seller intelligence",
-        href: "/seller-intelligence",
-        icon: "analysis",
-      },
+      { label: "Brand Analytics", href: "/brand-analytics", icon: "analysis" },
     ],
   },
   {
     label: "Projects",
-    icon: "shortlist",
+    icon: "project",
     items: [
       {
         label: "Research projects",
         href: "/research-projects",
-        icon: "shortlist",
+        icon: "project",
       },
-      { label: "Research Copilot", href: "/research-copilot", icon: "learn" },
+      { label: "Research Copilot", href: "/research-copilot", icon: "copilot" },
     ],
   },
   {
     label: "Monitoring",
-    icon: "analysis",
+    icon: "alert",
     items: [
-      { label: "Product tracker", href: "/product-tracker", icon: "demand" },
-      { label: "Alerts & notifications", href: "/alerts", icon: "analysis" },
+      { label: "Products", href: "/product-tracker", icon: "product" },
+      { label: "Keyword ranks", href: "/rank-tracker", icon: "keyword" },
+      { label: "Alerts", href: "/alerts", icon: "alert" },
     ],
   },
   {
     label: "Launch",
-    icon: "order",
+    icon: "planner",
     items: [
       {
         label: "Listing analyzer",
         href: "/listing-analyzer",
         icon: "analysis",
       },
-      { label: "Listing builder", href: "/listing-builder", icon: "learn" },
-      { label: "Launch planner", href: "/launch-planner", icon: "order" },
+      { label: "Listing builder", href: "/listing-builder", icon: "listing" },
       {
-        label: "Private-label profit",
+        label: "Profitability",
         href: "/private-label-profitability",
-        icon: "demand",
+        icon: "profit",
       },
+      { label: "Compliance", href: "/compliance-risk", icon: "shield" },
+      {
+        label: "Portfolio allocation",
+        href: "/portfolio-optimizer",
+        icon: "portfolio",
+      },
+      { label: "Launch planner", href: "/launch-planner", icon: "planner" },
     ],
   },
   {
@@ -184,14 +180,14 @@ export const navigationGroups: NavigationGroup[] = [
       {
         label: "Market history",
         href: "/settings/integrations/history",
-        icon: "demand",
+        icon: "history",
       },
       {
         label: "Data & providers",
         href: "/settings/data-providers",
-        icon: "analysis",
+        icon: "database",
       },
-      { label: "Learning & help", href: "/learning", icon: "learn" },
+      { label: "Learning & help", href: "/learning", icon: "learning" },
     ],
   },
 ];
@@ -201,4 +197,10 @@ export const navigationItems = navigationGroups.flatMap((group) => group.items);
 export function routeIsActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function navigationItemForPath(pathname: string) {
+  return [...navigationItems]
+    .sort((left, right) => right.href.length - left.href.length)
+    .find((item) => routeIsActive(pathname, item.href));
 }

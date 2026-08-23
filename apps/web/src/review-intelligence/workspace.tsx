@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Badge, Button, Card, TextInput } from "@/src/components/ui";
+import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProductPicker } from "@/src/components/entity-pickers";
 
 type Theme = {
   id: string;
@@ -72,13 +73,12 @@ export function ReviewIntelligence() {
         summaries, not unsupported AI claims.
       </Alert>
       <Card>
-        <label htmlFor="review-product-id">Catalog product ID</label>
+        <label htmlFor="review-product-id">Researched product</label>
         <div className="inline-actions">
-          <TextInput
+          <ProductPicker
             id="review-product-id"
             value={productId}
             onChange={(event) => setProductId(event.target.value)}
-            placeholder="Known research product ID"
           />
           <Button type="button" onClick={load} disabled={!productId.trim()}>
             Load evidence

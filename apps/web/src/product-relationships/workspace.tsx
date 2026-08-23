@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Badge, Button, Card, TextInput } from "@/src/components/ui";
+import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProductPicker } from "@/src/components/entity-pickers";
 
 type Relationship = {
   catalogProductId: string;
@@ -46,13 +47,12 @@ export function ProductRelationships() {
         “also viewed” or “frequently bought together.”
       </Alert>
       <Card>
-        <label htmlFor="product-id">Catalog product ID</label>
+        <label htmlFor="product-id">Starting product</label>
         <div className="inline-actions">
-          <TextInput
+          <ProductPicker
             id="product-id"
             value={productId}
             onChange={(event) => setProductId(event.target.value)}
-            placeholder="Select a known catalog product ID"
           />
           <Button type="button" onClick={expand} disabled={!productId.trim()}>
             Expand node

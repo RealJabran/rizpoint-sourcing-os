@@ -1,16 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  BellRing,
+  Boxes,
+  CheckCircle2,
+  Clock3,
+  FolderKanban,
+  History,
+  PackageSearch,
+  Radar,
+  ScanLine,
+  Sparkles,
+} from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState, type ReactNode } from "react";
+import { abortExpectedRequest, requestWasAborted } from "../abort";
 import { PageHeader } from "./page-header";
 import {
   amazonIntegrationDashboardStatus,
   providerStatusPresentation,
+  relativeTimestamp,
   type DashboardSummary,
   type ProviderConnectionStatus,
 } from "./dashboard-state";
 import { ScanSummaryTable } from "./scan-summary-table";
-import { Alert, Badge, ButtonLink, Card, Skeleton } from "./ui";
-import { abortExpectedRequest, requestWasAborted } from "../abort";
+import { Alert, Badge, ButtonLink, Card, EmptyState, Skeleton } from "./ui";
 
 type DashboardState =
   | { kind: "loading" }
@@ -30,38 +46,125 @@ type ProviderState =
       };
     };
 
-function MetricCard({
+function MetricModule({
   label,
   value,
   detail,
-  tone,
+  icon,
+  href,
+  attention = false,
 }: {
   label: string;
   value: number;
   detail: string;
-  tone: "neutral" | "info" | "warning";
+  icon: ReactNode;
+  href: string;
+  attention?: boolean;
 }) {
   return (
-    <Card className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <Badge tone={tone}>{detail}</Badge>
-    </Card>
+    <Link
+      href={href}
+      className={`dashboard-metric ${attention ? "dashboard-metric--attention" : ""}`}
+    >
+      <span className="dashboard-metric__icon">{icon}</span>
+      <span>
+        <small>{label}</small>
+        <strong>{value.toLocaleString()}</strong>
+        <em>{detail}</em>
+      </span>
+      <ArrowRight aria-hidden="true" />
+    </Link>
   );
 }
 
 function DashboardLoading() {
   return (
-    <>
-      <div className="metric-grid" aria-label="Loading dashboard metrics">
-        {["a", "b", "c"].map((key) => (
-          <Skeleton key={key} className="metric-skeleton" />
+    <div className="dashboard-loading" aria-label="Loading dashboard">
+      <Skeleton className="dashboard-loading__hero" />
+      <div className="dashboard-loading__metrics">
+        {["a", "b", "c", "d"].map((key) => (
+          <Skeleton key={key} />
         ))}
       </div>
-      <Card className="dashboard-section">
-        <Skeleton className="table-skeleton" />
-      </Card>
-    </>
+      <div className="dashboard-loading__columns">
+        <Skeleton />
+        <Skeleton />
+      </div>
+    </div>
+  );
+}
+
+function ProviderCard({
+  amazon,
+  history,
+}: {
+  amazon: ProviderState;
+  history: ProviderState;
+}) {
+  const amazonPresentation =
+    amazon.kind === "ready"
+      ? providerStatusPresentation(amazon.data.status, amazon.data.mode)
+      : null;
+  const connected =
+    amazon.kind === "ready" &&
+    amazon.data.mode === "LIVE" &&
+    ["HEALTHY", "AUTHORIZED", "PARTIAL"].includes(amazon.data.status);
+  return (
+    <Card
+      className={`dashboard-connection ${connected ? "dashboard-connection--live" : ""}`}
+    >
+      <div className="dashboard-connection__top">
+        <span className="amazon-provider-mark" aria-hidden="true">
+          a
+        </span>
+        <div>
+          <span className="eyebrow">Amazon Selling Partner API</span>
+          <h2>
+            {connected
+              ? "Amazon is connected"
+              : (amazonPresentation?.label ?? "Checking Amazon")}
+          </h2>
+        </div>
+        {amazonPresentation ? (
+          <Badge tone={amazonPresentation.tone}>
+            {amazonPresentation.label}
+          </Badge>
+        ) : (
+          <Skeleton />
+        )}
+      </div>
+      <p>
+        {amazonPresentation?.detail ??
+          "Confirming organization-scoped connection health…"}
+      </p>
+      <div className="dashboard-connection__capabilities">
+        <span>
+          <CheckCircle2 aria-hidden="true" /> Catalog & offers
+        </span>
+        <span>
+          <CheckCircle2 aria-hidden="true" /> Fees & eligibility
+        </span>
+        <span
+          className={
+            history.kind === "ready" && history.data.status === "HEALTHY"
+              ? ""
+              : "is-muted"
+          }
+        >
+          <History aria-hidden="true" /> History{" "}
+          {history.kind === "ready" && history.data.status === "HEALTHY"
+            ? "connected"
+            : "provider required"}
+        </span>
+      </div>
+      <ButtonLink
+        href="/settings/integrations/amazon"
+        variant="secondary"
+        size="sm"
+      >
+        Manage connection <ArrowRight aria-hidden="true" />
+      </ButtonLink>
+    </Card>
   );
 }
 
@@ -74,30 +177,27 @@ export function Dashboard() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    void (async () => {
-      try {
-        const response = await fetch("/api/dashboard/summary", {
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error("DASHBOARD_UNAVAILABLE");
-        const data = (await response.json()) as DashboardSummary;
-        if (active) setState({ kind: "ready", data });
-      } catch (error) {
-        if (!active || requestWasAborted(error, controller.signal)) return;
-        setState({ kind: "error" });
-      }
-    })();
+    const loadJson = async (url: string) => {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("REQUEST_UNAVAILABLE");
+      return response.json();
+    };
+    void loadJson("/api/dashboard/summary")
+      .then((data) => active && setState({ kind: "ready", data }))
+      .catch((error) => {
+        if (active && !requestWasAborted(error, controller.signal))
+          setState({ kind: "error" });
+      });
     const loadProvider = async (
       url: string,
       name: string,
-      setProviderState: (value: ProviderState) => void,
+      setter: (value: ProviderState) => void,
     ) => {
       try {
-        const response = await fetch(url, {
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error("PROVIDER_STATUS_UNAVAILABLE");
-        const responseData = (await response.json()) as {
+        const responseData = (await loadJson(url)) as {
           status: ProviderConnectionStatus;
           mode: "MOCK" | "LIVE";
           checkedAt: string;
@@ -110,11 +210,10 @@ export function Dashboard() {
           name === "Amazon" && responseData.connectionState
             ? amazonIntegrationDashboardStatus(responseData)
             : responseData;
-        if (active)
-          setProviderState({ kind: "ready", data: { ...data, name } });
+        if (active) setter({ kind: "ready", data: { ...data, name } });
       } catch (error) {
-        if (!active || requestWasAborted(error, controller.signal)) return;
-        setProviderState({ kind: "error" });
+        if (active && !requestWasAborted(error, controller.signal))
+          setter({ kind: "error" });
       }
     };
     void loadProvider("/api/providers/amazon", "Amazon", setProvider);
@@ -132,149 +231,260 @@ export function Dashboard() {
   return (
     <main className="dashboard-page">
       <PageHeader
-        title="Sourcing dashboard"
-        description="Track catalog work that is persisted in this workspace. Decisions remain evidence-led."
-        actions={<ButtonLink href="/uploads">New scan</ButtonLink>}
+        kicker="Command center"
+        title="Research with confidence"
+        description="Your live sourcing work, recent evidence, and next decisions in one place."
+        actions={
+          <ButtonLink href="/product-research">
+            <PackageSearch aria-hidden="true" /> Research product
+          </ButtonLink>
+        }
       />
       {state.kind === "loading" ? <DashboardLoading /> : null}
       {state.kind === "error" ? (
-        <Alert tone="danger" title="Dashboard data is unavailable">
-          Your catalog data was not changed. Refresh the page to try again.
+        <Alert tone="danger" title="Workspace summary is unavailable">
+          No stored data was changed. Refresh when the database connection is
+          healthy.
         </Alert>
       ) : null}
       {state.kind === "ready" ? (
         <>
-          <section className="dashboard-provider" aria-label="Provider status">
-            <div>
-              <span className="dashboard-provider__eyebrow">
-                Provider truth
+          <div className="dashboard-hero-grid">
+            <ProviderCard amazon={provider} history={historyProvider} />
+            <Card className="dashboard-next-step">
+              <span className="dashboard-next-step__icon">
+                <Sparkles aria-hidden="true" />
               </span>
-              <h2>Data connections</h2>
-            </div>
-            {[provider, historyProvider].map((connection, index) => (
-              <div
-                className="dashboard-provider__status"
-                key={index}
-                role="region"
-                aria-label={
-                  connection.kind === "ready"
-                    ? `${connection.data.name} provider status`
-                    : "Provider status"
+              <span className="eyebrow">Recommended next step</span>
+              <h2>
+                {state.data.attentionScans
+                  ? "Resolve sourcing items that need attention"
+                  : state.data.staleEvidence
+                    ? "Refresh aging product evidence"
+                    : "Research your next product idea"}
+              </h2>
+              <p>
+                {state.data.attentionScans
+                  ? `${state.data.attentionScans} scan workflow${state.data.attentionScans === 1 ? "" : "s"} need mapping, retry, or partial-data review.`
+                  : state.data.staleEvidence
+                    ? `${state.data.staleEvidence} saved product observation${state.data.staleEvidence === 1 ? "" : "s"} are stale or past their freshness window.`
+                    : "Start with an ASIN, product URL, barcode, or bounded Amazon catalog search."}
+              </p>
+              <ButtonLink
+                href={
+                  state.data.attentionScans ? "/scans" : "/product-research"
                 }
+                size="sm"
               >
-                {connection.kind === "loading" ? (
-                  <Skeleton className="provider-skeleton" />
-                ) : null}
-                {connection.kind === "error" ? (
-                  <Alert tone="warning" title="Provider status is unavailable">
-                    This provider could not be confirmed. Persisted data is
-                    unchanged.
-                  </Alert>
-                ) : null}
-                {connection.kind === "ready"
-                  ? (() => {
-                      const presentation = providerStatusPresentation(
-                        connection.data.status,
-                        connection.data.mode,
-                      );
-                      return (
-                        <>
-                          <strong>{connection.data.name}</strong>
-                          <Badge tone={presentation.tone}>
-                            {presentation.label}
-                          </Badge>
-                          <p>{presentation.detail}</p>
-                        </>
-                      );
-                    })()
-                  : null}
-              </div>
-            ))}
-          </section>
-          <section className="metric-grid" aria-label="Catalog scan summary">
-            <MetricCard
-              label="Catalog scans"
-              value={state.data.totalScans}
-              detail="Persisted scans"
-              tone="neutral"
+                {state.data.attentionScans ? "Review scans" : "Start research"}{" "}
+                <ArrowRight aria-hidden="true" />
+              </ButtonLink>
+            </Card>
+          </div>
+
+          <section className="dashboard-metrics" aria-label="Workspace summary">
+            <MetricModule
+              label="Active projects"
+              value={state.data.activeProjects}
+              detail="Evidence-backed decisions"
+              href="/research-projects"
+              icon={<FolderKanban aria-hidden="true" />}
             />
-            <MetricCard
-              label="Processing"
+            <MetricModule
+              label="Products watched"
+              value={state.data.activeWatches}
+              detail="Monitoring scope"
+              href="/product-tracker"
+              icon={<Radar aria-hidden="true" />}
+            />
+            <MetricModule
+              label="Jobs in progress"
               value={state.data.processingScans}
-              detail="Checkpointed jobs"
-              tone="info"
+              detail="Checkpointed workflows"
+              href="/scans"
+              icon={<Clock3 aria-hidden="true" />}
             />
-            <MetricCard
+            <MetricModule
               label="Needs attention"
-              value={state.data.attentionScans}
-              detail="Review workflow state"
-              tone="warning"
+              value={
+                state.data.attentionScans +
+                state.data.openAlerts +
+                state.data.staleEvidence
+              }
+              detail="Scans, alerts & stale data"
+              href="/alerts"
+              attention={Boolean(
+                state.data.attentionScans +
+                state.data.openAlerts +
+                state.data.staleEvidence,
+              )}
+              icon={<AlertTriangle aria-hidden="true" />}
             />
           </section>
-          {state.data.attentionScans ? (
-            <Alert tone="warning" title="Some scans need a next step">
-              Mapping, retry, partial-data, and terminal-failure states are
-              counted here. Open the scan list to inspect persisted status.
-            </Alert>
-          ) : null}
+
+          <div className="dashboard-main-grid">
+            <section
+              className="dashboard-panel"
+              aria-labelledby="recent-research-heading"
+            >
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Research activity</span>
+                  <h2 id="recent-research-heading">Recently researched</h2>
+                </div>
+                <ButtonLink href="/product-research" variant="quiet" size="sm">
+                  View all
+                </ButtonLink>
+              </div>
+              {state.data.recentResearch.length ? (
+                <div className="dashboard-activity-list">
+                  {state.data.recentResearch.map((run) => {
+                    const product = run.items[0]?.catalogProduct;
+                    return (
+                      <Link href={`/product-research/${run.id}`} key={run.id}>
+                        <span className="activity-icon">
+                          {run.kind === "CATALOG_SEARCH" ? (
+                            <Boxes aria-hidden="true" />
+                          ) : (
+                            <PackageSearch aria-hidden="true" />
+                          )}
+                        </span>
+                        <span>
+                          <strong>{product?.title ?? run.queryText}</strong>
+                          <small>
+                            {product?.asin ??
+                              (run.kind === "CATALOG_SEARCH"
+                                ? `${run.resultCount} catalog results`
+                                : run.queryType)}{" "}
+                            ·{" "}
+                            {relativeTimestamp(
+                              run.completedAt ?? run.createdAt,
+                            )}
+                          </small>
+                        </span>
+                        <Badge
+                          tone={
+                            run.status === "COMPLETED"
+                              ? "success"
+                              : run.status === "PARTIAL_SUCCESS"
+                                ? "warning"
+                                : "info"
+                          }
+                        >
+                          {run.providerMode === "LIVE" ? "Live Amazon" : "Demo"}
+                        </Badge>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <EmptyState
+                  compact
+                  eyebrow="No research yet"
+                  title="Turn an identifier into evidence"
+                  description="Research an ASIN, product URL, or barcode without leaving this workspace."
+                  icon={<PackageSearch aria-hidden="true" />}
+                  actions={
+                    <ButtonLink href="/product-research" size="sm">
+                      Research product
+                    </ButtonLink>
+                  }
+                />
+              )}
+            </section>
+
+            <section
+              className="dashboard-panel"
+              aria-labelledby="changes-heading"
+            >
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Monitoring</span>
+                  <h2 id="changes-heading">Changes that matter</h2>
+                </div>
+                <ButtonLink href="/alerts" variant="quiet" size="sm">
+                  Open alerts
+                </ButtonLink>
+              </div>
+              {state.data.recentAlerts.length ? (
+                <div className="dashboard-change-list">
+                  {state.data.recentAlerts.map((event) => (
+                    <Link href="/alerts" key={event.id}>
+                      <BellRing aria-hidden="true" />
+                      <span>
+                        <strong>
+                          {event.alertRule.metricKey
+                            .replaceAll("_", " ")
+                            .toLowerCase()}
+                        </strong>
+                        <small>
+                          {event.alertRule.subjectType
+                            .replaceAll("_", " ")
+                            .toLowerCase()}{" "}
+                          · {relativeTimestamp(event.triggeredAt)}
+                        </small>
+                      </span>
+                      <Badge
+                        tone={event.status === "OPEN" ? "warning" : "neutral"}
+                      >
+                        {event.status.toLowerCase()}
+                      </Badge>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  compact
+                  eyebrow="All quiet"
+                  title="No material changes detected"
+                  description="New price, rank, availability, and opportunity events will appear here when supported observations change."
+                  icon={<CheckCircle2 aria-hidden="true" />}
+                  actions={
+                    <ButtonLink
+                      href="/product-tracker"
+                      variant="secondary"
+                      size="sm"
+                    >
+                      View monitoring
+                    </ButtonLink>
+                  }
+                />
+              )}
+            </section>
+          </div>
+
           <section
-            className="dashboard-section"
+            className="dashboard-panel dashboard-scans"
             aria-labelledby="recent-scans-heading"
           >
             <div className="section-heading">
               <div>
-                <h2 id="recent-scans-heading">Recent catalog scans</h2>
+                <span className="eyebrow">Wholesale sourcing</span>
+                <h2 id="recent-scans-heading">Recent supplier scans</h2>
                 <p>
-                  Latest persisted scan jobs. No revenue, profit, or winner
-                  metrics are inferred here.
+                  Latest persisted catalogs and their current workflow
+                  checkpoint.
                 </p>
               </div>
               <ButtonLink href="/scans" variant="secondary" size="sm">
-                View scan list
+                View scan history
               </ButtonLink>
             </div>
             {state.data.recentScans.length ? (
               <ScanSummaryTable scans={state.data.recentScans} />
             ) : (
-              <div className="empty-state">
-                <span className="empty-state__eyebrow">
-                  No catalog scans yet
-                </span>
-                <h3>Start with a supplier catalog.</h3>
-                <p>
-                  Upload a CSV, XLSX, or XLS file to inspect its structure and
-                  map supplier fields.
-                </p>
-                <ButtonLink href="/uploads">Start a new scan</ButtonLink>
-              </div>
+              <EmptyState
+                eyebrow="No supplier scans"
+                title="Bring in your first supplier catalog"
+                description="Upload CSV, XLSX, or XLS. RizPoint will inspect, map, normalize, match, enrich, and calculate without changing the source file."
+                icon={<ScanLine aria-hidden="true" />}
+                actions={
+                  <ButtonLink href="/uploads">
+                    Upload supplier catalog
+                  </ButtonLink>
+                }
+              />
             )}
-          </section>
-          <section
-            className="dashboard-guidance"
-            aria-labelledby="workflow-heading"
-          >
-            <h2 id="workflow-heading">The RizPoint workflow</h2>
-            <ol>
-              <li>
-                <strong>Import</strong>
-                <span>
-                  Inspect the catalog before any supplier row is accepted.
-                </span>
-              </li>
-              <li>
-                <strong>Verify</strong>
-                <span>
-                  Resolve matches, pack evidence, restrictions, and freshness.
-                </span>
-              </li>
-              <li>
-                <strong>Decide</strong>
-                <span>
-                  Review deterministic scenarios before shortlisting or
-                  ordering.
-                </span>
-              </li>
-            </ol>
           </section>
         </>
       ) : null}

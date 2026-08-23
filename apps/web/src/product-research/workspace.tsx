@@ -21,7 +21,7 @@ type Marketplace = {
   isDefault: boolean;
 };
 type Project = { id: string; name: string; marketplaceId: string };
-type ResearchItem = {
+export type ResearchItem = {
   id: string;
   status: string;
   product: {
@@ -41,7 +41,7 @@ type ResearchItem = {
   freshnessState: string;
   completeness: string;
 };
-type ResearchRun = {
+export type ResearchRun = {
   id: string;
   kind: "PRODUCT_LOOKUP" | "CATALOG_SEARCH";
   status: string;
@@ -67,18 +67,18 @@ const humanErrors: Record<string, string> = {
     "Enter an ASIN, UPC/EAN/GTIN, or supported Amazon product URL.",
 };
 
-function record(value: unknown): Record<string, unknown> | null {
+export function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
-function text(value: unknown) {
+export function text(value: unknown) {
   return typeof value === "string" ? value : null;
 }
-function number(value: unknown) {
+export function number(value: unknown) {
   return typeof value === "number" ? value : null;
 }
-function dateTime(value: string | null | undefined) {
+export function dateTime(value: string | null | undefined) {
   return value
     ? new Intl.DateTimeFormat(undefined, {
         dateStyle: "medium",
@@ -86,7 +86,7 @@ function dateTime(value: string | null | undefined) {
       }).format(new Date(value))
     : "Not available";
 }
-function money(value: unknown, currency: unknown) {
+export function money(value: unknown, currency: unknown) {
   const amount = text(value);
   const code = text(currency);
   if (!amount || !code) return "Not available";
@@ -95,11 +95,11 @@ function money(value: unknown, currency: unknown) {
     currency: code,
   }).format(Number(amount));
 }
-function evidenceValue(item: ResearchItem, family: string) {
+export function evidenceValue(item: ResearchItem, family: string) {
   const envelope = record(item.evidence[family]);
   return envelope?.status === "AVAILABLE" ? record(envelope.value) : null;
 }
-function imageUrl(item: ResearchItem) {
+export function imageUrl(item: ResearchItem) {
   const identity = record(item.product.identity);
   const images = Array.isArray(identity?.images) ? identity.images : [];
   return (
@@ -109,7 +109,7 @@ function imageUrl(item: ResearchItem) {
       .find(Boolean) ?? null
   );
 }
-function dataOriginLabel(value: string) {
+export function dataOriginLabel(value: string) {
   return value === "LIVE_AMAZON"
     ? "Live Amazon"
     : value === "STORED_AMAZON"
@@ -134,7 +134,13 @@ function EvidenceState({ item }: { item: ResearchItem }) {
   );
 }
 
-function ProductEvidence({ item }: { item: ResearchItem }) {
+function ProductEvidence({
+  item,
+  runId,
+}: {
+  item: ResearchItem;
+  runId: string;
+}) {
   const pricing = evidenceValue(item, "pricing");
   const pricingValue = record(pricing?.value);
   const fees = evidenceValue(item, "fees");
@@ -185,6 +191,21 @@ function ProductEvidence({ item }: { item: ResearchItem }) {
         </div>
       </div>
       <EvidenceState item={item} />
+      <div className="product-research-result__actions">
+        <ButtonLink
+          href={`/product-research/${runId}?product=${encodeURIComponent(item.product.id)}`}
+          size="sm"
+        >
+          Open product workspace
+        </ButtonLink>
+        <ButtonLink
+          href={`/differentiation?productId=${encodeURIComponent(item.product.id)}`}
+          variant="quiet"
+          size="sm"
+        >
+          Explore differentiation
+        </ButtonLink>
+      </div>
       <div className="metric-grid product-research-metrics">
         <div>
           <span>Featured offer</span>
@@ -672,7 +693,7 @@ export function ProductResearchWorkspace() {
                     />
                     Select {item.product.asin ?? item.product.title}
                   </label>
-                  <ProductEvidence item={item} />
+                  <ProductEvidence item={item} runId={run.id} />
                 </div>
               ))}
               {run.resultCount > 10 ? (

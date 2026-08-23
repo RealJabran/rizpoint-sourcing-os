@@ -8,11 +8,15 @@ export function PageHeader({
   description,
   actions,
   breadcrumbs = [],
+  kicker,
+  meta,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   breadcrumbs?: Breadcrumb[];
+  kicker?: string;
+  meta?: ReactNode;
 }) {
   return (
     <header className="page-header">
@@ -33,8 +37,12 @@ export function PageHeader({
       ) : null}
       <div className="page-header__content">
         <div>
+          {kicker ? (
+            <span className="page-header__kicker">{kicker}</span>
+          ) : null}
           <h1>{title}</h1>
           {description ? <p>{description}</p> : null}
+          {meta ? <div className="page-header__meta">{meta}</div> : null}
         </div>
         {actions ? <div className="page-header__actions">{actions}</div> : null}
       </div>

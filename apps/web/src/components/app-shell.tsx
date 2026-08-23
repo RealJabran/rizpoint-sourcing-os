@@ -1,21 +1,43 @@
 "use client";
 
+import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type PropsWithChildren } from "react";
+import { useEffect, useState, type PropsWithChildren } from "react";
 import { MarketplaceSwitcher } from "@/src/marketplace-switcher";
 import { CommandPalette } from "./command-palette";
 import { NavigationMenu } from "./navigation-menu";
-import { ButtonLink, ToastProvider } from "./ui";
+import { navigationItemForPath } from "./navigation";
+import {
+  AmazonConnectionControl,
+  ContextPrimaryAction,
+  NotificationControl,
+  SidebarConnectionSummary,
+  ThemeControl,
+  UserControl,
+} from "./shell-controls";
+import { ToastProvider } from "./ui";
 
 export function AppShell({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    const timeout = window.setTimeout(
+      () =>
+        setCollapsed(
+          window.localStorage.getItem("rizpoint.sidebar.collapsed") === "true",
+        ),
+      0,
+    );
+    return () => window.clearTimeout(timeout);
+  }, []);
   if (pathname === "/login") return <>{children}</>;
+  const context = navigationItemForPath(pathname);
 
   return (
     <ToastProvider>
-      <div className="app-shell">
+      <div className={`app-shell ${collapsed ? "app-shell--collapsed" : ""}`}>
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
@@ -31,55 +53,76 @@ export function AppShell({ children }: PropsWithChildren) {
           className={`app-sidebar ${mobileNavigationOpen ? "app-sidebar--open" : ""}`}
           aria-label="RizPoint workspace navigation"
         >
-          <Link
-            href="/"
-            className="brand"
-            onClick={() => setMobileNavigationOpen(false)}
-            aria-label="RizPoint dashboard"
-          >
-            <span className="brand-mark" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span>
-              <strong>RizPoint</strong>
-              <small>Research OS</small>
-            </span>
-          </Link>
+          <div className="sidebar-brand-row">
+            <Link
+              href="/"
+              className="brand"
+              onClick={() => setMobileNavigationOpen(false)}
+              aria-label="RizPoint home"
+            >
+              <span className="brand-mark" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="brand-copy">
+                <strong>RizPoint</strong>
+                <small>Research OS</small>
+              </span>
+            </Link>
+            <button
+              className="sidebar-collapse-button"
+              type="button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => {
+                const next = !collapsed;
+                setCollapsed(next);
+                window.localStorage.setItem(
+                  "rizpoint.sidebar.collapsed",
+                  String(next),
+                );
+              }}
+            >
+              {collapsed ? (
+                <PanelLeftOpen aria-hidden="true" />
+              ) : (
+                <PanelLeftClose aria-hidden="true" />
+              )}
+            </button>
+          </div>
           <NavigationMenu
             pathname={pathname}
             onNavigate={() => setMobileNavigationOpen(false)}
           />
           <div className="sidebar-footer">
-            <p>Evidence-first sourcing decisions.</p>
+            <SidebarConnectionSummary />
           </div>
         </aside>
         <div className="app-frame">
           <header className="app-topbar">
             <div className="topbar-leading">
               <button
-                className="mobile-menu-button"
+                className="mobile-menu-button shell-icon-button"
                 type="button"
                 aria-label="Open navigation"
                 aria-expanded={mobileNavigationOpen}
                 aria-controls="primary-navigation"
                 onClick={() => setMobileNavigationOpen(true)}
               >
-                <span />
-                <span />
-                <span />
+                <Menu aria-hidden="true" />
               </button>
+              <div className="topbar-context" aria-label="Current workspace">
+                <span>{context?.label ?? "RizPoint"}</span>
+              </div>
               <CommandPalette />
             </div>
             <div className="topbar-actions">
               <MarketplaceSwitcher />
-              <span className="workspace-status">
-                <span aria-hidden="true" /> Private workspace
-              </span>
-              <ButtonLink href="/uploads" size="sm">
-                New scan
-              </ButtonLink>
+              <AmazonConnectionControl />
+              <NotificationControl />
+              <ThemeControl />
+              <UserControl />
+              <ContextPrimaryAction pathname={pathname} />
             </div>
           </header>
           <div id="main-content" className="app-content" tabIndex={-1}>

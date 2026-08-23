@@ -8,6 +8,7 @@ import {
   useToast,
 } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { MarketplacePicker } from "@/src/components/entity-pickers";
 import { DateWindowControl, FilterBar } from "@/src/components/research-ui";
 import { NicheResults, type NicheSummary } from "./niche-results";
 export function OpportunityFinder() {
@@ -92,9 +93,9 @@ export function OpportunityFinder() {
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-            <TextInput
-              aria-label="Marketplace ID"
-              placeholder="Marketplace ID"
+            <MarketplacePicker
+              aria-label="Marketplace"
+              emptyLabel="Choose a connected marketplace"
               value={marketplaceId}
               onChange={(e) => setMarketplaceId(e.target.value)}
             />

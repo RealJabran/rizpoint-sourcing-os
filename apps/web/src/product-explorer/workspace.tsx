@@ -16,6 +16,13 @@ import { explorerQuery } from "./query";
 import { ExplorerResultsTable } from "./results-table";
 import type { ExplorerRow, ExplorerView, Filters, Project } from "./types";
 
+type MarketplaceOption = {
+  id: string;
+  label?: string;
+  domain: string;
+  currency: string;
+};
+
 export function ProductExplorerWorkspace() {
   const { notify } = useToast();
   const [filters, setFilters] = useState<Filters>({});
@@ -29,6 +36,7 @@ export function ProductExplorerWorkspace() {
   const [newProjectName, setNewProjectName] = useState("");
   const [views, setViews] = useState<ExplorerView[]>([]);
   const [viewName, setViewName] = useState("");
+  const [marketplaces, setMarketplaces] = useState<MarketplaceOption[]>([]);
 
   const load = useCallback(
     async (nextFilters = filters) => {
@@ -95,6 +103,12 @@ export function ProductExplorerWorkspace() {
       .then((response) => (response.ok ? response.json() : []))
       .then((payload) => {
         if (!cancelled) setViews(payload);
+      });
+    void fetch("/api/marketplaces", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!cancelled && payload?.marketplaces)
+          setMarketplaces(payload.marketplaces);
       });
     return () => {
       cancelled = true;
@@ -231,9 +245,8 @@ export function ProductExplorerWorkspace() {
                 }))
               }
             />
-            <TextInput
+            <SelectControl
               aria-label="Marketplace"
-              placeholder="Marketplace ID"
               value={filters.marketplaceId ?? ""}
               onChange={(event) =>
                 setFilters((current) => ({
@@ -241,7 +254,15 @@ export function ProductExplorerWorkspace() {
                   marketplaceId: event.target.value,
                 }))
               }
-            />
+            >
+              <option value="">All connected marketplaces</option>
+              {marketplaces.map((marketplace) => (
+                <option key={marketplace.id} value={marketplace.id}>
+                  {marketplace.label ?? marketplace.domain} ·{" "}
+                  {marketplace.currency}
+                </option>
+              ))}
+            </SelectControl>
             <TextInput
               aria-label="Brand"
               placeholder="Brand"

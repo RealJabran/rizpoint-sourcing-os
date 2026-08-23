@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   acknowledgeAlertNotification,
-  ensurePhaseZeroOrganization,
   listAlertNotifications,
   researchRepository,
 } from "@rizpoint/database";
 import { requirePrivateAccess } from "@/src/private-access";
+import { organizationForRequest } from "@/src/request-organization";
 export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const denied = requirePrivateAccess(request);
   if (denied) return denied;
   return NextResponse.json(
-    await listAlertNotifications((await ensurePhaseZeroOrganization()).id),
+    await listAlertNotifications((await organizationForRequest(request)).id),
   );
 }
 export async function POST(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     unknown
   > | null;
   try {
-    const org = await ensurePhaseZeroOrganization();
+    const org = await organizationForRequest(request);
     if (body?.action === "acknowledge")
       return NextResponse.json(
         await acknowledgeAlertNotification(org.id, String(body.id ?? "")),

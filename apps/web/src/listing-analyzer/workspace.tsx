@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Alert, Badge, Button, Card, TextInput } from "@/src/components/ui";
 import { PageHeader } from "@/src/components/page-header";
+import { ProductPicker } from "@/src/components/entity-pickers";
 
 type Report = {
   overallScore: number;
@@ -74,12 +75,11 @@ export function ListingAnalyzer() {
         unavailable image, A+, and category requirements remain explicit.
       </Alert>
       <Card>
-        <label htmlFor="listing-product">Catalog product ID</label>
-        <TextInput
+        <label htmlFor="listing-product">Product</label>
+        <ProductPicker
           id="listing-product"
           value={productId}
           onChange={(event) => setProductId(event.target.value)}
-          placeholder="Authorized product / ASIN record"
         />
         <label htmlFor="listing-title">Draft title</label>
         <TextInput
