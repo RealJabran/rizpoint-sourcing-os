@@ -6,6 +6,14 @@ Scope: Prompts 00–36 and the preserved wholesale workflow
 
 Decision: **private engineering candidate; not production-ready**
 
+Prompt 36F live-pilot status (2026-08-23): **blocked before live execution**.
+The organization is not connected to Amazon and no ignored private supplier
+pilot file is present. The sanitized preflight, exact secure resume checkpoint,
+and unearned release criteria are recorded in
+[Live private pilot report](LIVE_PRIVATE_PILOT_REPORT.md). Fixture results are
+not being substituted for this missing evidence, and the release classification
+has not been promoted to PRIVATE LIVE BETA.
+
 ## Executive result
 
 RizPoint is a coherent evidence-first sourcing and research operating system at

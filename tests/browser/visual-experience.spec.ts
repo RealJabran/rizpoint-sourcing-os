@@ -456,7 +456,11 @@ test.describe("RizPoint premium visual acceptance", () => {
   });
 
   const routes = [
-    { name: "dashboard", path: "/", heading: "Research with confidence" },
+    {
+      name: "dashboard",
+      path: "/",
+      heading: "Your sourcing command center",
+    },
     {
       name: "amazon-integrations",
       path: "/settings/integrations/amazon",

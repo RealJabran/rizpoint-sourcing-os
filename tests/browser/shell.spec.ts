@@ -7,7 +7,7 @@ test.describe("RizPoint application shell", () => {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: "Research with confidence" }),
+      page.getByRole("heading", { name: "Your sourcing command center" }),
     ).toBeVisible();
     await expect(
       page.getByRole("navigation", { name: "Primary navigation" }),
@@ -19,7 +19,7 @@ test.describe("RizPoint application shell", () => {
       page.getByRole("heading", { name: "Recently researched" }),
     ).toBeVisible();
     await expect(page.locator(".dashboard-connection")).toContainText("Mock");
-    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "252px");
+    await expect(page.locator(".app-sidebar")).toHaveCSS("width", "256px");
   });
 
   test("opens accessible navigation at mobile width", async ({ page }) => {

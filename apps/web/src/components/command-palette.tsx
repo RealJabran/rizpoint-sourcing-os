@@ -55,7 +55,7 @@ export function CommandPalette() {
         onClick={() => setOpen(true)}
       >
         <Search aria-hidden="true" />
-        <span>Search RizPoint</span>
+        <span>Search or jump to…</span>
         <kbd>⌘ K</kbd>
       </button>
       {open ? (

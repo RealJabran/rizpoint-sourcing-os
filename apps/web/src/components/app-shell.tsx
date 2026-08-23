@@ -61,13 +61,11 @@ export function AppShell({ children }: PropsWithChildren) {
               aria-label="RizPoint home"
             >
               <span className="brand-mark" aria-hidden="true">
-                <i />
-                <i />
-                <i />
+                <span>R</span>
               </span>
               <span className="brand-copy">
                 <strong>RizPoint</strong>
-                <small>Research OS</small>
+                <small>Sourcing intelligence</small>
               </span>
             </Link>
             <button

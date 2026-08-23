@@ -5,11 +5,16 @@ the supported path for the private owner installation. `OAUTH` is code-ready
 for a future public Amazon application, but cannot be used live until Amazon
 has issued and configured that public application's credentials and URLs.
 
-The integration workspace is at **Settings → Integrations → Amazon**. It shows
-only a masked seller identity, region, discovered marketplaces, connection
-timestamps, normalized errors, and capability states. It never returns an LWA
-client secret, refresh/access token, encrypted credential envelope, OAuth code,
-or raw Amazon response.
+The integration workspace is at **Settings → Integrations → Amazon**. It offers
+one clear **Connect professional seller account** action. When public OAuth is
+configured, that action starts the existing tenant-bound Amazon authorization
+flow and redirects the user to Amazon. For a private installation without public
+OAuth credentials, it opens a guided secure-owner setup drawer instead of
+pretending browser authorization is available. The workspace shows only a
+masked seller identity, region, discovered marketplaces, connection timestamps,
+normalized errors, and capability states. It never returns an LWA client secret,
+refresh/access token, encrypted credential envelope, OAuth code, or raw Amazon
+response.
 
 ## Private owner: self-authorization
 

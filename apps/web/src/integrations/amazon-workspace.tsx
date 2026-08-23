@@ -1,5 +1,17 @@
 "use client";
 
+import {
+  ArrowRight,
+  DatabaseZap,
+  KeyRound,
+  LockKeyhole,
+  RefreshCw,
+  ShieldCheck,
+  ShoppingBag,
+  Store,
+  X,
+  Zap,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/src/components/page-header";
 import {
@@ -167,6 +179,7 @@ export function AmazonIntegrationWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [marketplaceId, setMarketplaceId] = useState("ATVPDKIKX0DER");
+  const [setupOpen, setSetupOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -196,16 +209,33 @@ export function AmazonIntegrationWorkspace() {
     const timer = window.setInterval(() => void load(), 2_500);
     return () => window.clearInterval(timer);
   }, [load, status?.connectionState]);
+  useEffect(() => {
+    const outcome = new URLSearchParams(window.location.search).get(
+      "authorization",
+    );
+    if (!outcome) return;
+    if (outcome === "processing")
+      notify(
+        "Amazon approved access. RizPoint is securely validating your seller account.",
+        "success",
+      );
+    else
+      notify(
+        outcome === "invalid_state"
+          ? "The authorization session was invalid or expired. Start again."
+          : "Amazon authorization could not be completed. No credentials were stored.",
+        "danger",
+      );
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [notify]);
+  useEffect(() => {
+    document.body.classList.toggle("dialog-open", setupOpen);
+    return () => document.body.classList.remove("dialog-open");
+  }, [setupOpen]);
 
   async function connect() {
     if (!status?.oauthAvailable) {
-      document.getElementById("self-authorized-setup")?.scrollIntoView({
-        behavior: "smooth",
-      });
-      notify(
-        "Follow the secure owner setup below; this page will detect it.",
-        "info",
-      );
+      setSetupOpen(true);
       return;
     }
     setBusy("connect");
@@ -304,8 +334,9 @@ export function AmazonIntegrationWorkspace() {
   return (
     <main className="content-page amazon-integration">
       <PageHeader
+        kicker="Connected commerce"
         title="Amazon integration"
-        description="Connect Seller Central to bring authorized Amazon catalog, pricing, fee, and restriction evidence into RizPoint."
+        description="Bring your professional seller account into one secure research workspace."
         breadcrumbs={[
           { label: "Dashboard", href: "/" },
           { label: "Settings", href: "/settings/integrations" },
@@ -318,39 +349,105 @@ export function AmazonIntegrationWorkspace() {
           {error}
         </Alert>
       ) : null}
-      {status?.localDemo ? (
-        <Alert tone="info" title="Local demo mode">
-          Fixture data may be used by local demo workflows, but it is never
-          labeled as connected Amazon evidence. A live connection remains
-          organization-specific.
-        </Alert>
-      ) : null}
-
-      <Card className="amazon-provider-card">
-        <div className="amazon-provider-card__identity">
-          <span className="amazon-provider-mark" aria-hidden="true">
-            a
-          </span>
-          <div>
-            <span className="eyebrow">Official provider</span>
-            <h2>Amazon Selling Partner API</h2>
+      <Card
+        className={
+          connected
+            ? "amazon-connect-hero amazon-connect-hero--connected"
+            : "amazon-connect-hero"
+        }
+      >
+        <div className="amazon-connect-hero__ambient" aria-hidden="true" />
+        <div className="amazon-connect-hero__identity">
+          <div className="amazon-connect-hero__mark" aria-hidden="true">
+            <span>a</span>
+            <i />
+          </div>
+          <div className="amazon-connect-hero__copy">
+            <div className="badge-stack">
+              <Badge tone={state.tone}>{state.label}</Badge>
+              {status?.localDemo ? (
+                <Badge tone="info">Demo workspace active</Badge>
+              ) : null}
+            </div>
+            <span className="eyebrow">Amazon Selling Partner API</span>
+            <h2>
+              {connected
+                ? "Your professional seller account is connected"
+                : "Connect your Amazon seller account"}
+            </h2>
             <p>
-              Read-only research enrichment through your authorized seller
-              account.
+              {connected
+                ? "RizPoint is receiving authorized, tenant-scoped Amazon evidence for your connected marketplaces."
+                : "Authorize RizPoint once, then research catalog products, competitive offers, fees, and selling eligibility with real Amazon evidence."}
             </p>
+            <div className="amazon-trust-row">
+              <span>
+                <LockKeyhole aria-hidden="true" /> Encrypted credentials
+              </span>
+              <span>
+                <ShieldCheck aria-hidden="true" /> Read-only research
+              </span>
+              <span>
+                <DatabaseZap aria-hidden="true" /> Persisted evidence
+              </span>
+            </div>
           </div>
         </div>
-        <div className="amazon-provider-card__status">
-          {status ? (
-            <Badge tone={state.tone}>{state.label}</Badge>
+        <div className="amazon-connect-hero__panel">
+          {connected ? (
+            <>
+              <div className="amazon-live-pulse">
+                <i aria-hidden="true" />
+                <span>
+                  <strong>Live Amazon data layer</strong>
+                  <small>
+                    {status?.connection?.marketplaces.filter(
+                      (marketplace) => marketplace.isParticipating,
+                    ).length ?? 0}{" "}
+                    marketplace(s) available
+                  </small>
+                </span>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => void action("TEST_CONNECTION")}
+                loading={busy === "TEST_CONNECTION"}
+              >
+                <RefreshCw aria-hidden="true" /> Test connection
+              </Button>
+            </>
           ) : (
-            <Skeleton />
+            <>
+              <div>
+                <span className="amazon-connect-label">Start in</span>
+                <SelectControl
+                  aria-label="Amazon authorization marketplace"
+                  value={marketplaceId}
+                  onChange={(event) => setMarketplaceId(event.target.value)}
+                >
+                  {connectMarkets.map((market) => (
+                    <option key={market.id} value={market.id}>
+                      {market.label}
+                    </option>
+                  ))}
+                </SelectControl>
+              </div>
+              <Button
+                className="amazon-connect-primary"
+                onClick={() => void connect()}
+                loading={busy === "connect"}
+              >
+                <ShoppingBag aria-hidden="true" />
+                Connect professional seller account
+                <ArrowRight aria-hidden="true" />
+              </Button>
+              <small>
+                {status?.oauthAvailable
+                  ? "You will continue to Amazon to approve access."
+                  : "One-time private app activation is required before Amazon can open."}
+              </small>
+            </>
           )}
-          <span>
-            {status?.dataOrigin === "LIVE_AMAZON"
-              ? "LIVE AMAZON · tenant connection"
-              : "No live Amazon data"}
-          </span>
         </div>
       </Card>
 
@@ -374,336 +471,443 @@ export function AmazonIntegrationWorkspace() {
             </Alert>
           ) : null}
 
-          <div className="amazon-summary-grid">
-            <Card>
-              <span>Seller</span>
-              <strong>
-                {status.connection?.sellerIdentity ?? "Not connected"}
-              </strong>
-            </Card>
-            <Card>
-              <span>Region</span>
-              <strong>{status.connection?.region ?? "—"}</strong>
-            </Card>
-            <Card>
-              <span>Connected</span>
-              <strong>
-                {dateTime(status.connection?.connectedAt ?? null)}
-              </strong>
-            </Card>
-            <Card>
-              <span>Last successful check</span>
-              <strong>
-                {dateTime(status.connection?.lastSuccessfulValidation ?? null)}
-              </strong>
-            </Card>
-          </div>
-
-          <Card className="amazon-actions-card">
-            <div>
-              <h2>{connected ? "Connection controls" : "Connect Amazon"}</h2>
-              <p>
-                {connected
-                  ? "Validation runs in the background and never removes prior observations when Amazon is unavailable."
-                  : "Choose the marketplace where you begin authorization. RizPoint discovers every accessible marketplace after connection."}
-              </p>
-            </div>
-            {!connected ? (
-              <div className="amazon-connect-row">
-                <SelectControl
-                  aria-label="Amazon authorization marketplace"
-                  value={marketplaceId}
-                  onChange={(event) => setMarketplaceId(event.target.value)}
-                >
-                  {connectMarkets.map((market) => (
-                    <option key={market.id} value={market.id}>
-                      {market.label}
-                    </option>
-                  ))}
-                </SelectControl>
-                <Button
-                  onClick={() => void connect()}
-                  loading={busy === "connect"}
-                >
-                  {status.oauthAvailable
-                    ? "Connect Amazon"
-                    : "View secure setup"}
-                </Button>
+          {connected ? (
+            <>
+              <div className="amazon-summary-grid">
+                <Card>
+                  <span>Seller account</span>
+                  <strong>
+                    {status.connection?.sellerIdentity ?? "Connected seller"}
+                  </strong>
+                </Card>
+                <Card>
+                  <span>Region</span>
+                  <strong>{status.connection?.region ?? "—"}</strong>
+                </Card>
+                <Card>
+                  <span>Connected since</span>
+                  <strong>
+                    {dateTime(status.connection?.connectedAt ?? null)}
+                  </strong>
+                </Card>
+                <Card>
+                  <span>Last healthy check</span>
+                  <strong>
+                    {dateTime(
+                      status.connection?.lastSuccessfulValidation ?? null,
+                    )}
+                  </strong>
+                </Card>
               </div>
-            ) : (
-              <div className="amazon-action-row">
-                {status.oauthAvailable ? (
+
+              <Card className="amazon-actions-card">
+                <div>
+                  <span className="eyebrow">Connection controls</span>
+                  <h2>Keep your Amazon data layer healthy</h2>
+                  <p>
+                    Validation runs safely in the background. Existing evidence
+                    is preserved if Amazon is unavailable.
+                  </p>
+                </div>
+                <div className="amazon-action-row">
+                  {status.oauthAvailable ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void connect()}
+                      loading={busy === "connect"}
+                    >
+                      Reconnect Amazon
+                    </Button>
+                  ) : null}
                   <Button
                     variant="secondary"
-                    onClick={() => void connect()}
-                    loading={busy === "connect"}
+                    onClick={() => void action("REFRESH_CAPABILITIES")}
+                    loading={busy === "REFRESH_CAPABILITIES"}
                   >
-                    Reconnect Amazon
+                    <Zap aria-hidden="true" /> Refresh capabilities
                   </Button>
-                ) : null}
-                <Button
-                  variant="secondary"
-                  onClick={() => void action("TEST_CONNECTION")}
-                  loading={busy === "TEST_CONNECTION"}
-                >
-                  Test connection
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => void action("REFRESH_CAPABILITIES")}
-                  loading={busy === "REFRESH_CAPABILITIES"}
-                >
-                  Refresh capabilities
-                </Button>
-                <Button
-                  variant="danger"
-                  onClick={() => void disconnect()}
-                  loading={busy === "disconnect"}
-                >
-                  Disconnect locally
-                </Button>
-              </div>
-            )}
-            {status.latestAction ? (
-              <div className="amazon-test-result" role="status">
-                <strong>Latest check</strong>
-                <span>
-                  {status.latestAction.status
-                    .replaceAll("_", " ")
-                    .toLowerCase()}
-                </span>
-                <span>
-                  {dateTime(
-                    status.latestAction.completedAt ??
-                      status.latestAction.requestedAt,
-                  )}
-                </span>
-              </div>
-            ) : null}
-          </Card>
-
-          <Card className="amazon-marketplaces-card">
-            <div className="section-heading">
-              <div>
-                <h2>Connected marketplaces</h2>
-                <p>Discovered from Sellers API marketplace participations.</p>
-              </div>
-              <Badge tone="info">Tenant scoped</Badge>
-            </div>
-            {status.connection?.marketplaces.length ? (
-              <div className="amazon-marketplace-list">
-                {status.connection.marketplaces.map((marketplace) => (
-                  <div key={marketplace.marketplaceId}>
-                    <div>
-                      <strong>{marketplace.name}</strong>
-                      <span>
-                        {[
-                          marketplace.countryCode,
-                          marketplace.defaultCurrencyCode,
-                          marketplace.defaultLanguageCode,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </div>
-                    <div className="badge-stack">
-                      {!marketplace.isParticipating ? (
-                        <Badge tone="warning">Unavailable</Badge>
-                      ) : null}
-                      {marketplace.hasSuspendedListings ? (
-                        <Badge tone="danger">Listings suspended</Badge>
-                      ) : null}
-                      {marketplace.isDefault ? (
-                        <Badge tone="success">Active</Badge>
-                      ) : marketplace.isParticipating ? (
-                        <Button
-                          size="sm"
-                          variant="quiet"
-                          onClick={() =>
-                            void action(
-                              "SET_DEFAULT_MARKETPLACE",
-                              marketplace.marketplaceId,
-                            )
-                          }
-                          loading={busy === "SET_DEFAULT_MARKETPLACE"}
-                        >
-                          Use marketplace
-                        </Button>
-                      ) : null}
-                    </div>
+                  <Button
+                    variant="danger"
+                    onClick={() => void disconnect()}
+                    loading={busy === "disconnect"}
+                  >
+                    Disconnect locally
+                  </Button>
+                </div>
+                {status.latestAction ? (
+                  <div className="amazon-test-result" role="status">
+                    <strong>Latest check</strong>
+                    <span>
+                      {status.latestAction.status
+                        .replaceAll("_", " ")
+                        .toLowerCase()}
+                    </span>
+                    <span>
+                      {dateTime(
+                        status.latestAction.completedAt ??
+                          status.latestAction.requestedAt,
+                      )}
+                    </span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="amazon-empty">
-                <strong>No marketplaces discovered yet.</strong>
-                <span>
-                  Connect and test Amazon to retrieve authorized marketplace
-                  participations.
-                </span>
-              </div>
-            )}
-          </Card>
-
-          <Card className="amazon-capabilities-card">
-            <div className="section-heading">
-              <div>
-                <h2>Capability status</h2>
-                <p>Availability can differ by marketplace and granted role.</p>
-              </div>
-            </div>
-            {status.connection?.capabilities.length ? (
-              <div className="amazon-capability-table-wrap">
-                <table className="amazon-capability-table">
-                  <thead>
-                    <tr>
-                      <th>Capability</th>
-                      <th>Marketplace</th>
-                      <th>Status</th>
-                      <th>Evidence</th>
-                      <th>Last checked</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {status.connection.capabilities.map((capability) => {
-                      const presentation = capabilityPresentation(
-                        capability.state,
-                      );
-                      return (
-                        <tr
-                          key={`${capability.marketplaceId}:${capability.capability}`}
-                        >
-                          <td>
-                            {capabilityLabels[capability.capability] ??
-                              capability.capability
-                                .replaceAll("_", " ")
-                                .toLowerCase()}
-                          </td>
-                          <td>
-                            {status.connection?.marketplaces.find(
-                              (item) =>
-                                item.marketplaceId === capability.marketplaceId,
-                            )?.name ?? "Known marketplace"}
-                          </td>
-                          <td>
-                            <Badge tone={presentation.tone}>
-                              {presentation.label}
-                            </Badge>
-                            {capability.retryAt ? (
-                              <span>
-                                Retry after {dateTime(capability.retryAt)}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td>
-                            <strong>LIVE AMAZON</strong>
-                            <span>
-                              {capability.completeness.toLowerCase()} ·{" "}
-                              {capability.freshness.toLowerCase()}
-                            </span>
-                          </td>
-                          <td>{dateTime(capability.checkedAt)}</td>
-                        </tr>
-                      );
-                    })}
-                    {unavailableFamilies.map((family) => (
-                      <tr key={family.label}>
-                        <td>
-                          <strong>{family.label}</strong>
-                          <span>{family.detail}</span>
-                        </td>
-                        <td>All marketplaces</td>
-                        <td>
-                          <Badge tone="neutral">Provider required</Badge>
-                        </td>
-                        <td>
-                          <strong>NOT AVAILABLE</strong>
-                          <span>No value shown</span>
-                        </td>
-                        <td>—</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="amazon-empty">
-                <strong>Capabilities not validated.</strong>
-                <span>
-                  No unsupported metric will be presented as live Amazon data.
-                </span>
-              </div>
-            )}
-          </Card>
-
-          <Card className="amazon-onboarding" id="self-authorized-setup">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">Private owner setup</span>
-                <h2>Secure self-authorization</h2>
+                ) : null}
+              </Card>
+            </>
+          ) : (
+            <div className="amazon-preconnect-grid">
+              <Card className="amazon-connect-steps">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">How it works</span>
+                    <h2>From approval to live research in minutes</h2>
+                  </div>
+                  <Badge tone={status.oauthAvailable ? "success" : "warning"}>
+                    {status.oauthAvailable
+                      ? "Ready to connect"
+                      : "Activation needed"}
+                  </Badge>
+                </div>
+                <ol>
+                  <li>
+                    <span>1</span>
+                    <div>
+                      <strong>Sign in securely with Amazon</strong>
+                      <p>
+                        RizPoint sends you to Amazon. Your password never
+                        touches this application.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>2</span>
+                    <div>
+                      <strong>Approve your seller account</strong>
+                      <p>
+                        Amazon returns a short-lived authorization code through
+                        the verified callback.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>3</span>
+                    <div>
+                      <strong>Start researching live evidence</strong>
+                      <p>
+                        RizPoint discovers marketplaces, validates capabilities,
+                        and stores the refresh token encrypted.
+                      </p>
+                    </div>
+                  </li>
+                </ol>
+              </Card>
+              <Card className="amazon-access-preview">
+                <span className="eyebrow">Included with Amazon</span>
+                <h2>What becomes available</h2>
+                <div>
+                  <span>
+                    <Store aria-hidden="true" />
+                    <strong>Catalog products</strong>
+                    <small>ASIN, barcode, and keyword catalog search</small>
+                  </span>
+                  <span>
+                    <ShoppingBag aria-hidden="true" />
+                    <strong>Competitive offers</strong>
+                    <small>Current offer evidence when Amazon returns it</small>
+                  </span>
+                  <span>
+                    <DatabaseZap aria-hidden="true" />
+                    <strong>Fees & eligibility</strong>
+                    <small>Scenario-bound fees and seller restrictions</small>
+                  </span>
+                </div>
                 <p>
-                  Keep the refresh token out of the browser. Complete the
-                  one-time import on the RizPoint server.
+                  Historical demand, keyword volume, and reverse-ASIN ranks
+                  still require separate licensed providers.
                 </p>
-              </div>
-              <Badge tone={status.selfAuthorizedReady ? "success" : "neutral"}>
-                {status.selfAuthorizedReady ? "Completed" : "Available now"}
-              </Badge>
+              </Card>
             </div>
-            <ol>
-              <li>
-                <span>1</span>
-                <div>
-                  <strong>Locate the private SP-API application</strong>
-                  <p>
-                    Open Solution Provider Portal and confirm its approved roles
-                    and LWA credentials.
-                  </p>
+          )}
+
+          {connected ? (
+            <>
+              <Card className="amazon-marketplaces-card">
+                <div className="section-heading">
+                  <div>
+                    <h2>Connected marketplaces</h2>
+                    <p>
+                      Discovered from Sellers API marketplace participations.
+                    </p>
+                  </div>
+                  <Badge tone="info">Tenant scoped</Badge>
                 </div>
-              </li>
-              <li>
-                <span>2</span>
-                <div>
-                  <strong>Authorize the Seller Central account</strong>
-                  <p>
-                    As the account Primary User, choose Authorize app and
-                    securely capture the new refresh token.
-                  </p>
+                {status.connection?.marketplaces.length ? (
+                  <div className="amazon-marketplace-list">
+                    {status.connection.marketplaces.map((marketplace) => (
+                      <div key={marketplace.marketplaceId}>
+                        <div>
+                          <strong>{marketplace.name}</strong>
+                          <span>
+                            {[
+                              marketplace.countryCode,
+                              marketplace.defaultCurrencyCode,
+                              marketplace.defaultLanguageCode,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </div>
+                        <div className="badge-stack">
+                          {!marketplace.isParticipating ? (
+                            <Badge tone="warning">Unavailable</Badge>
+                          ) : null}
+                          {marketplace.hasSuspendedListings ? (
+                            <Badge tone="danger">Listings suspended</Badge>
+                          ) : null}
+                          {marketplace.isDefault ? (
+                            <Badge tone="success">Active</Badge>
+                          ) : marketplace.isParticipating ? (
+                            <Button
+                              size="sm"
+                              variant="quiet"
+                              onClick={() =>
+                                void action(
+                                  "SET_DEFAULT_MARKETPLACE",
+                                  marketplace.marketplaceId,
+                                )
+                              }
+                              loading={busy === "SET_DEFAULT_MARKETPLACE"}
+                            >
+                              Use marketplace
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="amazon-empty">
+                    <strong>No marketplaces discovered yet.</strong>
+                    <span>
+                      Connect and test Amazon to retrieve authorized marketplace
+                      participations.
+                    </span>
+                  </div>
+                )}
+              </Card>
+
+              <Card className="amazon-capabilities-card">
+                <div className="section-heading">
+                  <div>
+                    <h2>Capability status</h2>
+                    <p>
+                      Availability can differ by marketplace and granted role.
+                    </p>
+                  </div>
                 </div>
-              </li>
-              <li>
-                <span>3</span>
-                <div>
-                  <strong>Prepare the server-only environment</strong>
-                  <p>
-                    Use the ignored owner-only file described in{" "}
-                    <code>docs/AMAZON_CONNECTION.md</code>. Never place
-                    credentials in web or <code>NEXT_PUBLIC_*</code> settings.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span>4</span>
-                <div>
-                  <strong>Run the secure connection command</strong>
-                  <p>
-                    <code>pnpm sp-api:connect</code> validates Amazon, encrypts
-                    the refresh token, and discovers marketplaces.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span>5</span>
-                <div>
-                  <strong>Return here and test</strong>
-                  <p>
-                    This screen detects the connection automatically. Use Test
-                    connection for a fresh worker-side validation.
-                  </p>
-                </div>
-              </li>
-            </ol>
+                {status.connection?.capabilities.length ? (
+                  <div className="amazon-capability-table-wrap">
+                    <table className="amazon-capability-table">
+                      <thead>
+                        <tr>
+                          <th>Capability</th>
+                          <th>Marketplace</th>
+                          <th>Status</th>
+                          <th>Evidence</th>
+                          <th>Last checked</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {status.connection.capabilities.map((capability) => {
+                          const presentation = capabilityPresentation(
+                            capability.state,
+                          );
+                          return (
+                            <tr
+                              key={`${capability.marketplaceId}:${capability.capability}`}
+                            >
+                              <td>
+                                {capabilityLabels[capability.capability] ??
+                                  capability.capability
+                                    .replaceAll("_", " ")
+                                    .toLowerCase()}
+                              </td>
+                              <td>
+                                {status.connection?.marketplaces.find(
+                                  (item) =>
+                                    item.marketplaceId ===
+                                    capability.marketplaceId,
+                                )?.name ?? "Known marketplace"}
+                              </td>
+                              <td>
+                                <Badge tone={presentation.tone}>
+                                  {presentation.label}
+                                </Badge>
+                                {capability.retryAt ? (
+                                  <span>
+                                    Retry after {dateTime(capability.retryAt)}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td>
+                                <strong>LIVE AMAZON</strong>
+                                <span>
+                                  {capability.completeness.toLowerCase()} ·{" "}
+                                  {capability.freshness.toLowerCase()}
+                                </span>
+                              </td>
+                              <td>{dateTime(capability.checkedAt)}</td>
+                            </tr>
+                          );
+                        })}
+                        {unavailableFamilies.map((family) => (
+                          <tr key={family.label}>
+                            <td>
+                              <strong>{family.label}</strong>
+                              <span>{family.detail}</span>
+                            </td>
+                            <td>All marketplaces</td>
+                            <td>
+                              <Badge tone="neutral">Provider required</Badge>
+                            </td>
+                            <td>
+                              <strong>NOT AVAILABLE</strong>
+                              <span>No value shown</span>
+                            </td>
+                            <td>—</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="amazon-empty">
+                    <strong>Capabilities not validated.</strong>
+                    <span>
+                      No unsupported metric will be presented as live Amazon
+                      data.
+                    </span>
+                  </div>
+                )}
+              </Card>
+            </>
+          ) : null}
+
+          <Card className="amazon-private-option">
+            <div>
+              <span className="amazon-private-option__icon">
+                <KeyRound aria-hidden="true" />
+              </span>
+              <span>
+                <strong>Using a private SP-API application?</strong>
+                <small>
+                  Keep the refresh token out of the browser with secure
+                  server-side self-authorization.
+                </small>
+              </span>
+            </div>
+            <Button variant="secondary" onClick={() => setSetupOpen(true)}>
+              View secure setup <ArrowRight aria-hidden="true" />
+            </Button>
           </Card>
+
+          {setupOpen ? (
+            <div
+              className="amazon-setup-backdrop"
+              role="presentation"
+              onMouseDown={(event) => {
+                if (event.currentTarget === event.target) setSetupOpen(false);
+              }}
+            >
+              <section
+                className="amazon-setup-drawer"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="amazon-private-setup-title"
+              >
+                <header>
+                  <div>
+                    <span className="eyebrow">Private owner connection</span>
+                    <h2 id="amazon-private-setup-title">
+                      Secure self-authorization
+                    </h2>
+                    <p>
+                      Complete this once on the RizPoint server. Credentials
+                      never enter browser storage, URLs, or client-side state.
+                    </p>
+                  </div>
+                  <Button
+                    variant="quiet"
+                    aria-label="Close secure Amazon setup"
+                    onClick={() => setSetupOpen(false)}
+                  >
+                    <X aria-hidden="true" />
+                  </Button>
+                </header>
+                <ol className="amazon-private-steps">
+                  <li>
+                    <span>1</span>
+                    <div>
+                      <strong>Locate the private SP-API application</strong>
+                      <p>
+                        In Solution Provider Portal, confirm Product Listing and
+                        Pricing roles and view the LWA credentials.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>2</span>
+                    <div>
+                      <strong>Authorize the Seller Central account</strong>
+                      <p>
+                        As the Primary User, authorize the app and securely
+                        capture the refresh token.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>3</span>
+                    <div>
+                      <strong>Prepare the owner-only environment</strong>
+                      <p>
+                        Follow <code>docs/AMAZON_CONNECTION.md</code>. Never use
+                        web settings or <code>NEXT_PUBLIC_*</code> variables.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>4</span>
+                    <div>
+                      <strong>Connect and encrypt</strong>
+                      <p>
+                        Run <code>pnpm sp-api:connect</code>. RizPoint validates
+                        Amazon, encrypts the refresh token, and discovers
+                        marketplaces.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>5</span>
+                    <div>
+                      <strong>Return to this workspace</strong>
+                      <p>
+                        The status updates automatically. Test the connection
+                        and review each proven capability.
+                      </p>
+                    </div>
+                  </li>
+                </ol>
+                <footer>
+                  <ShieldCheck aria-hidden="true" />
+                  <span>
+                    <strong>Security boundary</strong>
+                    <small>
+                      Access tokens stay in worker memory. Refresh tokens are
+                      encrypted at rest and never returned by an API.
+                    </small>
+                  </span>
+                </footer>
+              </section>
+            </div>
+          ) : null}
         </>
       )}
     </main>

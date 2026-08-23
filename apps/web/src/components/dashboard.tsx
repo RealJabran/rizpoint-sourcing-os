@@ -7,11 +7,15 @@ import {
   Boxes,
   CheckCircle2,
   Clock3,
+  Compass,
+  FileSpreadsheet,
   FolderKanban,
   History,
+  LayoutGrid,
   PackageSearch,
   Radar,
   ScanLine,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
@@ -77,6 +81,29 @@ function MetricModule({
   );
 }
 
+function QuickAction({
+  href,
+  icon,
+  label,
+  detail,
+}: {
+  href: string;
+  icon: ReactNode;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <Link href={href} className="dashboard-quick-action">
+      <span>{icon}</span>
+      <span>
+        <strong>{label}</strong>
+        <small>{detail}</small>
+      </span>
+      <ArrowRight aria-hidden="true" />
+    </Link>
+  );
+}
+
 function DashboardLoading() {
   return (
     <div className="dashboard-loading" aria-label="Loading dashboard">
@@ -113,15 +140,16 @@ function ProviderCard({
     <Card
       className={`dashboard-connection ${connected ? "dashboard-connection--live" : ""}`}
     >
+      <div className="dashboard-connection__glow" aria-hidden="true" />
       <div className="dashboard-connection__top">
         <span className="amazon-provider-mark" aria-hidden="true">
           a
         </span>
         <div>
-          <span className="eyebrow">Amazon Selling Partner API</span>
+          <span className="eyebrow">Amazon data layer</span>
           <h2>
             {connected
-              ? "Amazon is connected"
+              ? "Your seller account is connected"
               : (amazonPresentation?.label ?? "Checking Amazon")}
           </h2>
         </div>
@@ -157,13 +185,19 @@ function ProviderCard({
             : "provider required"}
         </span>
       </div>
-      <ButtonLink
-        href="/settings/integrations/amazon"
-        variant="secondary"
-        size="sm"
-      >
-        Manage connection <ArrowRight aria-hidden="true" />
-      </ButtonLink>
+      <div className="dashboard-connection__footer">
+        <span>
+          <ShieldCheck aria-hidden="true" /> Encrypted, tenant-scoped access
+        </span>
+        <ButtonLink
+          href="/settings/integrations/amazon"
+          variant="secondary"
+          size="sm"
+        >
+          {connected ? "Manage connection" : "Connect Amazon"}{" "}
+          <ArrowRight aria-hidden="true" />
+        </ButtonLink>
+      </div>
     </Card>
   );
 }
@@ -231,13 +265,18 @@ export function Dashboard() {
   return (
     <main className="dashboard-page">
       <PageHeader
-        kicker="Command center"
-        title="Research with confidence"
-        description="Your live sourcing work, recent evidence, and next decisions in one place."
+        kicker="Workspace overview"
+        title="Your sourcing command center"
+        description="Move from supplier files and product ideas to evidence-backed decisions."
         actions={
-          <ButtonLink href="/product-research">
-            <PackageSearch aria-hidden="true" /> Research product
-          </ButtonLink>
+          <>
+            <ButtonLink href="/uploads" variant="secondary">
+              <FileSpreadsheet aria-hidden="true" /> New supplier scan
+            </ButtonLink>
+            <ButtonLink href="/product-research">
+              <PackageSearch aria-hidden="true" /> Research product
+            </ButtonLink>
+          </>
         }
       />
       {state.kind === "loading" ? <DashboardLoading /> : null}
@@ -281,6 +320,37 @@ export function Dashboard() {
               </ButtonLink>
             </Card>
           </div>
+
+          <section className="dashboard-quick-actions" aria-label="Quick start">
+            <div className="dashboard-quick-actions__label">
+              <span>Quick start</span>
+              <small>Open a focused workflow</small>
+            </div>
+            <QuickAction
+              href="/product-research"
+              icon={<PackageSearch aria-hidden="true" />}
+              label="Research a product"
+              detail="ASIN, barcode, or URL"
+            />
+            <QuickAction
+              href="/product-explorer"
+              icon={<Compass aria-hidden="true" />}
+              label="Explore products"
+              detail="Filter your evidence universe"
+            />
+            <QuickAction
+              href="/uploads"
+              icon={<FileSpreadsheet aria-hidden="true" />}
+              label="Scan supplier file"
+              detail="CSV, XLS, or XLSX"
+            />
+            <QuickAction
+              href="/research-projects"
+              icon={<LayoutGrid aria-hidden="true" />}
+              label="Open projects"
+              detail="Compare and decide"
+            />
+          </section>
 
           <section className="dashboard-metrics" aria-label="Workspace summary">
             <MetricModule

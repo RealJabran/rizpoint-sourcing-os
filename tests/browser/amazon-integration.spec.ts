@@ -14,12 +14,62 @@ test.describe("Amazon integration workspace", () => {
     await expect(
       page.getByRole("heading", { name: "Amazon integration" }),
     ).toBeVisible();
-    await expect(page.getByText("No live Amazon data")).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: "Connect your Amazon seller account",
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: /Connect professional seller account/i })
+      .click();
     await expect(
       page.getByRole("heading", { name: "Secure self-authorization" }),
     ).toBeVisible();
     await expect(page.getByText("pnpm sp-api:connect")).toBeVisible();
     expectNoUnexpectedBrowserFailures(failures);
+  });
+
+  test("starts the professional seller OAuth journey with one primary action", async ({
+    page,
+  }) => {
+    await page.route("**/api/providers/amazon", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          providerName: "Amazon Selling Partner API",
+          connectionState: "NOT_CONNECTED",
+          dataOrigin: "NONE",
+          localDemo: false,
+          oauthAvailable: true,
+          selfAuthorizedReady: false,
+          latestAction: null,
+          connection: null,
+        }),
+      }),
+    );
+    await page.route("**/api/providers/amazon/oauth/start", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().postDataJSON()).toEqual({
+        marketplaceId: "ATVPDKIKX0DER",
+      });
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          authorizationUrl:
+            "/settings/integrations/amazon?authorization=processing",
+        }),
+      });
+    });
+    await page.goto("/settings/integrations/amazon");
+    await expect(page.getByText("Ready to connect")).toBeVisible();
+    await page
+      .getByRole("button", { name: /Connect professional seller account/i })
+      .click();
+    await expect(
+      page.getByText(
+        "Amazon approved access. RizPoint is securely validating your seller account.",
+      ),
+    ).toBeVisible();
   });
 
   test("remains usable at mobile width", async ({ page }) => {
@@ -96,7 +146,9 @@ test.describe("Amazon integration workspace", () => {
     );
     await page.goto("/settings/integrations/amazon");
     await expect(
-      page.getByText("LIVE AMAZON · tenant connection"),
+      page.getByRole("heading", {
+        name: "Your professional seller account is connected",
+      }),
     ).toBeVisible();
     await expect(
       page.getByRole("cell", { name: "Catalog lookup & search" }),

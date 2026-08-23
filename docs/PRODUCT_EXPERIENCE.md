@@ -3,9 +3,11 @@
 ## Experience principles
 
 RizPoint is a research operating system: calm, precise, evidence-led, and dense
-enough for professional sourcing work. The interface uses a warm neutral canvas,
-pine surfaces, teal actions, slate typography, restrained borders, and small
-amounts of motion. Color never carries status alone.
+enough for professional sourcing work. The interface uses an ink-and-pine shell,
+a cool neutral canvas, jade primary actions, restrained cobalt accents, slate
+typography, layered borders, and small amounts of motion. Amazon connection
+actions use a focused amber accent without making amber a generic application
+status. Color never carries status alone.
 
 Normal workflows use human labels rather than database identifiers. Technical
 references remain available only where they are useful as evidence or support
@@ -46,6 +48,10 @@ The web design system is split by responsibility under
   global controls.
 - `workspaces.css`: dashboard and representative domain workspace layouts.
 - `responsive.css`: deliberate 1440, 1280, 1024, 768, and 390-pixel behavior.
+- `brand-refresh.css`: shared shell, dashboard, control, and research-surface
+  refinement built on the semantic token layer.
+- `amazon-connect.css`: the Amazon onboarding, live-connection, capability,
+  and secure private-owner setup experience.
 
 Reusable React primitives live in `apps/web/src/components/ui.tsx`. Lucide icons
 provide a consistent accessible icon set; icons remain decorative when adjacent
@@ -62,6 +68,11 @@ explicit loading, empty, error, partial, and provider-required states.
 The product workspace renders only evidence families that are present. Missing
 history and keyword intelligence are explained as provider requirements rather
 than represented by empty charts or synthetic values.
+
+The Dashboard is a command center rather than a decorative summary. It makes
+Amazon health, the active marketplace, recommended attention, quick workflow
+entry points, recent research, monitoring changes, and sourcing work visible in
+one scan. Its metrics continue to come from persisted workspace state.
 
 ## Responsive and theme behavior
 
