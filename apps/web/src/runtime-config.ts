@@ -48,6 +48,7 @@ export function assertProductionConfiguration() {
     "NEXTAUTH_SECRET",
     "NEXTAUTH_URL",
     "RIZPOINT_PRIVATE_ORGANIZATION_SLUG",
+    "MFA_CREDENTIAL_KEY_V1",
     "S3_SERVER_SIDE_ENCRYPTION",
     "S3_VERSIONING_ENABLED",
     "S3_LIFECYCLE_MANAGED",
@@ -69,6 +70,12 @@ export function assertProductionConfiguration() {
   if ((process.env.NEXTAUTH_SECRET?.length ?? 0) < 32)
     throw new Error(
       "production_configuration_invalid:nextauth_secret_too_short",
+    );
+  if (
+    Buffer.from(process.env.MFA_CREDENTIAL_KEY_V1 ?? "", "base64").length !== 32
+  )
+    throw new Error(
+      "production_configuration_invalid:mfa_credential_key_invalid",
     );
   if (!databaseUsesTls(process.env.DATABASE_URL))
     throw new Error("production_configuration_invalid:database_tls_required");

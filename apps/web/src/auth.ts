@@ -1,48 +1,10 @@
-import {
-  randomBytes,
-  scrypt as scryptCallback,
-  timingSafeEqual,
-} from "node:crypto";
-import { promisify } from "node:util";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
-import { consumeApiRateLimit, db } from "@rizpoint/database";
+import { db } from "@rizpoint/database";
+import { permissionsForRole } from "./security/authorization";
+import { completeMfaAuthentication } from "./security/authentication";
 
-const scrypt = promisify(scryptCallback);
-
-type PasswordHash = {
-  salt: string;
-  digest: string;
-};
-
-function parsePasswordHash(value: string): PasswordHash | null {
-  const [scheme, salt, digest] = value.split("$");
-  return scheme === "scrypt-v1" && salt && digest ? { salt, digest } : null;
-}
-
-export async function verifyPassword(password: string, stored: string) {
-  const parsed = parsePasswordHash(stored);
-  if (!parsed) return false;
-  const derived = (await scrypt(
-    password,
-    Buffer.from(parsed.salt, "base64url"),
-    64,
-  )) as Buffer;
-  const expected = Buffer.from(parsed.digest, "base64url");
-  return (
-    expected.length === derived.length && timingSafeEqual(expected, derived)
-  );
-}
-
-export async function createPasswordHash(password: string) {
-  if (password.length < 14) throw new Error("PASSWORD_TOO_SHORT");
-  const salt = randomBytes(16);
-  const derived = (await scrypt(password, salt, 64)) as Buffer;
-  return `scrypt-v1$${salt.toString("base64url")}$$${derived.toString("base64url")}`.replace(
-    "$$",
-    "$",
-  );
-}
+export { createPasswordHash, verifyPassword } from "./security/password-hash";
 
 export const authOptions: NextAuthOptions = {
   ...(process.env.NEXTAUTH_SECRET
@@ -52,48 +14,23 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
-      name: "RizPoint private access",
+      name: "RizPoint MFA challenge",
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        challengeToken: { label: "Authentication challenge", type: "text" },
+        mfaCode: { label: "Authenticator code", type: "text" },
+        recoveryCode: { label: "Recovery code", type: "text" },
       },
       async authorize(credentials) {
-        const email = credentials?.email?.trim().toLowerCase();
-        const password = credentials?.password;
-        if (!email || !password) return null;
-        const user = await db.user.findUnique({
-          where: { email },
-          include: {
-            memberships: {
-              take: 1,
-              orderBy: { createdAt: "asc" },
-              include: { organization: { select: { slug: true } } },
-            },
-          },
+        const challengeToken = credentials?.challengeToken;
+        if (!challengeToken) return null;
+        const principal = await completeMfaAuthentication({
+          challengeToken,
+          ...(credentials?.mfaCode ? { code: credentials.mfaCode } : {}),
+          ...(credentials?.recoveryCode
+            ? { recoveryCode: credentials.recoveryCode }
+            : {}),
         });
-        if (!user || !user.active || user.memberships.length !== 1) return null;
-        if (
-          process.env.RIZPOINT_PRIVATE_MODE === "true" &&
-          user.memberships[0]?.organization.slug !==
-            process.env.RIZPOINT_PRIVATE_ORGANIZATION_SLUG
-        )
-          return null;
-        const rateLimit = await consumeApiRateLimit({
-          organizationId: user.memberships[0]!.organizationId,
-          scope: "auth.credentials",
-          principal: `email:${email}`,
-          limit: 10,
-          windowSeconds: 15 * 60,
-        });
-        if (!rateLimit.allowed) return null;
-        if (!(await verifyPassword(password, user.passwordHash))) return null;
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.displayName ?? user.email,
-          organizationId: user.memberships[0]!.organizationId,
-          sessionEpoch: user.sessionEpoch,
-        } as never;
+        return principal as never;
       },
     }),
   ],
@@ -102,10 +39,16 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         const principal = user as unknown as {
           organizationId: string;
+          role: "OWNER" | "ADMIN" | "RESEARCHER" | "VIEWER";
           sessionEpoch: number;
+          securitySessionId: string;
         };
         token.organizationId = principal.organizationId;
+        token.role = principal.role;
+        token.permissions = permissionsForRole(principal.role);
         token.sessionEpoch = principal.sessionEpoch;
+        token.securitySessionId = principal.securitySessionId;
+        token.mfaVerified = true;
       }
       return token;
     },
@@ -113,8 +56,24 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.sub ?? "";
         session.user.organizationId = String(token.organizationId ?? "");
+        session.user.role = String(token.role ?? "VIEWER") as
+          "OWNER" | "ADMIN" | "RESEARCHER" | "VIEWER";
+        session.user.permissions = Array.isArray(token.permissions)
+          ? token.permissions.map(String)
+          : [];
       }
       return session;
+    },
+  },
+  events: {
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      const sessionId = String(token?.securitySessionId ?? "");
+      if (!sessionId) return;
+      await db.userSession.updateMany({
+        where: { id: sessionId, revokedAt: null },
+        data: { revokedAt: new Date(), revokedReason: "USER_SIGN_OUT" },
+      });
     },
   },
   cookies: {

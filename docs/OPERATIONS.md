@@ -4,7 +4,20 @@
 
 Use immutable image digests built by CI. Supply secrets through the deployment secret manager, not an environment file in Git. Set `RIZPOINT_PRIVATE_MODE=true`, `PHASE_ZERO_DEMO_MODE=false`, a unique `NEXTAUTH_SECRET`, and a private organization slug. Run migrations once with the migrator identity before releasing worker and web containers. Only the web service is public behind TLS; PostgreSQL, Redis, scanner, ClamAV, worker metrics, and object storage remain private.
 
-Bootstrap the owner in a controlled maintenance session: pass the password through protected standard input to `node scripts/create-password-hash.mjs` (never as an argument or environment variable), create the organization and `users`/`organization_memberships` rows through the approved database administration channel, then discard the plaintext input. The hash is safe to store only in the database.
+Bootstrap the first named owner in a controlled maintenance session: pass a
+14+ character mixed-complexity temporary password through protected standard
+input to `node scripts/create-password-hash.mjs` (never as an argument or
+environment variable), create the organization and personal user/membership
+through the approved administration channel, then discard the plaintext input.
+Never create a shared or generic administrator identity. The first login forces
+the password lifecycle and TOTP enrollment. Subsequent named users are created
+in **Settings → Security**, without direct database editing.
+
+Supply `MFA_CREDENTIAL_KEY_V1` as exactly 32 random bytes, base64 encoded, from
+the deployment secret manager. Do not reuse the provider vault key. Production
+fails closed when it is missing or invalid. Follow
+`AMAZON_SECURITY_CONTROLS.md` for quarterly review, 24-hour termination, MFA
+reset, and Amazon/encryption-key rotation.
 
 ## Backups and restore verification
 
@@ -50,6 +63,12 @@ browser output for server-only credential markers. Run
 `pnpm check:production-hardening` to enforce the Research Companion permission
 allowlist and existing container/deployment controls. See
 `docs/SECURITY_AUDIT.md` for the full audit mapping.
+
+At least bi-weekly, review tenant audit events and deployment/SIEM logs.
+Configure an internet-edge WAF, 15-minute managed-device screen lock, encrypted
+endpoint/server/database/object/backup storage, monthly vulnerability scans,
+and the external controls classified in `AMAZON_SECURITY_CONTROLS.md`;
+application rate limits and idle sessions are not infrastructure substitutes.
 
 ## Alerts
 

@@ -68,6 +68,11 @@ export const navigationGroups: NavigationGroup[] = [
     icon: "search",
     items: [
       {
+        label: "Security",
+        href: "/settings/security",
+        icon: "shield",
+      },
+      {
         label: "Research product",
         href: "/product-research",
         icon: "search",

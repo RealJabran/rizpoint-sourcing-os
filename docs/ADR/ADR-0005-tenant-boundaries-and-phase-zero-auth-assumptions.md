@@ -6,4 +6,4 @@ All tenant-owned records contain `organization_id`, and repositories require org
 
 ## Consequences
 
-Identity-aware authorization is deferred without allowing future data access to bypass tenant scoping. The temporary private-access token is a deployment gate, not a replacement for organization membership or roles; those remain required before multi-user release.
+At the time of this decision, identity-aware authorization was deferred without allowing future data access to bypass tenant scoping. The temporary private-access token was a deployment gate, not a replacement for organization membership or roles. Prompt 36G supersedes that temporary authentication assumption with named users, mandatory TOTP, durable sessions, and centralized role permissions while preserving these tenant boundaries.

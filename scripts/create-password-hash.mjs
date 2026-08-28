@@ -7,9 +7,16 @@ if (process.argv.length > 2)
     "Pass the password on standard input, never as a command-line argument.",
   );
 const password = (await readFile(0, "utf8")).replace(/\r?\n$/, "");
-if (!password || password.length < 14) {
+if (
+  !password ||
+  password.length < 14 ||
+  !/[A-Z]/u.test(password) ||
+  !/[a-z]/u.test(password) ||
+  !/[0-9]/u.test(password) ||
+  !/[^A-Za-z0-9]/u.test(password)
+) {
   throw new Error(
-    "Pass a password of at least 14 characters on standard input.",
+    "Pass 14+ characters with uppercase, lowercase, number, and special character on standard input.",
   );
 }
 const scrypt = promisify(scryptCallback);

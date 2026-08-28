@@ -537,6 +537,21 @@ export async function disconnectAmazonConnection(input: {
         payload: { amazonRevocationRequiredSeparately: true },
       },
     });
+    await transaction.securityAuditEvent.upsert({
+      where: {
+        organizationId_idempotencyKey: {
+          organizationId: input.organizationId,
+          idempotencyKey: `security-amazon-disconnect:${input.connectionId}`,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        eventType: "PROVIDER_DISCONNECTED",
+        idempotencyKey: `security-amazon-disconnect:${input.connectionId}`,
+        context: { localRevocationOnly: true },
+      },
+      update: {},
+    });
     return true;
   });
 }

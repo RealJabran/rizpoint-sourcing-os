@@ -2,6 +2,11 @@ import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@rizpoint/database";
 import { assertProductionConfiguration } from "./src/runtime-config";
+import {
+  requiredPermissionForRequest,
+  roleHasPermission,
+} from "./src/security/authorization";
+import { SESSION_IDLE_TIMEOUT_MS } from "./src/security/authentication";
 
 const publicPaths = [
   "/login",
@@ -9,6 +14,10 @@ const publicPaths = [
   "/api/health",
   "/api/ready",
   "/api/providers/amazon/oauth/callback",
+  "/api/security/login/start",
+  "/api/security/mfa/enrollment/start",
+  "/api/security/mfa/enrollment/confirm",
+  "/api/security/password/reset",
   "/favicon.ico",
 ];
 
@@ -41,30 +50,91 @@ export async function proxy(request: NextRequest) {
       : {}),
   });
   const sessionEpoch = Number(token?.sessionEpoch);
-  if (token?.sub && token.organizationId && Number.isInteger(sessionEpoch)) {
+  const securitySessionId = String(token?.securitySessionId ?? "");
+  if (
+    token?.sub &&
+    token.organizationId &&
+    token.mfaVerified === true &&
+    securitySessionId &&
+    Number.isInteger(sessionEpoch)
+  ) {
     const privateOrganizationSlug =
       process.env.RIZPOINT_PRIVATE_ORGANIZATION_SLUG;
     if (!privateOrganizationSlug) return unauthorized(request, pathname);
+    const now = new Date();
     const user = await db.user.findFirst({
       where: {
         id: token.sub,
         active: true,
         sessionEpoch,
+        mustChangePassword: false,
+        passwordExpiresAt: { gt: now },
+        mfaFactor: { is: { confirmedAt: { not: null }, disabledAt: null } },
+        sessions: {
+          some: {
+            id: securitySessionId,
+            organizationId: String(token.organizationId),
+            sessionEpoch,
+            revokedAt: null,
+            expiresAt: { gt: now },
+            lastSeenAt: {
+              gt: new Date(now.getTime() - SESSION_IDLE_TIMEOUT_MS),
+            },
+          },
+        },
         memberships: {
           some: {
             organizationId: String(token.organizationId),
+            active: true,
             organization: { slug: privateOrganizationSlug },
           },
         },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        memberships: {
+          where: {
+            organizationId: String(token.organizationId),
+            active: true,
+          },
+          take: 1,
+          select: { role: true },
+        },
+      },
     });
     if (!user) return unauthorized(request, pathname);
+    const role = user.memberships[0]?.role;
+    if (!role) return unauthorized(request, pathname);
+    const requiredPermission = requiredPermissionForRequest(
+      pathname,
+      request.method,
+    );
+    if (!roleHasPermission(role, requiredPermission))
+      return forbidden(request, pathname);
+    await db.userSession.updateMany({
+      where: {
+        id: securitySessionId,
+        userId: user.id,
+        organizationId: String(token.organizationId),
+        revokedAt: null,
+        lastSeenAt: { lt: new Date(now.getTime() - 60_000) },
+      },
+      data: { lastSeenAt: now },
+    });
     const headers = new Headers(request.headers);
     headers.set("x-rizpoint-organization-id", String(token.organizationId));
+    headers.set("x-rizpoint-user-id", user.id);
+    headers.set("x-rizpoint-role", role);
+    headers.set("x-rizpoint-required-permission", requiredPermission);
     return NextResponse.next({ request: { headers } });
   }
   return unauthorized(request, pathname);
+}
+
+function forbidden(request: NextRequest, pathname: string): NextResponse {
+  if (pathname.startsWith("/api/"))
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  return NextResponse.redirect(new URL("/", request.url));
 }
 
 function isLoopbackUrl(value: string | undefined): boolean {

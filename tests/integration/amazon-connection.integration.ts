@@ -290,6 +290,9 @@ try {
   await db.workflowAuditEvent.deleteMany({
     where: { organizationId: { in: organizations } },
   });
+  await db.securityAuditEvent.deleteMany({
+    where: { organizationId: { in: organizations } },
+  });
   await db.providerConnectionJob.deleteMany({
     where: { organizationId: { in: organizations } },
   });

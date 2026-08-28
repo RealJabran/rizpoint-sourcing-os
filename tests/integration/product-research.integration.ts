@@ -23,7 +23,6 @@ const organizations = await Promise.all([
 ]);
 const organizationA = organizations[0]!;
 const organizationB = organizations[1]!;
-let productId: string | undefined;
 
 try {
   const first = await queueProductResearchRun({
@@ -53,52 +52,71 @@ try {
     null,
   );
   const claimed = await claimProductResearchRun(first.id);
-  assert.equal(claimed?.status, "RUNNING");
-  await completeProductResearchRun({
-    runId: first.id,
-    organizationId: organizationA.id,
-    items: [
-      {
-        product: {
-          asin: "B000000001",
-          title: "Stored manual research product",
-          brand: "Fixture Brand",
-          identifiers: [
-            { type: "ASIN", value: "B000000001" },
-            { type: "UPC", value: "012345678905" },
-          ],
-          images: [{ url: "https://images.example.test/product.jpg" }],
-          salesRanks: [{ classificationId: "home", rank: 42 }],
-          provenance: {
-            provider: `recorded-product-research-${suffix}`,
-            dataOrigin: "MOCK",
-            providerReference: `product-${suffix}`,
-            marketplaceId,
-            observedAt: "2026-08-22T10:00:00.000Z",
-            freshnessState: "FRESH",
-            responseCompleteness: "COMPLETE",
+  if (claimed) {
+    assert.equal(claimed.status, "RUNNING");
+    await completeProductResearchRun({
+      runId: first.id,
+      organizationId: organizationA.id,
+      items: [
+        {
+          product: {
+            asin: "B000000001",
+            title: "Stored manual research product",
+            brand: "Fixture Brand",
+            identifiers: [
+              { type: "ASIN", value: "B000000001" },
+              { type: "UPC", value: "012345678905" },
+            ],
+            images: [{ url: "https://images.example.test/product.jpg" }],
+            salesRanks: [{ classificationId: "home", rank: 42 }],
+            provenance: {
+              provider: `recorded-product-research-${suffix}`,
+              dataOrigin: "MOCK",
+              providerReference: `product-${suffix}`,
+              marketplaceId,
+              observedAt: "2026-08-22T10:00:00.000Z",
+              freshnessState: "FRESH",
+              responseCompleteness: "COMPLETE",
+            },
+            rawProviderObservation: {
+              privatePayload: "must-not-cross-browser",
+            },
           },
-          rawProviderObservation: { privatePayload: "must-not-cross-browser" },
+          evidence: {
+            catalog: { status: "AVAILABLE" },
+            pricing: { status: "UNAVAILABLE", reason: "FIXTURE_BOUNDARY" },
+          },
+          source: "Recorded demo fixture",
+          dataOrigin: "MOCK",
+          observedAt: new Date("2026-08-22T10:00:00.000Z"),
+          freshUntil: new Date("2026-08-23T10:00:00.000Z"),
+          freshnessState: "FRESH",
+          completeness: "PARTIAL",
+          status: "PARTIAL_SUCCESS",
         },
-        evidence: {
-          catalog: { status: "AVAILABLE" },
-          pricing: { status: "UNAVAILABLE", reason: "FIXTURE_BOUNDARY" },
-        },
-        source: "Recorded demo fixture",
-        dataOrigin: "MOCK",
-        observedAt: new Date("2026-08-22T10:00:00.000Z"),
-        freshUntil: new Date("2026-08-23T10:00:00.000Z"),
-        freshnessState: "FRESH",
-        completeness: "PARTIAL",
-        status: "PARTIAL_SUCCESS",
-      },
-    ],
-  });
-  const stored = await getProductResearchRun({
+      ],
+    });
+  }
+  // In the full integration gate the real local worker may legitimately win
+  // the claim race. Wait for its persisted terminal result instead of assuming
+  // this process owns the job; both paths exercise the same repository boundary.
+  let stored = await getProductResearchRun({
     organizationId: organizationA.id,
     runId: first.id,
   });
-  assert.equal(stored?.status, "PARTIAL_SUCCESS");
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (stored && ["COMPLETED", "PARTIAL_SUCCESS"].includes(stored.status))
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    stored = await getProductResearchRun({
+      organizationId: organizationA.id,
+      runId: first.id,
+    });
+  }
+  assert.ok(
+    stored && ["COMPLETED", "PARTIAL_SUCCESS"].includes(stored.status),
+    "research run should reach a persisted terminal state",
+  );
   assert.equal(stored?.items[0]?.product.asin, "B000000001");
   assert.equal(stored?.items[0]?.dataOrigin, "MOCK");
   assert.equal(stored?.items[0]?.freshnessState, "FRESH");
@@ -106,7 +124,6 @@ try {
     JSON.stringify(stored),
     /must-not-cross-browser|rawProviderObservation|privatePayload/,
   );
-  productId = stored?.items[0]?.product.id;
   assert.equal(
     await db.outboxEvent.count({
       where: { productResearchRunId: first.id },
@@ -160,8 +177,21 @@ try {
   await db.providerConnection.deleteMany({
     where: { organizationId: { in: ids } },
   });
+  // A local worker can finish an already-claimed outbox item after the first
+  // telemetry cleanup. Re-run the idempotent dependent cleanup at the tenant
+  // delete boundary so this asynchronous integration fixture cannot race it.
+  await db.providerRequestAttempt.deleteMany({
+    where: { organizationId: { in: ids } },
+  });
+  await db.providerRequestLease.deleteMany({
+    where: { organizationId: { in: ids } },
+  });
+  await db.providerCacheEntry.deleteMany({
+    where: { organizationId: { in: ids } },
+  });
   await db.organization.deleteMany({ where: { id: { in: ids } } });
-  if (productId)
-    await db.catalogProduct.deleteMany({ where: { id: productId } });
+  // Catalog identity is shared research memory keyed by marketplace/ASIN. This
+  // fixture may resolve a pre-existing product used by wholesale candidates,
+  // so tenant teardown must never delete the shared catalog entity.
   await db.$disconnect();
 }

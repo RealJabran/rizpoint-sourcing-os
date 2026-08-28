@@ -27,12 +27,41 @@ describe("production configuration", () => {
     vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
     vi.stubEnv("NEXTAUTH_URL", "https://private.test");
     vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
+    vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(32, 4).toString("base64"));
     vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
     vi.stubEnv("S3_SERVER_SIDE_ENCRYPTION", "AES256");
     vi.stubEnv("S3_VERSIONING_ENABLED", "true");
     vi.stubEnv("S3_LIFECYCLE_MANAGED", "true");
     expect(() => assertProductionConfiguration()).toThrow(
       "database_tls_required",
+    );
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects a production MFA encryption key that is not 256 bits", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "true");
+    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "false");
+    vi.stubEnv(
+      "DATABASE_URL",
+      "postgresql://user:password@db/rizpoint?sslmode=require",
+    );
+    vi.stubEnv("REDIS_URL", "rediss://redis:6379");
+    vi.stubEnv("S3_ENDPOINT", "https://storage.test");
+    vi.stubEnv("S3_PUBLIC_ENDPOINT", "https://storage-public.test");
+    vi.stubEnv("S3_BUCKET", "bucket");
+    vi.stubEnv("S3_ACCESS_KEY", "key");
+    vi.stubEnv("S3_SECRET_KEY", "secret");
+    vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
+    vi.stubEnv("NEXTAUTH_URL", "https://private.test");
+    vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
+    vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(16, 4).toString("base64"));
+    vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
+    vi.stubEnv("S3_SERVER_SIDE_ENCRYPTION", "AES256");
+    vi.stubEnv("S3_VERSIONING_ENABLED", "true");
+    vi.stubEnv("S3_LIFECYCLE_MANAGED", "true");
+    expect(() => assertProductionConfiguration()).toThrow(
+      "mfa_credential_key_invalid",
     );
     vi.unstubAllEnvs();
   });

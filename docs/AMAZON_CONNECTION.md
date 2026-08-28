@@ -1,5 +1,9 @@
 # Amazon connection runbook
 
+Authentication, access-review, and credential rotation/revocation controls are
+mapped to Amazon's current guidance in
+[AMAZON_SECURITY_CONTROLS.md](AMAZON_SECURITY_CONTROLS.md).
+
 RizPoint supports two Amazon SP-API authorization modes. `SELF_AUTHORIZED` is
 the supported path for the private owner installation. `OAUTH` is code-ready
 for a future public Amazon application, but cannot be used live until Amazon

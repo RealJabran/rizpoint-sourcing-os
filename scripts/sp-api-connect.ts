@@ -90,6 +90,14 @@ async function main() {
       revokedAt: null,
     },
   });
+  await db.securityAuditEvent.create({
+    data: {
+      organizationId: organization.id,
+      eventType: "PROVIDER_CONNECTED",
+      idempotencyKey: `security-self-authorized:${connection.id}:${observedAt.toISOString()}`,
+      context: { provider: "AMAZON_SP_API", mode: "SELF_AUTHORIZED" },
+    },
+  });
   await persistAmazonMarketplaceParticipations({
     organizationId: organization.id,
     connectionId: connection.id,

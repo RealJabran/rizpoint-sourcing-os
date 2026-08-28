@@ -3,9 +3,12 @@ import { NextRequest } from "next/server";
 
 const getToken = vi.fn();
 const findFirst = vi.fn();
+const updateMany = vi.fn();
 
 vi.mock("next-auth/jwt", () => ({ getToken }));
-vi.mock("@rizpoint/database", () => ({ db: { user: { findFirst } } }));
+vi.mock("@rizpoint/database", () => ({
+  db: { user: { findFirst }, userSession: { updateMany } },
+}));
 
 function productionEnvironment() {
   vi.stubEnv("NODE_ENV", "production");
@@ -24,6 +27,7 @@ function productionEnvironment() {
   vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
   vi.stubEnv("NEXTAUTH_URL", "https://private.test");
   vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
+  vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(32, 4).toString("base64"));
   vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
   vi.stubEnv("S3_SERVER_SIDE_ENCRYPTION", "AES256");
   vi.stubEnv("S3_VERSIONING_ENABLED", "true");
@@ -118,6 +122,8 @@ describe("private production proxy", () => {
       sub: "user_1",
       organizationId: "org_1",
       sessionEpoch: 2,
+      securitySessionId: "session_1",
+      mfaVerified: true,
     });
     findFirst.mockResolvedValue(null);
     const { proxy } = await import("../proxy.js");
@@ -127,14 +133,58 @@ describe("private production proxy", () => {
     expect(response.status).toBe(401);
   });
 
+  it("rejects a password-only token before MFA completion", async () => {
+    productionEnvironment();
+    getToken.mockResolvedValue({
+      sub: "user_1",
+      organizationId: "org_1",
+      sessionEpoch: 2,
+      securitySessionId: "session_1",
+      mfaVerified: false,
+    });
+    const { proxy } = await import("../proxy.js");
+    const response = await proxy(
+      new NextRequest("https://private.test/api/suppliers"),
+    );
+    expect(response.status).toBe(401);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("enforces role permissions at the shared server boundary", async () => {
+    productionEnvironment();
+    getToken.mockResolvedValue({
+      sub: "user_1",
+      organizationId: "org_1",
+      sessionEpoch: 2,
+      securitySessionId: "session_1",
+      mfaVerified: true,
+    });
+    findFirst.mockResolvedValue({
+      id: "user_1",
+      memberships: [{ role: "VIEWER" }],
+    });
+    const { proxy } = await import("../proxy.js");
+    const response = await proxy(
+      new NextRequest("https://private.test/api/scans", { method: "POST" }),
+    );
+    expect(response.status).toBe(403);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("passes only a currently active membership context", async () => {
     productionEnvironment();
     getToken.mockResolvedValue({
       sub: "user_1",
       organizationId: "org_1",
       sessionEpoch: 2,
+      securitySessionId: "session_1",
+      mfaVerified: true,
     });
-    findFirst.mockResolvedValue({ id: "user_1" });
+    findFirst.mockResolvedValue({
+      id: "user_1",
+      memberships: [{ role: "OWNER" }],
+    });
+    updateMany.mockResolvedValue({ count: 1 });
     const { proxy } = await import("../proxy.js");
     const response = await proxy(
       new NextRequest("https://private.test/api/suppliers"),

@@ -2,7 +2,7 @@
 
 ## Decision
 
-Private production runs containerized web, worker, and scanner services behind TLS with managed PostgreSQL, Redis, and private S3-compatible storage. PostgreSQL and private objects are backed up independently; Redis is non-canonical and stale published work is recovered from PostgreSQL outbox/checkpoint state. Private production uses Auth.js credentials for one owner organization, revalidating active membership and session epoch at the proxy boundary. Export retention starts in persisted report mode and deletion requires an explicit deployment setting.
+Private production runs containerized web, worker, and scanner services behind TLS with managed PostgreSQL, Redis, and private S3-compatible storage. PostgreSQL and private objects are backed up independently; Redis is non-canonical and stale published work is recovered from PostgreSQL outbox/checkpoint state. Private production originally used Auth.js credentials for one owner organization, revalidating active membership and session epoch at the proxy boundary. Prompt 36G extends that boundary to named users, mandatory TOTP, durable sessions and lockout, password lifecycle, and centralized least-privilege roles without changing the private-organization deployment decision. Export retention starts in persisted report mode and deletion requires an explicit deployment setting.
 
 ## Consequences
 

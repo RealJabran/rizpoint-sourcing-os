@@ -180,7 +180,16 @@ The worker exposes `/health` for liveness and `/ready` only when PostgreSQL, Red
 
 ## Private production operation
 
-Private production uses an authenticated owner session whose membership and session epoch are revalidated at the proxy boundary. Demo mode is local-only. Web is the sole public TLS service; worker, scanner, ClamAV, PostgreSQL, Redis, metrics, and S3 administration remain private. PostgreSQL and private object storage are backed up separately; Redis is treated as recoverable transport. Expired exports are identified by a checkpoint-safe retention run, initially in persisted report mode. The download route fails closed once `expires_at` has passed (or is missing), even while report-mode retention has not yet deleted the private object. See `OPERATIONS.md` and `RECOVERY_RUNBOOK.md`.
+Private production uses a named-user session established only after password and
+TOTP authentication. Every protected request revalidates the durable session,
+15-minute idle window, password lifecycle, MFA factor, session epoch, active
+organization membership, and current role permission. Demo mode is local-only.
+Web is the sole public TLS service; worker, scanner, ClamAV, PostgreSQL, Redis,
+metrics, and S3 administration remain private. PostgreSQL and private object
+storage are backed up separately; Redis is recoverable transport. Expired
+exports use a checkpoint-safe retention run, initially in report mode. The
+download route fails closed once `expires_at` has passed or is missing. See
+`OPERATIONS.md`, `AMAZON_SECURITY_CONTROLS.md`, and `RECOVERY_RUNBOOK.md`.
 
 ## Analysis workspace
 

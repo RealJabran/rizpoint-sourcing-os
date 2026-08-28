@@ -7,6 +7,11 @@ provider redistribution policy and retention are defined in
 [PROVIDER_DATA_RIGHTS.md](PROVIDER_DATA_RIGHTS.md) and
 [PRIVACY_RETENTION.md](PRIVACY_RETENTION.md).
 
+Amazon authentication, MFA, least-privilege, access-review, and credential
+evidence is maintained in
+[AMAZON_SECURITY_CONTROLS.md](AMAZON_SECURITY_CONTROLS.md). It distinguishes
+application enforcement from deployment and operator obligations.
+
 ## Shared provider credentials and telemetry
 
 Provider secrets remain server-side. Generic licensed-provider credentials are
@@ -43,13 +48,15 @@ The browser is untrusted. Web routes enforce an organization context before quer
 
 ## Required before production rollout
 
-- Replace the temporary private-access token with identity-aware, organization membership authorization and roles before any multi-user release.
+- Private production uses named users, mandatory TOTP MFA, durable sessions,
+  organization membership, and centralized OWNER/ADMIN/RESEARCHER/VIEWER
+  permissions. Maintain the quarterly review and 24-hour termination procedure
+  in `AMAZON_SECURITY_CONTROLS.md`.
 - Keep formula-injection export tests in CI. Textual export cells beginning with `=`, `+`, `-`, `@`, tab, carriage return, or newline are already escaped.
 - Provider refresh tokens are encrypted at rest with AES-256-GCM and versioned `PROVIDER_CREDENTIAL_KEY_V1`; this key is server/worker-only and must be supplied by the deployment secret manager. Browser APIs expose connection status only, never token material.
-- Add role-based administration and a formal self-service tenant deletion
-  workflow before any multi-user commercial release. Current private-owner
-  authentication, authorization tests, audit logging, bounded retention, and
-  incident procedures are implemented.
+- Formal self-service tenant deletion remains required before any commercial
+  release. Current private-tool role administration, authentication, audit
+  logging, bounded retention, and incident procedures are implemented.
 
 ## Amazon SP-API private-application onboarding
 

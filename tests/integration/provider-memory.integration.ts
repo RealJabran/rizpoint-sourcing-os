@@ -317,7 +317,10 @@ try {
     since: new Date("2026-08-22T09:00:00.000Z"),
   });
   console.log("provider memory measured usage", JSON.stringify(usage));
-  assert.ok(usage.cacheHits >= 3);
+  // RUN 2 and RUN 3 are the two guaranteed FRESH_HIT attempts. The losing
+  // concurrent request is deliberately classified as COALESCED, not a cache
+  // hit, and asynchronous timing must not change this telemetry expectation.
+  assert.ok(usage.cacheHits >= 2);
   assert.ok(usage.cacheMisses >= 4);
   assert.ok(usage.refreshes >= 1);
   assert.ok(usage.throttles >= 1);

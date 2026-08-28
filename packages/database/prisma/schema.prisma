@@ -447,6 +447,49 @@ enum ExportKind {
 
 enum OrganizationRole {
   OWNER
+  ADMIN
+  RESEARCHER
+  VIEWER
+}
+
+enum AuthenticationChallengePurpose {
+  MFA_LOGIN
+  MFA_ENROLLMENT
+  PASSWORD_RESET
+}
+
+enum SecurityAuditEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  PASSWORD_CHANGED
+  PASSWORD_EXPIRED
+  MFA_ENROLLED
+  MFA_DISABLED
+  MFA_CHALLENGE_FAILED
+  RECOVERY_CODE_USED
+  USER_CREATED
+  USER_DISABLED
+  ROLE_CHANGED
+  ACCESS_REVIEW_COMPLETED
+  PROVIDER_CONNECTED
+  PROVIDER_DISCONNECTED
+  CREDENTIAL_ROTATED
+  SESSION_REVOKED
+}
+
+enum AccessReviewDecision {
+  APPROVED
+  REMOVE_ACCESS
+  CHANGE_ROLE
+}
+
+enum CredentialRotationType {
+  SP_API_LWA_CLIENT_SECRET
+  SP_API_REFRESH_TOKEN
+  PROVIDER_ENCRYPTION_KEY
+  MFA_ENCRYPTION_KEY
 }
 
 enum ResearchProjectMode {
@@ -854,21 +897,45 @@ model Organization {
   projectAssumptions             ProjectAssumption[]
   decisionMemos                  DecisionMemo[]
   decisionMemoSources            DecisionMemoSource[]
+  authenticationChallenges       AuthenticationChallenge[]
+  userSessions                   UserSession[]
+  accessReviews                  OrganizationAccessReview[]
+  securityAuditEvents            SecurityAuditEvent[]
+  credentialRotationRecords      CredentialRotationRecord[]
 
   @@map("organizations")
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  displayName  String?  @map("display_name")
-  passwordHash String   @map("password_hash")
-  active       Boolean  @default(true)
-  sessionEpoch Int      @default(0) @map("session_epoch")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  firstName           String?   @map("first_name")
+  lastName            String?   @map("last_name")
+  displayName         String?   @map("display_name")
+  passwordHash        String    @map("password_hash")
+  passwordChangedAt   DateTime  @default(now()) @map("password_changed_at")
+  passwordExpiresAt   DateTime  @map("password_expires_at")
+  mustChangePassword  Boolean   @default(false) @map("must_change_password")
+  active              Boolean   @default(true)
+  deactivatedAt       DateTime? @map("deactivated_at")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lastFailedLoginAt   DateTime? @map("last_failed_login_at")
+  lockedUntil         DateTime? @map("locked_until")
+  lastAuthenticatedAt DateTime? @map("last_authenticated_at")
+  sessionEpoch        Int       @default(0) @map("session_epoch")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  memberships OrganizationMembership[]
+  memberships              OrganizationMembership[]
+  passwordHistory          UserPasswordHistory[]
+  mfaFactor                UserMfaFactor?
+  authenticationChallenges AuthenticationChallenge[]
+  sessions                 UserSession[]
+  accessReviewsSubject     OrganizationAccessReview[] @relation("AccessReviewSubject")
+  accessReviewsReviewer    OrganizationAccessReview[] @relation("AccessReviewReviewer")
+  securityEventsActor      SecurityAuditEvent[]       @relation("SecurityEventActor")
+  securityEventsTarget     SecurityAuditEvent[]       @relation("SecurityEventTarget")
+  credentialRotations      CredentialRotationRecord[] @relation("CredentialRotationActor")
 
   @@map("users")
 }
@@ -878,15 +945,163 @@ model OrganizationMembership {
   organizationId String           @map("organization_id")
   userId         String           @map("user_id")
   role           OrganizationRole @default(OWNER)
+  active         Boolean          @default(true)
+  deactivatedAt  DateTime?        @map("deactivated_at")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization  Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  accessReviews OrganizationAccessReview[]
 
   @@unique([organizationId, userId])
+  @@unique([id, organizationId])
   @@index([userId, organizationId])
   @@map("organization_memberships")
+}
+
+model UserPasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  passwordHash String   @map("password_hash")
+  usedAt       DateTime @default(now()) @map("used_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt(sort: Desc)])
+  @@map("user_password_history")
+}
+
+model UserMfaFactor {
+  id                   String    @id @default(cuid())
+  userId               String    @unique @map("user_id")
+  encryptedSecret      String    @map("encrypted_secret")
+  encryptionNonce      String    @map("encryption_nonce")
+  encryptionTag        String    @map("encryption_tag")
+  encryptionKeyVersion Int       @map("encryption_key_version")
+  confirmedAt          DateTime? @map("confirmed_at")
+  disabledAt           DateTime? @map("disabled_at")
+  lastUsedAt           DateTime? @map("last_used_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recoveryCodes UserMfaRecoveryCode[]
+
+  @@map("user_mfa_factors")
+}
+
+model UserMfaRecoveryCode {
+  id        String    @id @default(cuid())
+  factorId  String    @map("factor_id")
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  factor UserMfaFactor @relation(fields: [factorId], references: [id], onDelete: Cascade)
+
+  @@index([factorId, usedAt])
+  @@map("user_mfa_recovery_codes")
+}
+
+model AuthenticationChallenge {
+  id             String                         @id @default(cuid())
+  organizationId String                         @map("organization_id")
+  userId         String                         @map("user_id")
+  tokenHash      String                         @unique @map("token_hash")
+  purpose        AuthenticationChallengePurpose
+  failedAttempts Int                            @default(0) @map("failed_attempts")
+  expiresAt      DateTime                       @map("expires_at")
+  consumedAt     DateTime?                      @map("consumed_at")
+  createdAt      DateTime                       @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, purpose, expiresAt])
+  @@index([expiresAt, consumedAt])
+  @@map("authentication_challenges")
+}
+
+model UserSession {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  userId         String    @map("user_id")
+  sessionEpoch   Int       @map("session_epoch")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  revokedReason  String?   @map("revoked_reason")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, organizationId])
+  @@index([userId, revokedAt, expiresAt])
+  @@index([organizationId, lastSeenAt])
+  @@map("user_sessions")
+}
+
+model OrganizationAccessReview {
+  id              String               @id @default(cuid())
+  organizationId  String               @map("organization_id")
+  membershipId    String               @map("membership_id")
+  subjectUserId   String               @map("subject_user_id")
+  reviewerUserId  String               @map("reviewer_user_id")
+  decision        AccessReviewDecision
+  reviewedRole    OrganizationRole     @map("reviewed_role")
+  requestedRole   OrganizationRole?    @map("requested_role")
+  reason          String
+  reviewedAt      DateTime             @default(now()) @map("reviewed_at")
+  nextReviewDueAt DateTime             @map("next_review_due_at")
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership   OrganizationMembership @relation(fields: [membershipId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  subjectUser  User                   @relation("AccessReviewSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
+  reviewerUser User                   @relation("AccessReviewReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, subjectUserId, reviewedAt(sort: Desc)])
+  @@index([organizationId, nextReviewDueAt])
+  @@map("organization_access_reviews")
+}
+
+model SecurityAuditEvent {
+  id             String                 @id @default(cuid())
+  organizationId String                 @map("organization_id")
+  actorUserId    String?                @map("actor_user_id")
+  targetUserId   String?                @map("target_user_id")
+  eventType      SecurityAuditEventType @map("event_type")
+  idempotencyKey String?                @map("idempotency_key")
+  context        Json?
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorUser    User?        @relation("SecurityEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser   User?        @relation("SecurityEventTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, eventType, createdAt(sort: Desc)])
+  @@index([targetUserId, createdAt(sort: Desc)])
+  @@map("security_audit_events")
+}
+
+model CredentialRotationRecord {
+  id             String                 @id @default(cuid())
+  organizationId String                 @map("organization_id")
+  actorUserId    String?                @map("actor_user_id")
+  credentialType CredentialRotationType @map("credential_type")
+  keyVersion     Int?                   @map("key_version")
+  rotatedAt      DateTime               @default(now()) @map("rotated_at")
+  nextDueAt      DateTime               @map("next_due_at")
+  notes          String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorUser    User?        @relation("CredentialRotationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, credentialType, rotatedAt(sort: Desc)])
+  @@index([organizationId, nextDueAt])
+  @@map("credential_rotation_records")
 }
 
 model ScanJob {
@@ -1708,29 +1923,29 @@ model HistoryRefreshItem {
  * persisted results; provider traffic is initiated by the outbox/worker path.
  */
 model ProductResearchRun {
-  id                String                   @id @default(cuid())
-  organizationId    String                   @map("organization_id")
-  kind              ProductResearchRunKind
-  status            ProductResearchRunStatus @default(PENDING)
-  marketplaceId     String                   @map("marketplace_id")
-  providerKey       String                   @map("provider_key")
-  providerMode      ProviderRuntimeMode      @map("provider_mode")
-  queryType         String                   @map("query_type")
-  queryText         String                   @map("query_text")
-  normalizedQuery   String                   @map("normalized_query")
-  requestedLimit    Int                      @default(20) @map("requested_limit")
-  salePrice         Decimal?                 @map("sale_price") @db.Decimal(18, 4)
-  currency          String?
-  forceRefresh      Boolean                  @default(false) @map("force_refresh")
-  idempotencyKey    String                   @map("idempotency_key")
-  requestHash       String                   @map("request_hash")
-  attemptCount      Int                      @default(0) @map("attempt_count")
-  resultCount       Int                      @default(0) @map("result_count")
-  errorCode         String?                  @map("error_code")
-  startedAt         DateTime?                @map("started_at")
-  completedAt       DateTime?                @map("completed_at")
-  createdAt         DateTime                 @default(now()) @map("created_at")
-  updatedAt         DateTime                 @updatedAt @map("updated_at")
+  id              String                   @id @default(cuid())
+  organizationId  String                   @map("organization_id")
+  kind            ProductResearchRunKind
+  status          ProductResearchRunStatus @default(PENDING)
+  marketplaceId   String                   @map("marketplace_id")
+  providerKey     String                   @map("provider_key")
+  providerMode    ProviderRuntimeMode      @map("provider_mode")
+  queryType       String                   @map("query_type")
+  queryText       String                   @map("query_text")
+  normalizedQuery String                   @map("normalized_query")
+  requestedLimit  Int                      @default(20) @map("requested_limit")
+  salePrice       Decimal?                 @map("sale_price") @db.Decimal(18, 4)
+  currency        String?
+  forceRefresh    Boolean                  @default(false) @map("force_refresh")
+  idempotencyKey  String                   @map("idempotency_key")
+  requestHash     String                   @map("request_hash")
+  attemptCount    Int                      @default(0) @map("attempt_count")
+  resultCount     Int                      @default(0) @map("result_count")
+  errorCode       String?                  @map("error_code")
+  startedAt       DateTime?                @map("started_at")
+  completedAt     DateTime?                @map("completed_at")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
 
   organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   items        ProductResearchRunItem[]
@@ -1744,25 +1959,25 @@ model ProductResearchRun {
 }
 
 model ProductResearchRunItem {
-  id               String                     @id @default(cuid())
-  organizationId   String                     @map("organization_id")
-  runId            String                     @map("run_id")
-  catalogProductId String                     @map("catalog_product_id")
+  id               String                          @id @default(cuid())
+  organizationId   String                          @map("organization_id")
+  runId            String                          @map("run_id")
+  catalogProductId String                          @map("catalog_product_id")
   ordinal          Int
-  status           ProductResearchRunStatus   @default(COMPLETED)
+  status           ProductResearchRunStatus        @default(COMPLETED)
   evidence         Json
   source           String
-  dataOrigin       String                     @map("data_origin")
-  observedAt       DateTime                   @map("observed_at")
-  freshUntil       DateTime?                  @map("fresh_until")
-  freshnessState   ExternalFreshnessState     @map("freshness_state")
+  dataOrigin       String                          @map("data_origin")
+  observedAt       DateTime                        @map("observed_at")
+  freshUntil       DateTime?                       @map("fresh_until")
+  freshnessState   ExternalFreshnessState          @map("freshness_state")
   completeness     ResearchObservationCompleteness
-  createdAt        DateTime                   @default(now()) @map("created_at")
-  updatedAt        DateTime                   @updatedAt @map("updated_at")
+  createdAt        DateTime                        @default(now()) @map("created_at")
+  updatedAt        DateTime                        @updatedAt @map("updated_at")
 
   organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   run            ProductResearchRun @relation(fields: [runId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "product_research_items_run_org_fkey")
-  catalogProduct CatalogProduct      @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
+  catalogProduct CatalogProduct     @relation(fields: [catalogProductId], references: [id], onDelete: Restrict)
 
   @@unique([runId, catalogProductId], map: "product_research_items_run_product_key")
   @@index([organizationId, catalogProductId, createdAt], map: "product_research_items_org_product_created_idx")

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createPasswordHash, verifyPassword } from "../src/auth.js";
+import {
+  createPasswordHash,
+  verifyPassword,
+} from "../src/security/password-hash.js";
 
 describe("private credentials", () => {
   it("uses a salted server-side password verifier", async () => {

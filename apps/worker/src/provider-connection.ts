@@ -507,6 +507,25 @@ export async function processProviderConnectionJob(jobId: string) {
         },
         update: {},
       }),
+      ...(job.kind === "OAUTH_COMPLETE"
+        ? [
+            db.securityAuditEvent.upsert({
+              where: {
+                organizationId_idempotencyKey: {
+                  organizationId: job.organizationId,
+                  idempotencyKey: `security-provider-connected:${job.id}`,
+                },
+              },
+              create: {
+                organizationId: job.organizationId,
+                eventType: "PROVIDER_CONNECTED",
+                idempotencyKey: `security-provider-connected:${job.id}`,
+                context: { provider: "AMAZON_SP_API", mode: "OAUTH" },
+              },
+              update: {},
+            }),
+          ]
+        : []),
     ]);
   } catch (error) {
     const code = failureCode(error);

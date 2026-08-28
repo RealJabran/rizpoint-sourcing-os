@@ -105,7 +105,12 @@ Phase 6 adds organization-scoped shortlists, research statuses, notes, workflow 
 
 ## Phase 7 scope
 
-Phase 7 adds a private-production boundary: authenticated owner access, fail-closed production configuration, private deployment guidance, redacted structured logs and worker metrics, recovery/backup procedures, report-first export retention, and production-like security/fault/load test contracts. The two-week real-scan pilot remains an operational exit criterion, not an automated claim.
+Phase 7 adds a private-production boundary: named-user password plus mandatory
+TOTP access, explicit least-privilege roles, fail-closed production
+configuration, private deployment guidance, redacted structured logs and worker
+metrics, recovery/backup procedures, report-first export retention, and
+production-like security/fault/load test contracts. The real-data pilot remains
+an operational exit criterion, not an automated claim.
 
 The canonical scan state machine is documented in [Architecture](ARCHITECTURE.md).
 
