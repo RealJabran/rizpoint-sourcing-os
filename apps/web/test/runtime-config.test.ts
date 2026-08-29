@@ -1,8 +1,36 @@
 import { readFile } from "node:fs/promises";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertProductionConfiguration } from "../src/runtime-config.js";
 
+function validProductionEnvironment() {
+  vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("NODE_OPTIONS", "--tls-min-v1.2");
+  vi.stubEnv("RIZPOINT_PRIVATE_MODE", "true");
+  vi.stubEnv("PHASE_ZERO_DEMO_MODE", "false");
+  vi.stubEnv(
+    "DATABASE_URL",
+    "postgresql://user:password@db/rizpoint?sslmode=verify-full",
+  );
+  vi.stubEnv("S3_ENDPOINT", "https://storage.test");
+  vi.stubEnv("S3_PUBLIC_ENDPOINT", "https://storage-public.test");
+  vi.stubEnv("S3_BUCKET", "bucket");
+  vi.stubEnv("S3_ACCESS_KEY", "key");
+  vi.stubEnv("S3_SECRET_KEY", "test-only-secret");
+  vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
+  vi.stubEnv("NEXTAUTH_URL", "https://private.test");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://private.test");
+  vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
+  vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(32, 4).toString("base64"));
+  vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
+  vi.stubEnv("S3_SERVER_SIDE_ENCRYPTION", "AES256");
+  vi.stubEnv("S3_VERSIONING_ENABLED", "true");
+  vi.stubEnv("S3_LIFECYCLE_MANAGED", "true");
+  vi.stubEnv("SP_API_ENDPOINT", "https://sellingpartnerapi-na.amazon.com");
+}
+
 describe("production configuration", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("fails closed for private production with placeholder values", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("RIZPOINT_PRIVATE_MODE", "true");
@@ -10,60 +38,52 @@ describe("production configuration", () => {
     expect(() => assertProductionConfiguration()).toThrow(
       "production_configuration_invalid",
     );
-    vi.unstubAllEnvs();
   });
 
   it("rejects weak secrets and plaintext production dependencies", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "true");
-    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "false");
+    validProductionEnvironment();
     vi.stubEnv("DATABASE_URL", "postgresql://user:password@db/rizpoint");
-    vi.stubEnv("REDIS_URL", "redis://redis:6379");
-    vi.stubEnv("S3_ENDPOINT", "http://storage:9000");
-    vi.stubEnv("S3_PUBLIC_ENDPOINT", "http://storage:9000");
-    vi.stubEnv("S3_BUCKET", "bucket");
-    vi.stubEnv("S3_ACCESS_KEY", "key");
-    vi.stubEnv("S3_SECRET_KEY", "secret");
-    vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
-    vi.stubEnv("NEXTAUTH_URL", "https://private.test");
-    vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
-    vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(32, 4).toString("base64"));
-    vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
-    vi.stubEnv("S3_SERVER_SIDE_ENCRYPTION", "AES256");
-    vi.stubEnv("S3_VERSIONING_ENABLED", "true");
-    vi.stubEnv("S3_LIFECYCLE_MANAGED", "true");
     expect(() => assertProductionConfiguration()).toThrow(
       "database_tls_required",
     );
-    vi.unstubAllEnvs();
   });
 
   it("rejects a production MFA encryption key that is not 256 bits", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("RIZPOINT_PRIVATE_MODE", "true");
-    vi.stubEnv("PHASE_ZERO_DEMO_MODE", "false");
-    vi.stubEnv(
-      "DATABASE_URL",
-      "postgresql://user:password@db/rizpoint?sslmode=require",
-    );
-    vi.stubEnv("REDIS_URL", "rediss://redis:6379");
-    vi.stubEnv("S3_ENDPOINT", "https://storage.test");
-    vi.stubEnv("S3_PUBLIC_ENDPOINT", "https://storage-public.test");
-    vi.stubEnv("S3_BUCKET", "bucket");
-    vi.stubEnv("S3_ACCESS_KEY", "key");
-    vi.stubEnv("S3_SECRET_KEY", "secret");
-    vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
-    vi.stubEnv("NEXTAUTH_URL", "https://private.test");
-    vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
+    validProductionEnvironment();
     vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(16, 4).toString("base64"));
-    vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
-    vi.stubEnv("S3_SERVER_SIDE_ENCRYPTION", "AES256");
-    vi.stubEnv("S3_VERSIONING_ENABLED", "true");
-    vi.stubEnv("S3_LIFECYCLE_MANAGED", "true");
     expect(() => assertProductionConfiguration()).toThrow(
       "mfa_credential_key_invalid",
     );
-    vi.unstubAllEnvs();
+  });
+
+  it("rejects insecure or mismatched production origins", () => {
+    validProductionEnvironment();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://private.test");
+    expect(() => assertProductionConfiguration()).toThrow(
+      "application_origin_mismatch",
+    );
+  });
+
+  it("rejects unsafe Amazon endpoints and OAuth callbacks", () => {
+    validProductionEnvironment();
+    vi.stubEnv("SP_API_ENDPOINT", "https://attacker.invalid");
+    expect(() => assertProductionConfiguration()).toThrow(
+      "sp_api_endpoint_not_allowed",
+    );
+
+    vi.stubEnv("SP_API_ENDPOINT", "https://sellingpartnerapi-na.amazon.com");
+    vi.stubEnv(
+      "SP_API_OAUTH_REDIRECT_URI",
+      "http://private.test/api/providers/amazon/oauth/callback",
+    );
+    expect(() => assertProductionConfiguration()).toThrow(
+      "oauth_callback_not_allowed",
+    );
+  });
+
+  it("accepts the complete fail-closed production configuration", () => {
+    validProductionEnvironment();
+    expect(() => assertProductionConfiguration()).not.toThrow();
   });
 
   it("documents every fail-closed production storage endpoint", async () => {

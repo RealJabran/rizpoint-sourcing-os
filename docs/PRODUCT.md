@@ -112,6 +112,13 @@ metrics, recovery/backup procedures, report-first export retention, and
 production-like security/fault/load test contracts. The real-data pilot remains
 an operational exit criterion, not an automated claim.
 
+Prompt 36H adds a standalone, code-verifiable hardened deployment profile. It
+publishes only a TLS edge, separates application/data/security connectivity,
+rejects insecure production dependencies and provider endpoints, verifies
+ClamAV signature freshness, and requires dated infrastructure attestations.
+It does not claim that a real firewall, WAF, IDS/IPS, endpoint agent, SIEM, or
+encrypted production volume exists before an operator proves it.
+
 The canonical scan state machine is documented in [Architecture](ARCHITECTURE.md).
 
 ## Phase 7.5B Slice 1 scope

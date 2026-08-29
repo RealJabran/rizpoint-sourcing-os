@@ -1,21 +1,199 @@
-# Reference topology only. Production uses managed PostgreSQL, Redis, and S3;
-# do not publish worker, scanner, database, Redis, or object-storage ports.
+# Standalone supported production application profile. Do not merge this file
+# with compose.yaml: the latter intentionally publishes loopback development
+# ports. PostgreSQL, Redis, and object storage are private managed dependencies
+# reached through TLS URLs injected by the deployment secret manager.
+name: rizpoint-production
+
 services:
+  edge:
+    image: nginxinc/nginx-unprivileged:1.29.1-alpine3.22
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=16m,uid=101,gid=101,mode=0750
+    volumes:
+      - ./deploy/amazon-hardened/nginx.conf:/etc/nginx/nginx.conf:ro
+    secrets:
+      - source: rizpoint_tls_cert
+        target: rizpoint_tls_cert
+        mode: 0444
+      - source: rizpoint_tls_key
+        target: rizpoint_tls_key
+        uid: "101"
+        gid: "101"
+        mode: 0400
+    ports:
+      - "443:8443"
+    networks: [edge]
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null --no-check-certificate https://127.0.0.1:8443/api/health",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    command: ["pnpm", "--filter", "@rizpoint/database", "prisma:deploy"]
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m, mode=1777]
+    environment:
+      DATABASE_URL:
+      NODE_OPTIONS: --tls-min-v1.2
+    networks: [data]
+
   web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:?inject a non-secret HTTPS storage origin}
+    command: ["node", "apps/web/.next/standalone/apps/web/server.js"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m, mode=1777]
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --tls-min-v1.2
+      HOSTNAME: 0.0.0.0
+      RIZPOINT_PRIVATE_MODE: "true"
+      PHASE_ZERO_DEMO_MODE: "false"
+      RIZPOINT_ALLOW_UNAUTHENTICATED_DEMO: "false"
+      MALWARE_SCAN_MODE: clamav
+      DATABASE_URL:
+      S3_ENDPOINT:
+      S3_PUBLIC_ENDPOINT:
+      S3_BUCKET:
+      S3_REGION:
+      S3_ACCESS_KEY:
+      S3_SECRET_KEY:
+      S3_SERVER_SIDE_ENCRYPTION:
+      S3_KMS_KEY_ID:
+      S3_VERSIONING_ENABLED:
+      S3_LIFECYCLE_MANAGED:
+      NEXT_PUBLIC_APP_URL:
+      NEXTAUTH_URL:
+      NEXTAUTH_SECRET:
+      MFA_CREDENTIAL_KEY_V1:
+      RIZPOINT_PRIVATE_ORGANIZATION_SLUG:
+      RIZPOINT_RELEASE_SHA:
+      PROVIDER_MODE:
+      SP_API_ENDPOINT:
+      SP_API_APPLICATION_ID:
+      SP_API_OAUTH_ENABLED:
+      SP_API_OAUTH_REDIRECT_URI:
+      SP_API_OAUTH_CALLBACK_PUBLIC_KEY:
+      SP_API_OAUTH_CALLBACK_KEY_VERSION:
+      SP_API_OAUTH_DRAFT:
+    expose: ["3000"]
+    networks: [edge, data]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/ready', {headers:{'x-forwarded-proto':'https'}}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=128m, mode=1777]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --tls-min-v1.2
       RIZPOINT_PRIVATE_MODE: "true"
       PHASE_ZERO_DEMO_MODE: "false"
       MALWARE_SCAN_MODE: clamav
       RIZPOINT_RETENTION_MODE: report
-    ports: []
-  worker:
-    environment:
-      NODE_ENV: production
-      RIZPOINT_PRIVATE_MODE: "true"
-      MALWARE_SCAN_MODE: clamav
-      RIZPOINT_RETENTION_MODE: report
+      DATABASE_URL:
+      REDIS_URL:
+      SCANNER_BASE_URL: http://scanner:8000
+      S3_ENDPOINT:
+      S3_PUBLIC_ENDPOINT:
+      S3_BUCKET:
+      S3_REGION:
+      S3_ACCESS_KEY:
+      S3_SECRET_KEY:
+      S3_SERVER_SIDE_ENCRYPTION:
+      S3_KMS_KEY_ID:
+      S3_VERSIONING_ENABLED:
+      S3_LIFECYCLE_MANAGED:
+      PROVIDER_MODE:
+      PROVIDER_CREDENTIAL_KEY_V1:
+      SP_API_LWA_CLIENT_ID:
+      SP_API_LWA_CLIENT_SECRET:
+      SP_API_OAUTH_CALLBACK_PRIVATE_KEY:
+      SP_API_OAUTH_CALLBACK_KEY_VERSION:
+      SP_API_OAUTH_REDIRECT_URI:
+      SP_API_ENDPOINT:
+      RIZPOINT_RELEASE_SHA:
+      RIZPOINT_ERROR_TRACKING_WEBHOOK_URL:
+    networks: [application, data, security]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      scanner:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3001/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   scanner:
+    build:
+      context: services/scanner
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=256m, mode=1777]
+    environment:
+      MALWARE_SCAN_MODE: clamav
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      CLAMAV_MAX_SIGNATURE_AGE_HOURS: "72"
+    expose: ["8000"]
+    networks: [security]
+    depends_on:
+      clamav:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -24,3 +202,48 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')",
         ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  clamav:
+    image: clamav/clamav:1.4.3_base
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "false"
+    volumes:
+      - clamav-definitions:/var/lib/clamav
+    expose: ["3310"]
+    networks: [security, security-updates]
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1 && freshclam --version"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+networks:
+  edge:
+    name: rizpoint-edge
+  application:
+    name: rizpoint-application
+  # DATA has outbound routing only so web/worker can reach private managed TLS
+  # endpoints. Cloud ACLs must restrict those endpoints to this deployment.
+  data:
+    name: rizpoint-data
+  security:
+    name: rizpoint-security
+    internal: true
+  # Only ClamAV joins this outbound-only zone so freshclam can update virus
+  # definitions without making the scanner or worker publicly reachable.
+  security-updates:
+    name: rizpoint-security-updates
+
+volumes:
+  clamav-definitions:
+
+secrets:
+  rizpoint_tls_cert:
+    file: ${RIZPOINT_TLS_CERT_FILE:-/run/rizpoint/tls/fullchain.pem}
+  rizpoint_tls_key:
+    file: ${RIZPOINT_TLS_KEY_FILE:-/run/rizpoint/tls/privkey.pem}

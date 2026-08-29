@@ -12,11 +12,12 @@ vi.mock("@rizpoint/database", () => ({
 
 function productionEnvironment() {
   vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("NODE_OPTIONS", "--tls-min-v1.2");
   vi.stubEnv("RIZPOINT_PRIVATE_MODE", "true");
   vi.stubEnv("PHASE_ZERO_DEMO_MODE", "false");
   vi.stubEnv(
     "DATABASE_URL",
-    "postgresql://user:password@db/rizpoint?sslmode=require",
+    "postgresql://user:password@db/rizpoint?sslmode=verify-full",
   );
   vi.stubEnv("REDIS_URL", "rediss://redis:6379");
   vi.stubEnv("S3_ENDPOINT", "https://storage.test");
@@ -26,6 +27,7 @@ function productionEnvironment() {
   vi.stubEnv("S3_SECRET_KEY", "secret");
   vi.stubEnv("NEXTAUTH_SECRET", "a-very-long-private-session-secret-value");
   vi.stubEnv("NEXTAUTH_URL", "https://private.test");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://private.test");
   vi.stubEnv("RIZPOINT_PRIVATE_ORGANIZATION_SLUG", "private");
   vi.stubEnv("MFA_CREDENTIAL_KEY_V1", Buffer.alloc(32, 4).toString("base64"));
   vi.stubEnv("MALWARE_SCAN_MODE", "clamav");
@@ -60,6 +62,32 @@ describe("private production proxy", () => {
     await expect(
       proxy(new NextRequest("http://localhost:3000/api/ready")),
     ).rejects.toThrow("production_configuration_invalid:private_mode_required");
+  });
+
+  it("redirects insecure production page requests to the canonical HTTPS origin", async () => {
+    productionEnvironment();
+    const { proxy } = await import("../proxy.js");
+    const response = await proxy(
+      new NextRequest("http://private.test/settings/security?tab=sessions"),
+    );
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://private.test/settings/security?tab=sessions",
+    );
+    expect(getToken).not.toHaveBeenCalled();
+  });
+
+  it("rejects insecure production API requests without reflecting query secrets", async () => {
+    productionEnvironment();
+    const { proxy } = await import("../proxy.js");
+    const response = await proxy(
+      new NextRequest(
+        "http://private.test/api/providers/amazon/oauth/callback?spapi_oauth_code=do-not-reflect",
+      ),
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBeNull();
+    expect(await response.json()).toEqual({ error: "HTTPS_REQUIRED" });
   });
 
   it("permits the production-built local demo only with explicit flags and loopback URLs", async () => {

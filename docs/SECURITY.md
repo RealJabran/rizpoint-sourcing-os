@@ -11,6 +11,9 @@ Amazon authentication, MFA, least-privilege, access-review, and credential
 evidence is maintained in
 [AMAZON_SECURITY_CONTROLS.md](AMAZON_SECURITY_CONTROLS.md). It distinguishes
 application enforcement from deployment and operator obligations.
+Amazon network segmentation, TLS, firewall/WAF, IDS/IPS, endpoint protection,
+storage encryption, secret injection, and deployment evidence are separately
+defined in [AMAZON_NETWORK_SECURITY.md](AMAZON_NETWORK_SECURITY.md).
 
 ## Shared provider credentials and telemetry
 
@@ -124,9 +127,9 @@ controls and reports `RATE_BUDGET_NOT_CONFIGURED`; it never guesses token cost.
   never cause a fallback scrape.
 
 - Private production validates the signed Auth.js session against the active owner membership and session epoch on every protected request. Demo mode is local-only; a production request rejects it before routing.
-- Production configuration is fail-closed for placeholders, weak session secrets, non-TLS database/Redis/storage endpoints, disabled malware scanning, missing private organization context, and missing storage encryption/versioning/lifecycle declarations.
+- Production configuration is fail-closed for placeholders, weak session secrets, non-TLS database/Redis/storage endpoints, disabled malware scanning, missing private organization context, and missing storage encryption/versioning/lifecycle declarations. The supported profile also fixes Node outbound TLS at 1.2+, requires PostgreSQL `verify-full`, allowlists Amazon endpoints, and rejects insecure application/OAuth origins.
 - Worker logs redact credential-shaped text and payload-bearing fields. Private production requires an HTTPS error-tracking collector and sends it only allowlisted IDs, release, event code, and redacted message. Metrics use IDs and counters only; supplier sheets, price rows, tokens, and raw provider payloads are never sent.
 - PostgreSQL requires PITR plus tested encrypted backups. The application verifies private bucket versioning, encryption, and lifecycle configuration at production readiness; Redis is recoverable transport, not business truth.
 - Export retention persists report-mode candidates as audit events before deletion is enabled. Deleted export objects retain an audit event. Production recovery and Sev-1 response are documented in `RECOVERY_RUNBOOK.md`.
 - Development CSP permits `unsafe-eval` only for Next.js/React developer tooling. Production CSP never includes it. Browser-extension attributes are diagnosed in a clean, extension-free browser context; the application does not suppress hydration warnings.
-- The local Compose demo uses a production-built Next.js server but is accepted only when both demo flags and loopback application/auth URLs are present; published web and MinIO ports bind to loopback. Private production still rejects demo mode before routing.
+- The local Compose demo uses a production-built Next.js server but is accepted only when both demo flags and loopback application/auth URLs are present; published web and MinIO ports bind to loopback. Private production still rejects demo mode before routing. `compose.production.yaml` is standalone—never merge it with the demo profile—and publishes only the TLS edge on TCP/443.

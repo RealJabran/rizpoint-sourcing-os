@@ -37,6 +37,8 @@ export async function proxy(request: NextRequest) {
   if (!privateMode && !localDemo)
     throw new Error("local_configuration_invalid:demo_flags_required");
   if (localDemo) return NextResponse.next();
+  if (process.env.NODE_ENV === "production" && !requestUsesHttps(request))
+    return requireHttps(request, pathname);
   if (
     publicPaths.some(
       (path) => pathname === path || pathname.startsWith(`${path}/`),
@@ -129,6 +131,24 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next({ request: { headers } });
   }
   return unauthorized(request, pathname);
+}
+
+function requestUsesHttps(request: NextRequest): boolean {
+  const forwarded = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  return (forwarded ?? request.nextUrl.protocol.replace(":", "")) === "https";
+}
+
+function requireHttps(request: NextRequest, pathname: string): NextResponse {
+  // Never forward an OAuth code or another API query through a redirect.
+  if (pathname.startsWith("/api/"))
+    return NextResponse.json({ error: "HTTPS_REQUIRED" }, { status: 400 });
+  const canonical = new URL(process.env.NEXTAUTH_URL!);
+  canonical.pathname = request.nextUrl.pathname;
+  canonical.search = request.nextUrl.search;
+  return NextResponse.redirect(canonical, 308);
 }
 
 function forbidden(request: NextRequest, pathname: string): NextResponse {

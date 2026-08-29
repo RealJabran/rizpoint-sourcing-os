@@ -6,7 +6,7 @@ import polars as pl
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from rizpoint_scanner.malware import malware_ready, scan_upload
+from rizpoint_scanner.malware import malware_health, scan_upload
 from rizpoint_scanner.workbooks import WorkbookError, inspect_workbook, normalize_sheet
 
 app = FastAPI(title="RizPoint Scanner", version="0.0.0")
@@ -49,10 +49,11 @@ def health() -> dict[str, str]:
 
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
-    if not malware_ready():
+def ready() -> dict[str, Any]:
+    malware = malware_health()
+    if not malware["ready"]:
         raise HTTPException(status_code=503, detail={"code": "MALWARE_SCANNER_UNAVAILABLE"})
-    return {"status": "ready", "service": "scanner"}
+    return {"status": "ready", "service": "scanner", "malware": malware}
 
 
 @app.post("/v1/mock-scans", response_model=MockScanResponse)

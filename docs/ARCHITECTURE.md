@@ -191,6 +191,17 @@ exports use a checkpoint-safe retention run, initially in report mode. The
 download route fails closed once `expires_at` has passed or is missing. See
 `OPERATIONS.md`, `AMAZON_SECURITY_CONTROLS.md`, and `RECOVERY_RUNBOOK.md`.
 
+The supported hardened deployment inserts a TLS 1.2/1.3 reverse-proxy edge and
+separates EDGE, APPLICATION, DATA, and SECURITY connectivity. Only edge TCP/443
+is host-published. Web reaches managed PostgreSQL and private object storage;
+it receives no Redis, scanner, LWA-client-secret, or provider-vault access.
+Worker alone joins provider egress and the isolated scanner zone. PostgreSQL,
+Redis, and object storage are managed private TLS dependencies rather than
+containers in the supported production profile. Cloud ACL/firewall, WAF,
+IDS/IPS, endpoint protection, KMS/storage encryption, and SIEM remain external
+until the real deployment supplies dated evidence. See
+[Amazon network security](AMAZON_NETWORK_SECURITY.md).
+
 ## Analysis workspace
 
 The analysis API queries a tenant-scoped current-result projection in 100-row windows with allowlisted filters and sorting. Grid DTOs explicitly select lightweight fields; heavy evidence is fetched only for the drawer. An inline override transaction records typed Decimal values and audit metadata, creates a targeted calculation run, target, and run-ID outbox event together. Targeted processing fetches only target rows. Promotion verifies that the active override still points to the same run and revision, so an older worker cannot replace a newer result; targeted completion does not reset the scan ingestion state.

@@ -1,7 +1,14 @@
-function storageOrigin(value: string | undefined): string | null {
+function storageOrigin(
+  value: string | undefined,
+  environment: string | undefined,
+): string | null {
   try {
     const url = new URL(value ?? "");
-    return ["http:", "https:"].includes(url.protocol) ? url.origin : null;
+    const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+    const allowed =
+      url.protocol === "https:" ||
+      (url.protocol === "http:" && (environment !== "production" || loopback));
+    return allowed ? url.origin : null;
   } catch {
     return null;
   }
@@ -19,7 +26,9 @@ export function contentSecurityPolicy(
   publicStorageEndpoint = process.env.S3_PUBLIC_ENDPOINT,
   environment = process.env.NODE_ENV,
 ): string {
-  const connectSources = ["'self'", storageOrigin(publicStorageEndpoint)]
+  const storage = storageOrigin(publicStorageEndpoint, environment);
+  const localInsecureStorage = storage?.startsWith("http://") ?? false;
+  const connectSources = ["'self'", storage]
     .filter((value): value is string => Boolean(value))
     .join(" ");
   // React and Next.js development overlays reconstruct call stacks with eval.
@@ -39,5 +48,8 @@ export function contentSecurityPolicy(
     `script-src ${scriptSources}`,
     "style-src 'self' 'unsafe-inline'",
     `connect-src ${connectSources}`,
+    ...(environment === "production" && !localInsecureStorage
+      ? ["upgrade-insecure-requests"]
+      : []),
   ].join("; ");
 }

@@ -4,6 +4,29 @@
 
 Use immutable image digests built by CI. Supply secrets through the deployment secret manager, not an environment file in Git. Set `RIZPOINT_PRIVATE_MODE=true`, `PHASE_ZERO_DEMO_MODE=false`, a unique `NEXTAUTH_SECRET`, and a private organization slug. Run migrations once with the migrator identity before releasing worker and web containers. Only the web service is public behind TLS; PostgreSQL, Redis, scanner, ClamAV, worker metrics, and object storage remain private.
 
+Use `compose.production.yaml` as a standalone profile; never layer it over
+`compose.yaml`. It publishes only edge TCP/443 and expects private managed
+PostgreSQL (`sslmode=verify-full`), Redis (`rediss://`), and object storage
+(`https://` with server-side encryption). Set `NODE_OPTIONS=--tls-min-v1.2`.
+Run Compose inside the approved secret manager's process environment with
+automatic `.env` loading disabled. The complete trust zones, UFW dry-run
+template, WAF/IDS options, port scan, and evidence requirements are in
+`AMAZON_NETWORK_SECURITY.md`.
+
+Before first deployment and after networking changes:
+
+1. Run `pnpm security:amazon:deployment-check`; no static `FAIL` is allowed.
+2. Apply/review cloud ACLs and the host firewall from recoverable console
+   access. Never run the included UFW script blindly; it is dry-run by default.
+3. Install the selected WAF, IDS/IPS, SIEM, and tamper-protected endpoint agent.
+4. Verify external reachability with
+   `pnpm security:amazon:ports -- --host=<public-host> --allow=443`.
+5. Record dated, private evidence in the ignored operator attestation and run
+   `pnpm security:amazon:deployment-check -- --live --strict
+--public-url=https://<public-host>
+--attestation=deploy/amazon-hardened/operator-attestation.json`.
+6. Retain the report outside Git with the deployment/change record.
+
 Bootstrap the first named owner in a controlled maintenance session: pass a
 14+ character mixed-complexity temporary password through protected standard
 input to `node scripts/create-password-hash.mjs` (never as an argument or
@@ -69,6 +92,11 @@ Configure an internet-edge WAF, 15-minute managed-device screen lock, encrypted
 endpoint/server/database/object/backup storage, monthly vulnerability scans,
 and the external controls classified in `AMAZON_SECURITY_CONTROLS.md`;
 application rate limits and idle sessions are not infrastructure substitutes.
+
+Scanner readiness now fails when ClamAV is unavailable or its signature date is
+older than `CLAMAV_MAX_SIGNATURE_AGE_HOURS` (72 hours in the supported profile).
+This is upload-scanner evidence only. Review the separate host/server/endpoint
+agent at least monthly and retain its tamper-protection and update status.
 
 ## Alerts
 

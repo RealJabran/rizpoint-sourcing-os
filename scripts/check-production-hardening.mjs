@@ -1,4 +1,10 @@
 import { readFile } from "node:fs/promises";
+import {
+  STATUS,
+  evaluateProductionCompose,
+  evaluateStaticFiles,
+  loadProductionCompose,
+} from "./lib/amazon-deployment-security.mjs";
 
 const checks = [
   [".env.production.example", "PHASE_ZERO_DEMO_MODE=false"],
@@ -36,3 +42,23 @@ if (
   )
 )
   throw new Error("Research Companion host permissions must remain explicit");
+
+const [nginx, nextConfig, csp, privateAsset] = await Promise.all([
+  readFile("deploy/amazon-hardened/nginx.conf", "utf8"),
+  readFile("apps/web/next.config.ts", "utf8"),
+  readFile("apps/web/src/content-security-policy.ts", "utf8"),
+  readFile("scripts/check-private-assets.mjs", "utf8"),
+]);
+const deploymentChecks = [
+  ...evaluateProductionCompose(loadProductionCompose()),
+  ...evaluateStaticFiles({ nginx, nextConfig, csp, privateAsset }),
+];
+const failures = deploymentChecks.filter(
+  (check) => check.status === STATUS.FAIL,
+);
+if (failures.length > 0)
+  throw new Error(
+    `Amazon production topology hardening failed: ${failures
+      .map((check) => `${check.id} (${check.detail})`)
+      .join(", ")}`,
+  );

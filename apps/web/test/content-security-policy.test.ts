@@ -34,5 +34,21 @@ describe("upload content security policy", () => {
     );
     expect(policy).not.toContain("img-src *");
     expect(policy).not.toContain("unsafe-eval");
+    expect(policy).toContain("upgrade-insecure-requests");
+  });
+
+  it("rejects an insecure storage origin from the production browser policy", () => {
+    const policy = contentSecurityPolicy(
+      "http://storage.example",
+      "production",
+    );
+    expect(policy).toContain("connect-src 'self'");
+    expect(policy).not.toContain("http://storage.example");
+  });
+
+  it("preserves the explicit loopback-only Compose demo without weakening public production", () => {
+    const policy = contentSecurityPolicy("http://localhost:9000", "production");
+    expect(policy).toContain("connect-src 'self' http://localhost:9000");
+    expect(policy).not.toContain("upgrade-insecure-requests");
   });
 });

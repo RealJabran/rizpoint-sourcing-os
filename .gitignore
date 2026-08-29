@@ -33,3 +33,6 @@ fixtures/private/
 minio-data/
 postgres-data/
 redis-data/
+
+# Deployment attestations contain infrastructure evidence and reviewer data.
+deploy/amazon-hardened/operator-attestation.json

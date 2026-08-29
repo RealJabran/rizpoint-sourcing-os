@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "replace-with-production-deployment-id",
+  "controls": {
+    "hostFirewall": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "waf": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "idsIps": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "endpointProtection": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "storageEncryption": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "backupEncryption": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "centralizedMonitoring": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "securityUpdates": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    }
+  }
+}

@@ -8,27 +8,38 @@ function validHttpsUrl(value: string | undefined): boolean {
   }
 }
 
-function databaseUsesTls(value: string | undefined): boolean {
+function databaseUsesVerifiedTls(value: string | undefined): boolean {
   try {
     const url = new URL(value!);
     return (
       ["postgresql:", "postgres:"].includes(url.protocol) &&
-      (url.searchParams.get("sslmode") === "require" ||
-        url.searchParams.get("sslmode") === "verify-ca" ||
-        url.searchParams.get("sslmode") === "verify-full" ||
-        url.searchParams.get("ssl") === "true")
+      url.searchParams.get("sslmode") === "verify-full"
     );
   } catch {
     return false;
   }
 }
 
-function redisUsesTls(value: string | undefined): boolean {
+function sameHttpsOrigin(
+  first: string | undefined,
+  second: string | undefined,
+) {
   try {
-    return new URL(value!).protocol === "rediss:";
+    const left = new URL(first!);
+    const right = new URL(second!);
+    return left.protocol === "https:" && left.origin === right.origin;
   } catch {
     return false;
   }
+}
+
+function validAmazonEndpoint(value: string | undefined): boolean {
+  const endpoints = new Set([
+    "https://sellingpartnerapi-na.amazon.com",
+    "https://sellingpartnerapi-eu.amazon.com",
+    "https://sellingpartnerapi-fe.amazon.com",
+  ]);
+  return endpoints.has((value ?? "").replace(/\/$/, ""));
 }
 
 export function assertProductionConfiguration() {
@@ -39,7 +50,6 @@ export function assertProductionConfiguration() {
     return;
   const required = [
     "DATABASE_URL",
-    "REDIS_URL",
     "S3_ENDPOINT",
     "S3_PUBLIC_ENDPOINT",
     "S3_BUCKET",
@@ -47,6 +57,7 @@ export function assertProductionConfiguration() {
     "S3_SECRET_KEY",
     "NEXTAUTH_SECRET",
     "NEXTAUTH_URL",
+    "NEXT_PUBLIC_APP_URL",
     "RIZPOINT_PRIVATE_ORGANIZATION_SLUG",
     "MFA_CREDENTIAL_KEY_V1",
     "S3_SERVER_SIDE_ENCRYPTION",
@@ -61,11 +72,19 @@ export function assertProductionConfiguration() {
     throw new Error(`production_configuration_invalid:${missing.join(",")}`);
   if (process.env.PHASE_ZERO_DEMO_MODE === "true")
     throw new Error("production_configuration_invalid:demo_mode");
+  if (!(process.env.NODE_OPTIONS ?? "").includes("--tls-min-v1.2"))
+    throw new Error("production_configuration_invalid:tls_minimum_required");
   if (process.env.MALWARE_SCAN_MODE !== "clamav")
     throw new Error("production_configuration_invalid:malware_scan_mode");
   if (!validHttpsUrl(process.env.NEXTAUTH_URL))
     throw new Error(
       "production_configuration_invalid:nextauth_url_https_required",
+    );
+  if (
+    !sameHttpsOrigin(process.env.NEXTAUTH_URL, process.env.NEXT_PUBLIC_APP_URL)
+  )
+    throw new Error(
+      "production_configuration_invalid:application_origin_mismatch",
     );
   if ((process.env.NEXTAUTH_SECRET?.length ?? 0) < 32)
     throw new Error(
@@ -77,10 +96,8 @@ export function assertProductionConfiguration() {
     throw new Error(
       "production_configuration_invalid:mfa_credential_key_invalid",
     );
-  if (!databaseUsesTls(process.env.DATABASE_URL))
+  if (!databaseUsesVerifiedTls(process.env.DATABASE_URL))
     throw new Error("production_configuration_invalid:database_tls_required");
-  if (!redisUsesTls(process.env.REDIS_URL))
-    throw new Error("production_configuration_invalid:redis_tls_required");
   if (!validHttpsUrl(process.env.S3_ENDPOINT))
     throw new Error("production_configuration_invalid:storage_tls_required");
   if (!validHttpsUrl(process.env.S3_PUBLIC_ENDPOINT))
@@ -93,6 +110,13 @@ export function assertProductionConfiguration() {
     throw new Error(
       "production_configuration_invalid:storage_encryption_required",
     );
+  if (
+    process.env.S3_SERVER_SIDE_ENCRYPTION === "aws:kms" &&
+    !process.env.S3_KMS_KEY_ID
+  )
+    throw new Error(
+      "production_configuration_invalid:storage_kms_key_required",
+    );
   if (process.env.S3_VERSIONING_ENABLED !== "true")
     throw new Error(
       "production_configuration_invalid:storage_versioning_required",
@@ -101,4 +125,23 @@ export function assertProductionConfiguration() {
     throw new Error(
       "production_configuration_invalid:storage_lifecycle_required",
     );
+  if (
+    process.env.SP_API_ENDPOINT &&
+    !validAmazonEndpoint(process.env.SP_API_ENDPOINT)
+  )
+    throw new Error(
+      "production_configuration_invalid:sp_api_endpoint_not_allowed",
+    );
+  if (process.env.SP_API_OAUTH_REDIRECT_URI) {
+    const callback = new URL(process.env.SP_API_OAUTH_REDIRECT_URI);
+    if (
+      !sameHttpsOrigin(process.env.NEXTAUTH_URL, callback.toString()) ||
+      callback.pathname !== "/api/providers/amazon/oauth/callback" ||
+      callback.search ||
+      callback.hash
+    )
+      throw new Error(
+        "production_configuration_invalid:oauth_callback_not_allowed",
+      );
+  }
 }
