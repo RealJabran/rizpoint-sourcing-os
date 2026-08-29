@@ -26,3 +26,16 @@ Record a `BACKUP_RESTORE_TEST` security control containing:
 A failed backup or failed restore exercise creates a security alert and is
 triaged through the incident response plan. Documentation alone is not recovery
 evidence.
+
+### Amazon deletion tombstones
+
+Every completed organization-scoped Amazon deletion request creates a payload-free tombstone with provider scope and cutoff timestamp. After restoring a database or object-storage backup in an isolated recovery environment:
+
+1. keep provider egress and user traffic disabled;
+2. deploy current migrations and start the retention worker with Amazon deletion enabled;
+3. replay every `amazon_deletion_tombstones` scope until no eligible Amazon record or object reference remains;
+4. verify the retention dashboard and record deleted counts, never source payloads;
+5. verify Amazon provider credentials remain revoked for the restored organization;
+6. only then permit the recovered environment to become active.
+
+Immutable backups may complete their encrypted rotation, but tombstoned Amazon Information may never return to active use. A quarterly exercise must seed a tombstoned record in the isolated target and prove it is removed. Tombstones must be restored from a newer trusted control record/control plane when restoring an older backup that predates the deletion.

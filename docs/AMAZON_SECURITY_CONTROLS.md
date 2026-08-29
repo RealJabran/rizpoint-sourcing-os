@@ -7,6 +7,8 @@ Solution Provider deployment. This is implementation evidence, not a
 certification or legal opinion. Amazon's current policies and questionnaire
 remain authoritative.
 
+Prompt 36J lifecycle evidence is maintained in [Amazon Information inventory](./AMAZON_INFORMATION_INVENTORY.md), [third-party processor register](./THIRD_PARTY_PROCESSORS.md), and [Solution Provider Profile evidence](./AMAZON_SOLUTION_PROVIDER_PROFILE_EVIDENCE.md). Current Amazon guidance requires non-PII retention only as long as strictly necessary and secure deletion within 30 days after applicable deletion triggers. RizPoint additionally enforces an 18-calendar-month internal ceiling for ordinary SP-API observations.
+
 ## Authoritative basis
 
 - [Amazon Key Security Control Guidance](https://developer-docs.amazon.com/sp-api/docs/guidance-to-address-key-security-controls-in-sp-api-integration), reviewed 2026-08-28.

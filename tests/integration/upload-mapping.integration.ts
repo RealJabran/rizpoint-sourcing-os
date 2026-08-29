@@ -298,8 +298,9 @@ assert.equal(normalizationResponse.status, 202);
 
 async function waitForMatching(): Promise<void> {
   // The 4,969-row fixture deliberately exercises the full persisted path.
-  // Leave a bounded budget for a clean local worker to calculate every row.
-  for (let attempt = 0; attempt < 480; attempt += 1) {
+  // Leave a bounded budget for the local worker to calculate every row even
+  // when the database still contains the release-scale benchmark fixtures.
+  for (let attempt = 0; attempt < 720; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const response = await fetch(`${baseUrl}/api/scans/${created.scanId}`);
     assert.equal(response.status, 200);

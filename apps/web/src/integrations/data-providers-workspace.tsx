@@ -17,6 +17,26 @@ type UsageSummary = {
   providers: string[];
 };
 
+type RetentionSummary = {
+  policy: {
+    rizpointMaximumCalendarMonths: number;
+    amazonEventDeletionDeadlineDays: number;
+    legalHoldsSupported: boolean;
+    shorterContractualRetentionWins: boolean;
+  };
+  oldestObservationAt: string | null;
+  nearingExpiryCount: number;
+  deletedRecords: number;
+  lastRun: {
+    status: string;
+    startedAt: string;
+    completedAt: string | null;
+    failureCode: string | null;
+  } | null;
+  nextScheduledRunAt: string;
+  failedDeletionJobs: number;
+};
+
 const metrics: Array<{
   key: keyof Pick<
     UsageSummary,
@@ -71,7 +91,16 @@ function dateTime(value: string) {
 
 export function DataProvidersWorkspace() {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [retention, setRetention] = useState<RetentionSummary | null>(null);
+  const [retentionAccess, setRetentionAccess] = useState<
+    "loading" | "allowed" | "denied"
+  >("loading");
   const [error, setError] = useState<string | null>(null);
+  const [deletionConfirmation, setDeletionConfirmation] = useState("");
+  const [deletionReason, setDeletionReason] = useState<
+    "OPERATOR_POLICY" | "AMAZON_NOTICE" | "AUTHORIZATION_REVOKED"
+  >("OPERATOR_POLICY");
+  const [deletionStatus, setDeletionStatus] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -82,9 +111,49 @@ export function DataProvidersWorkspace() {
       });
       if (!response.ok) throw new Error("USAGE_UNAVAILABLE");
       setUsage((await response.json()) as UsageSummary);
+      const retentionResponse = await fetch("/api/providers/retention", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (
+        retentionResponse.status === 401 ||
+        retentionResponse.status === 403
+      ) {
+        setRetentionAccess("denied");
+      } else if (retentionResponse.ok) {
+        setRetention((await retentionResponse.json()) as RetentionSummary);
+        setRetentionAccess("allowed");
+      } else {
+        throw new Error("RETENTION_UNAVAILABLE");
+      }
     } catch {
       setError("Provider usage is temporarily unavailable.");
     }
+  }
+
+  async function requestAmazonDeletion() {
+    if (deletionConfirmation !== "DELETE AMAZON INFORMATION") return;
+    setDeletionStatus("Submitting secure deletion request…");
+    const response = await fetch("/api/providers/retention", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reason: deletionReason,
+        confirmation: deletionConfirmation,
+        idempotencyKey: `amazon-deletion-${crypto.randomUUID()}`,
+      }),
+    });
+    if (!response.ok) {
+      setDeletionStatus("Deletion request could not be created.");
+      return;
+    }
+    const result = (await response.json()) as { deadlineAt: string };
+    setDeletionConfirmation("");
+    setDeletionStatus(
+      `Amazon access is in safe state. Deletion deadline: ${dateTime(result.deadlineAt)}.`,
+    );
+    await load();
   }
 
   useEffect(() => {
@@ -195,6 +264,135 @@ export function DataProvidersWorkspace() {
             jobs created by explicit research or refresh actions. Mock activity
             is recorded separately and is never counted as live provider use.
           </Alert>
+          {retentionAccess === "allowed" && retention ? (
+            <section
+              className="provider-retention"
+              aria-labelledby="retention-heading"
+            >
+              <Card className="provider-usage-context">
+                <div>
+                  <Badge tone="success">Enforced lifecycle</Badge>
+                  <h2 id="retention-heading">Amazon Information retention</h2>
+                  <p>
+                    RizPoint applies a maximum of{" "}
+                    {retention.policy.rizpointMaximumCalendarMonths} calendar
+                    months to ordinary Amazon SP-API observations. A shorter
+                    contractual policy always wins. Applicable Amazon deletion
+                    events use a{" "}
+                    {retention.policy.amazonEventDeletionDeadlineDays}-day
+                    deadline.
+                  </p>
+                </div>
+                <Badge
+                  tone={retention.failedDeletionJobs ? "danger" : "success"}
+                >
+                  {retention.failedDeletionJobs
+                    ? `${retention.failedDeletionJobs} deletion job failures`
+                    : "No failed deletion jobs"}
+                </Badge>
+              </Card>
+              <div className="provider-usage-grid">
+                <Card className="provider-usage-metric">
+                  <span>Oldest Amazon observation</span>
+                  <strong className="provider-retention-date">
+                    {retention.oldestObservationAt
+                      ? dateTime(retention.oldestObservationAt)
+                      : "None stored"}
+                  </strong>
+                  <p>Oldest tenant-scoped source observation still retained.</p>
+                </Card>
+                <Card className="provider-usage-metric">
+                  <span>Nearing expiry</span>
+                  <strong>
+                    {retention.nearingExpiryCount.toLocaleString()}
+                  </strong>
+                  <p>
+                    Amazon-source records reaching effective expiry in 30 days.
+                  </p>
+                </Card>
+                <Card className="provider-usage-metric">
+                  <span>Deleted Amazon records</span>
+                  <strong>{retention.deletedRecords.toLocaleString()}</strong>
+                  <p>Metadata count only; deleted values are not retained.</p>
+                </Card>
+              </div>
+              <div className="provider-usage-detail-grid">
+                <Card>
+                  <h2>Retention worker</h2>
+                  <ul className="provider-usage-list">
+                    <li>
+                      <span>Last run</span>
+                      <strong>
+                        {retention.lastRun
+                          ? `${retention.lastRun.status} · ${dateTime(retention.lastRun.startedAt)}`
+                          : "No run recorded"}
+                      </strong>
+                    </li>
+                    <li>
+                      <span>Next scheduled check</span>
+                      <strong>{dateTime(retention.nextScheduledRunAt)}</strong>
+                    </li>
+                    <li>
+                      <span>Legal holds</span>
+                      <strong>Not supported</strong>
+                    </li>
+                  </ul>
+                </Card>
+                <Card className="provider-deletion-card">
+                  <h2>Delete organization Amazon Information</h2>
+                  <p>
+                    This immediately revokes the local Amazon connection, stops
+                    Amazon provider work, and queues bounded deletion. Supplier
+                    files and security audit logs are not deleted.
+                  </p>
+                  <label>
+                    Reason
+                    <select
+                      value={deletionReason}
+                      onChange={(event) =>
+                        setDeletionReason(
+                          event.target.value as typeof deletionReason,
+                        )
+                      }
+                    >
+                      <option value="OPERATOR_POLICY">Operator request</option>
+                      <option value="AMAZON_NOTICE">Amazon notice</option>
+                      <option value="AUTHORIZATION_REVOKED">
+                        Amazon authorization revoked
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    Type DELETE AMAZON INFORMATION to confirm
+                    <input
+                      value={deletionConfirmation}
+                      onChange={(event) =>
+                        setDeletionConfirmation(event.target.value)
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <Button
+                    variant="danger"
+                    disabled={
+                      deletionConfirmation !== "DELETE AMAZON INFORMATION"
+                    }
+                    onClick={() => void requestAmazonDeletion()}
+                  >
+                    Revoke and queue deletion
+                  </Button>
+                  {deletionStatus ? (
+                    <p role="status">{deletionStatus}</p>
+                  ) : null}
+                </Card>
+              </div>
+            </section>
+          ) : retentionAccess === "denied" ? (
+            <Alert tone="info" title="Retention administration">
+              Amazon Information retention is enforced automatically. Only an
+              owner or administrator can view deletion operations.
+            </Alert>
+          ) : null}
         </>
       )}
     </main>

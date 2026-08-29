@@ -11,6 +11,10 @@ import type {
 } from "@rizpoint/provider-contracts";
 import { Prisma } from "../generated/prisma/client.js";
 import { db } from "../client.js";
+import {
+  amazonRetentionDeadline,
+  isAmazonProviderKey,
+} from "../amazon-retention-policy.js";
 
 const decimalPattern = /^\d+(?:\.\d+)?$/;
 
@@ -207,12 +211,28 @@ export async function updateProviderDataRights(input: {
         UPDATE provider_cache_entries
         SET retain_until = LEAST(
               retain_until,
-              observed_at + (${data.dataRetentionDays} * INTERVAL '1 day')
+              observed_at + (${data.dataRetentionDays} * INTERVAL '1 day'),
+              CASE
+                WHEN lower(provider_key) IN ('amazon-sp-api', 'amazon_sp_api')
+                  THEN observed_at + INTERVAL '18 months'
+                ELSE retain_until
+              END
             ),
             updated_at = CURRENT_TIMESTAMP
         WHERE organization_id = ${input.organizationId}
           AND entitlement_id = ${entitlement.id}
           AND retain_until > observed_at + (${data.dataRetentionDays} * INTERVAL '1 day')
+      `);
+    }
+    if (isAmazonProviderKey(input.providerKey)) {
+      shortenedCacheCount += await transaction.$executeRaw(Prisma.sql`
+        UPDATE provider_cache_entries
+        SET retain_until = LEAST(retain_until, observed_at + INTERVAL '18 months'),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE organization_id = ${input.organizationId}
+          AND provider_key = ${input.providerKey}
+          AND marketplace_id = ${input.marketplaceId}
+          AND retain_until > observed_at + INTERVAL '18 months'
       `);
     }
     await transaction.workflowAuditEvent.create({
@@ -824,6 +844,31 @@ export async function putProviderCacheEntry(
   )
     throw new Error("CACHE_FRESHNESS_WINDOW_INVALID");
   return serializableTransaction(async (transaction) => {
+    let shorterContractualRetentionDays: number | undefined;
+    if (isAmazonProviderKey(input.providerKey) && input.entitlementId) {
+      const entitlement = await transaction.providerEntitlement.findFirst({
+        where: {
+          id: input.entitlementId,
+          organizationId: input.organizationId,
+          providerKey: input.providerKey,
+        },
+        select: { dataRetentionDays: true },
+      });
+      if (!entitlement) throw new Error("PROVIDER_ENTITLEMENT_NOT_FOUND");
+      shorterContractualRetentionDays =
+        entitlement.dataRetentionDays ?? undefined;
+    }
+    const retainUntil = isAmazonProviderKey(input.providerKey)
+      ? amazonRetentionDeadline({
+          observedAt: input.observedAt,
+          requestedRetainUntil: input.retainUntil,
+          ...(shorterContractualRetentionDays
+            ? { shorterContractualRetentionDays }
+            : {}),
+        })
+      : input.retainUntil;
+    if (retainUntil < input.staleUntil)
+      throw new Error("CACHE_FRESHNESS_WINDOW_EXCEEDS_RETENTION");
     const key = {
       organizationId: input.organizationId,
       providerKey: input.providerKey,
@@ -845,7 +890,7 @@ export async function putProviderCacheEntry(
         organizationId_providerKey_marketplaceId_capability_operation_requestHash:
           key,
       },
-      create: input,
+      create: { ...input, retainUntil },
       update: {
         entitlementId: input.entitlementId ?? null,
         ...(input.normalizedProjection === undefined
@@ -855,7 +900,7 @@ export async function putProviderCacheEntry(
         observedAt: input.observedAt,
         freshUntil: input.freshUntil,
         staleUntil: input.staleUntil,
-        retainUntil: input.retainUntil,
+        retainUntil,
         completeness: input.completeness,
       },
     });

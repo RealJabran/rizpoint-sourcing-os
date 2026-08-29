@@ -80,6 +80,10 @@ const permissionRules: PermissionRule[] = [
     permission: "MANAGE_PROVIDER_CREDENTIALS",
   },
   {
+    pattern: /^\/api\/providers\/retention/u,
+    permission: "MANAGE_SECURITY",
+  },
+  {
     pattern: /^\/api\/(exports|.*\/exports)(?:\/|$)/u,
     permission: "EXPORT_DATA",
   },

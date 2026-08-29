@@ -875,6 +875,30 @@ enum ProviderRequestLeaseState {
   RELEASED
 }
 
+enum AmazonDeletionRequestReason {
+  AMAZON_NOTICE
+  AUTHORIZATION_REVOKED
+  ENTITLEMENT_LOST
+  SERVICE_TERMINATION
+  OPERATOR_POLICY
+}
+
+enum AmazonDeletionRequestStatus {
+  PENDING
+  SAFE_STATE
+  PROCESSING
+  COMPLETED
+  PARTIAL_FAILURE
+  FAILED
+}
+
+enum AmazonRetentionRunStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL_FAILURE
+  FAILED
+}
+
 model Organization {
   id        String   @id @default(cuid())
   slug      String   @unique
@@ -982,6 +1006,9 @@ model Organization {
   securityControlRecords         SecurityControlRecord[]
   securityAlerts                 SecurityAlert[]
   securityIncidents              SecurityIncident[]
+  amazonDeletionRequests         AmazonDeletionRequest[]
+  amazonDeletionTombstones       AmazonDeletionTombstone[]
+  amazonRetentionRuns            AmazonRetentionRun[]
 
   @@map("organizations")
 }
@@ -1019,6 +1046,7 @@ model User {
   securityControlReviews     SecurityControlRecord[]    @relation("SecurityControlReviewer")
   securityAlertsAcknowledged SecurityAlert[]            @relation("SecurityAlertAcknowledgedBy")
   incidentsCommanded         SecurityIncident[]         @relation("SecurityIncidentCommander")
+  amazonDeletionRequests     AmazonDeletionRequest[]    @relation("AmazonDeletionRequester")
 
   @@map("users")
 }
@@ -1173,6 +1201,87 @@ model SecurityAuditEvent {
   @@index([targetUserId, createdAt(sort: Desc)])
   @@index([organizationId, retentionUntil])
   @@map("security_audit_events")
+}
+
+/**
+ * Operational request to remove an organization's Amazon Information. The
+ * record intentionally contains counts and hashes only, never deleted payloads.
+ */
+model AmazonDeletionRequest {
+  id                String                      @id @default(cuid())
+  organizationId    String                      @map("organization_id")
+  requestedByUserId String?                     @map("requested_by_user_id")
+  providerKey       String                      @default("amazon-sp-api") @map("provider_key")
+  marketplaceId     String?                     @map("marketplace_id")
+  reason            AmazonDeletionRequestReason
+  status            AmazonDeletionRequestStatus @default(PENDING)
+  requestedAt       DateTime                    @default(now()) @map("requested_at")
+  deadlineAt        DateTime                    @map("deadline_at")
+  cutoffAt          DateTime                    @map("cutoff_at")
+  safeStateAt       DateTime?                   @map("safe_state_at")
+  startedAt         DateTime?                   @map("started_at")
+  completedAt       DateTime?                   @map("completed_at")
+  attemptCount      Int                         @default(0) @map("attempt_count")
+  failureCode       String?                     @map("failure_code")
+  deletedCounts     Json?                       @map("deleted_counts")
+  idempotencyKey    String                      @map("idempotency_key")
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  requestedBy  User?                    @relation("AmazonDeletionRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  tombstone    AmazonDeletionTombstone?
+
+  @@unique([organizationId, idempotencyKey], map: "amazon_deletion_requests_org_idempotency_key")
+  @@index([status, deadlineAt], map: "amazon_deletion_requests_status_deadline_idx")
+  @@index([organizationId, requestedAt(sort: Desc)], map: "amazon_deletion_requests_org_requested_idx")
+  @@map("amazon_deletion_requests")
+}
+
+/**
+ * Durable, payload-free scope marker replayed after any backup restoration.
+ */
+model AmazonDeletionTombstone {
+  id                String   @id @default(cuid())
+  organizationId    String   @map("organization_id")
+  deletionRequestId String   @unique @map("deletion_request_id")
+  providerKey       String   @map("provider_key")
+  marketplaceId     String?  @map("marketplace_id")
+  cutoffAt          DateTime @map("cutoff_at")
+  scopeHash         String   @map("scope_hash")
+  deletedAt         DateTime @map("deleted_at")
+  lastReappliedAt   DateTime @map("last_reapplied_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  deletionRequest AmazonDeletionRequest @relation(fields: [deletionRequestId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, scopeHash], map: "amazon_deletion_tombstones_org_scope_key")
+  @@index([organizationId, cutoffAt], map: "amazon_deletion_tombstones_org_cutoff_idx")
+  @@map("amazon_deletion_tombstones")
+}
+
+/**
+ * A bounded retention cycle. Counts are safe metadata, never source values.
+ */
+model AmazonRetentionRun {
+  id             String                   @id @default(cuid())
+  organizationId String                   @map("organization_id")
+  status         AmazonRetentionRunStatus @default(RUNNING)
+  mode           String
+  startedAt      DateTime                 @default(now()) @map("started_at")
+  completedAt    DateTime?                @map("completed_at")
+  cutoffAt       DateTime                 @map("cutoff_at")
+  deletedCounts  Json?                    @map("deleted_counts")
+  failureCode    String?                  @map("failure_code")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, startedAt(sort: Desc)], map: "amazon_retention_runs_org_started_idx")
+  @@index([status, startedAt], map: "amazon_retention_runs_status_started_idx")
+  @@map("amazon_retention_runs")
 }
 
 model CredentialRotationRecord {

@@ -1989,6 +1989,49 @@ pre {
   border-top: 1px solid var(--rp-border);
 }
 
+.provider-retention {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rp-border);
+}
+
+.provider-retention-date {
+  font-size: 1.05rem !important;
+  line-height: 1.45 !important;
+}
+
+.provider-deletion-card {
+  display: grid;
+  gap: 12px;
+}
+
+.provider-deletion-card label {
+  display: grid;
+  gap: 6px;
+  color: var(--rp-muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.provider-deletion-card input,
+.provider-deletion-card select {
+  min-height: 42px;
+  border: 1px solid var(--rp-border);
+  border-radius: var(--rp-radius-control);
+  padding: 0 12px;
+  background: var(--rp-surface);
+  color: var(--rp-ink);
+  font: inherit;
+}
+
+.provider-deletion-card input:focus-visible,
+.provider-deletion-card select:focus-visible {
+  outline: 3px solid rgb(15 118 110 / 25%);
+  outline-offset: 1px;
+}
+
 @media (max-width: 800px) {
   .provider-usage-grid,
   .provider-usage-detail-grid {

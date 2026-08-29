@@ -23,7 +23,9 @@ export async function listExpiredHistoricalMetricPoints(
     JOIN historical_metric_series series
       ON series.id = point.series_id
      AND series.organization_id = point.organization_id
-    WHERE point.metric_at < ${now} - make_interval(days => series.retention_days)
+    WHERE point.metric_at < (
+      CAST(${now} AS timestamp) - make_interval(days => series.retention_days)
+    )
     ORDER BY point.metric_at ASC, point.id ASC
     LIMIT ${limit}
   `);
@@ -52,7 +54,9 @@ export async function deleteExpiredHistoricalMetricPoints(
             AND point.organization_id = ${organizationId}
             AND series.id = point.series_id
             AND series.organization_id = point.organization_id
-            AND point.metric_at < ${now} - make_interval(days => series.retention_days)
+            AND point.metric_at < (
+              CAST(${now} AS timestamp) - make_interval(days => series.retention_days)
+            )
           RETURNING point.id
         `,
       );

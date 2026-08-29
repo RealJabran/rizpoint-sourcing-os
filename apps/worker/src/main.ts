@@ -27,6 +27,7 @@ function redactError(error: unknown): string {
 
 let stopping = false;
 let scheduling = false;
+let retentionStartupState: "PENDING" | "READY" | "FAILED" = "PENDING";
 
 async function tick(): Promise<void> {
   if (stopping) return;
@@ -68,17 +69,25 @@ const researchScheduleInterval = setInterval(
   60_000,
 );
 void scheduleDueResearchWork();
+async function executeRetention() {
+  try {
+    await runRetentionOnce();
+    retentionStartupState = "READY";
+  } catch (error) {
+    retentionStartupState = "FAILED";
+    logger.error({ event: "retention_failed", message: redactError(error) });
+    void reportOperationalError({ event: "retention_failed", error }).catch(
+      () => undefined,
+    );
+  }
+}
 const retentionInterval = setInterval(
-  () => {
-    void runRetentionOnce().catch((error) => {
-      logger.error({ event: "retention_failed", message: redactError(error) });
-      void reportOperationalError({ event: "retention_failed", error }).catch(
-        () => undefined,
-      );
-    });
-  },
+  () => void executeRetention(),
   6 * 60 * 60_000,
 );
+// Tombstones and already-expired Amazon Information are processed before the
+// worker can report ready after a restart/restore.
+void executeRetention();
 const alertInterval = setInterval(
   () =>
     void evaluateDueAlertRules().catch((error) =>
@@ -140,6 +149,8 @@ const healthServer = createServer(async (request, response) => {
       );
       if (!scannerIsReady || !objectStorageIsReady)
         throw new Error("dependency is not ready");
+      if (retentionStartupState !== "READY")
+        throw new Error("retention startup gate is not ready");
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
