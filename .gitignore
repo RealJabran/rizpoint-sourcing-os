@@ -36,3 +36,4 @@ redis-data/
 
 # Deployment attestations contain infrastructure evidence and reviewer data.
 deploy/amazon-hardened/operator-attestation.json
+deploy/amazon-hardened/security-operations-evidence.json

@@ -119,6 +119,14 @@ ClamAV signature freshness, and requires dated infrastructure attestations.
 It does not claim that a real firewall, WAF, IDS/IPS, endpoint agent, SIEM, or
 encrypted production volume exists before an operator proves it.
 
+Prompt 36I adds the private security-operations layer: structured tenant audit
+events with minimum retention, deduplicated security alerts, auditable recurring
+control records, incident records with an explicit Amazon notification deadline,
+and an overdue-control view in Settings → Security. Formal incident, logging,
+risk, vulnerability, recovery and maintenance runbooks define operator work;
+they do not claim that SIEM review, scans, training, penetration tests or restore
+exercises occurred without dated evidence.
+
 The canonical scan state machine is documented in [Architecture](ARCHITECTURE.md).
 
 ## Phase 7.5B Slice 1 scope

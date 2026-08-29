@@ -1,5 +1,6 @@
 import { db } from "@rizpoint/database";
 import { evaluateDueAlertRules } from "@rizpoint/database";
+import { evaluateSecuritySignals } from "@rizpoint/database";
 import { requeueDueHistoryRefreshRuns } from "@rizpoint/database";
 import { storageReady } from "@rizpoint/object-storage";
 import { createServer } from "node:http";
@@ -89,6 +90,26 @@ const alertInterval = setInterval(
   5 * 60_000,
 );
 void evaluateDueAlertRules().catch(() => undefined);
+const securitySignalInterval = setInterval(
+  () =>
+    void evaluateSecuritySignals().catch((error) => {
+      logger.error({
+        event: "security_signal_evaluation_failed",
+        message: redactError(error),
+      });
+      void reportOperationalError({
+        event: "security_signal_evaluation_failed",
+        error,
+      }).catch(() => undefined);
+    }),
+  5 * 60_000,
+);
+void evaluateSecuritySignals().catch((error) =>
+  logger.error({
+    event: "security_signal_evaluation_failed",
+    message: redactError(error),
+  }),
+);
 
 const healthServer = createServer(async (request, response) => {
   if (request.url === "/health") {
@@ -145,6 +166,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(researchScheduleInterval);
   clearInterval(retentionInterval);
   clearInterval(alertInterval);
+  clearInterval(securitySignalInterval);
   healthServer.close();
   logger.info({ event: "worker_shutdown", signal });
   await mockScanWorker.close();

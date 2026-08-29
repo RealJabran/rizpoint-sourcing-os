@@ -39,6 +39,7 @@ export * from "./repositories/portfolio-optimizer.js";
 export * from "./repositories/project-hub.js";
 export * from "./research-copilot.js";
 export * from "./alert-evaluator.js";
+export * from "./security-operations.js";
 export * from "./marketplace-registry.js";
 export * from "./research-performance.js";
 export {

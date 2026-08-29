@@ -111,8 +111,26 @@ export async function proxy(request: NextRequest) {
       pathname,
       request.method,
     );
-    if (!roleHasPermission(role, requiredPermission))
+    if (!roleHasPermission(role, requiredPermission)) {
+      await db.securityAuditEvent.create({
+        data: {
+          organizationId: String(token.organizationId),
+          actorUserId: user.id,
+          eventType: "ACCESS_DENIED",
+          outcome: "DENIED",
+          source: "AUTHORIZATION",
+          requestCorrelationId:
+            request.headers.get("x-request-id")?.slice(0, 128) ?? null,
+          context: {
+            method: request.method,
+            route: pathname.slice(0, 300),
+            requiredPermission,
+            role,
+          },
+        },
+      });
       return forbidden(request, pathname);
+    }
     await db.userSession.updateMany({
       where: {
         id: securitySessionId,

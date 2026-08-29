@@ -4,10 +4,15 @@ import { NextRequest } from "next/server";
 const getToken = vi.fn();
 const findFirst = vi.fn();
 const updateMany = vi.fn();
+const createSecurityEvent = vi.fn();
 
 vi.mock("next-auth/jwt", () => ({ getToken }));
 vi.mock("@rizpoint/database", () => ({
-  db: { user: { findFirst }, userSession: { updateMany } },
+  db: {
+    user: { findFirst },
+    userSession: { updateMany },
+    securityAuditEvent: { create: createSecurityEvent },
+  },
 }));
 
 function productionEnvironment() {

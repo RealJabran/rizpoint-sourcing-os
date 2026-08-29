@@ -739,6 +739,22 @@ export async function processExport(exportJobId: string): Promise<void> {
           payload: { checksumSha256, byteSize: bytes.byteLength },
         },
       });
+      await transaction.securityAuditEvent.create({
+        data: {
+          organizationId: job.organizationId,
+          eventType: "HIGH_RISK_EXPORT",
+          outcome: "SUCCESS",
+          source: "EXPORT_WORKER",
+          idempotencyKey: `security.export.completed.${job.id}`,
+          context: {
+            exportJobId: job.id,
+            kind: job.kind,
+            format: job.format,
+            byteSize: bytes.byteLength,
+            checksumSha256,
+          },
+        },
+      });
     });
   } catch (error) {
     const code = error instanceof Error ? error.message : "EXPORT_FAILED";

@@ -7,3 +7,22 @@
 5. Roll back application images before considering destructive migration rollback. Never run a rollback SQL file in production without a verified backup and change approval.
 6. For a suspected calculation defect, stop purchase-order exports, preserve calculation inputs/evidence, replay the affected results, classify severity, and require a manually audited fix before resuming `BUY` decisions.
 7. Record root cause, data scope, recovery time, customer/operator impact, and follow-up controls. An unresolved Sev-1 resets the two-week private-pilot clock.
+
+## Quarterly recovery-test evidence
+
+At least quarterly, restore an encrypted backup into an isolated non-production
+target. Never restore over production and never expose the target publicly.
+Record a `BACKUP_RESTORE_TEST` security control containing:
+
+- test date;
+- backup source and its encryption/version reference;
+- isolated restore target;
+- result (`PASS`, `FAIL`, or `FINDINGS`);
+- RPO observed and RTO observed;
+- named reviewer;
+- issues found, actions, owners and deadlines; and
+- private evidence reference.
+
+A failed backup or failed restore exercise creates a security alert and is
+triaged through the incident response plan. Documentation alone is not recovery
+evidence.

@@ -131,5 +131,11 @@ controls and reports `RATE_BUDGET_NOT_CONFIGURED`; it never guesses token cost.
 - Worker logs redact credential-shaped text and payload-bearing fields. Private production requires an HTTPS error-tracking collector and sends it only allowlisted IDs, release, event code, and redacted message. Metrics use IDs and counters only; supplier sheets, price rows, tokens, and raw provider payloads are never sent.
 - PostgreSQL requires PITR plus tested encrypted backups. The application verifies private bucket versioning, encryption, and lifecycle configuration at production readiness; Redis is recoverable transport, not business truth.
 - Export retention persists report-mode candidates as audit events before deletion is enabled. Deleted export objects retain an audit event. Production recovery and Sev-1 response are documented in `RECOVERY_RUNBOOK.md`.
+- Security audit events now retain explicit outcome, source, request correlation,
+  hashed network principal where applicable, sanitized context and a minimum
+  12-month deadline. Security control reviews, alerts and incidents are separate
+  tenant-scoped records. See `SECURITY_LOGGING.md` and
+  `INCIDENT_RESPONSE_PLAN.md`; production central collection remains external
+  until attested.
 - Development CSP permits `unsafe-eval` only for Next.js/React developer tooling. Production CSP never includes it. Browser-extension attributes are diagnosed in a clean, extension-free browser context; the application does not suppress hydration warnings.
 - The local Compose demo uses a production-built Next.js server but is accepted only when both demo flags and loopback application/auth URLs are present; published web and MinIO ports bind to loopback. Private production still rejects demo mode before routing. `compose.production.yaml` is standalone—never merge it with the demo profile—and publishes only the TLS edge on TCP/443.

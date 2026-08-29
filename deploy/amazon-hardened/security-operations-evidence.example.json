@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "deployment": "replace-with-private-deployment-reference",
+  "controls": {
+    "centralizedSecurityLogs": { "status": "NOT_RECORDED" },
+    "securityLogReview": { "status": "NOT_RECORDED" },
+    "vulnerabilityScan": { "status": "NOT_RECORDED" },
+    "malwareUpdateReview": { "status": "NOT_RECORDED" },
+    "accessReview": { "status": "NOT_RECORDED" },
+    "backupRestoreTest": { "status": "NOT_RECORDED" },
+    "incidentPlanReview": { "status": "NOT_RECORDED" },
+    "riskAssessment": { "status": "NOT_RECORDED" },
+    "penetrationTest": { "status": "NOT_RECORDED" },
+    "apiCredentialRotation": { "status": "NOT_RECORDED" },
+    "encryptionKeyRotation": { "status": "NOT_RECORDED" },
+    "securityTraining": { "status": "NOT_RECORDED" },
+    "thirdPartyRiskReview": { "status": "NOT_RECORDED" }
+  }
+}

@@ -74,12 +74,39 @@ type SecurityStatus = {
       overdue: boolean;
     }>;
   };
+  operations: null | {
+    controls: Array<{
+      controlType: string;
+      maximumAgeDays: number;
+      lastPerformedAt: string | null;
+      nextDueAt: string | null;
+      result: string | null;
+      overdue: boolean;
+    }>;
+    openAlerts: Array<{
+      id: string;
+      alertType: string;
+      severity: string;
+      observedAt: string;
+    }>;
+    openIncidents: Array<{
+      id: string;
+      reference: string;
+      severity: string;
+      detectedAt: string;
+      amazonNotificationDueAt: string | null;
+      amazonNotifiedAt: string | null;
+    }>;
+  };
   audit: Array<{
     id: string;
     eventType: string;
+    outcome: string;
+    source: string;
     actorUserId: string | null;
     targetUserId: string | null;
     createdAt: string;
+    retentionUntil: string;
   }>;
 };
 
@@ -450,6 +477,53 @@ export function SecurityWorkspace() {
             <Card className="security-panel">
               <header>
                 <div>
+                  <span className="page-kicker">Operational assurance</span>
+                  <h2>Security maintenance</h2>
+                </div>
+                <Badge
+                  tone={
+                    status.operations?.controls.some(
+                      (control) => control.overdue,
+                    )
+                      ? "warning"
+                      : "success"
+                  }
+                >
+                  {status.operations?.controls.filter(
+                    (control) => control.overdue,
+                  ).length ?? 0}{" "}
+                  due
+                </Badge>
+              </header>
+              <div className="security-audit-list">
+                {status.operations?.controls.slice(0, 6).map((control) => (
+                  <article key={control.controlType}>
+                    {control.overdue ? (
+                      <AlertTriangle aria-hidden="true" />
+                    ) : (
+                      <CheckCircle2 aria-hidden="true" />
+                    )}
+                    <div>
+                      <strong>
+                        {control.controlType.replaceAll("_", " ")}
+                      </strong>
+                      <small>
+                        {control.overdue
+                          ? "Evidence required"
+                          : `Next due ${date(control.nextDueAt)}`}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <small>
+                Records require a named reviewer and evidence; passing time
+                never marks a control complete.
+              </small>
+            </Card>
+            <Card className="security-panel">
+              <header>
+                <div>
                   <span className="page-kicker">Amazon SP-API</span>
                   <h2>Provider credential health</h2>
                 </div>
@@ -502,6 +576,68 @@ export function SecurityWorkspace() {
                     </div>
                   </article>
                 ))}
+              </div>
+            </Card>
+            <Card className="security-panel">
+              <header>
+                <div>
+                  <span className="page-kicker">Response queue</span>
+                  <h2>Security alerts & incidents</h2>
+                </div>
+                <Badge
+                  tone={
+                    (status.operations?.openAlerts.length ?? 0) +
+                      (status.operations?.openIncidents.length ?? 0) >
+                    0
+                      ? "danger"
+                      : "success"
+                  }
+                >
+                  {(status.operations?.openAlerts.length ?? 0) +
+                    (status.operations?.openIncidents.length ?? 0)}{" "}
+                  open
+                </Badge>
+              </header>
+              <div className="security-audit-list">
+                {status.operations?.openIncidents.map((incident) => (
+                  <article key={incident.id}>
+                    <AlertTriangle aria-hidden="true" />
+                    <div>
+                      <strong>
+                        {incident.reference} ·{" "}
+                        {incident.severity.replace("_", "-")}
+                      </strong>
+                      <small>
+                        Detected {date(incident.detectedAt)}
+                        {incident.amazonNotificationDueAt &&
+                        !incident.amazonNotifiedAt
+                          ? ` · Amazon deadline ${date(incident.amazonNotificationDueAt)}`
+                          : ""}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+                {status.operations?.openAlerts.slice(0, 6).map((alert) => (
+                  <article key={alert.id}>
+                    <AlertTriangle aria-hidden="true" />
+                    <div>
+                      <strong>{alert.alertType.replaceAll("_", " ")}</strong>
+                      <small>
+                        {alert.severity} · {date(alert.observedAt)}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+                {!status.operations?.openAlerts.length &&
+                !status.operations?.openIncidents.length ? (
+                  <article>
+                    <CheckCircle2 aria-hidden="true" />
+                    <div>
+                      <strong>No open security response items</strong>
+                      <small>Monitoring remains active.</small>
+                    </div>
+                  </article>
+                ) : null}
               </div>
             </Card>
           </div>

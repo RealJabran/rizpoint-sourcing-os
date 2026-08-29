@@ -66,7 +66,8 @@ const permissionRules: PermissionRule[] = [
     permission: "VIEW_RESEARCH",
   },
   {
-    pattern: /^\/api\/security\/(users|access-reviews|credentials|audit)/u,
+    pattern:
+      /^\/api\/security\/(users|access-reviews|credentials|audit|operations)/u,
     permission: "MANAGE_SECURITY",
   },
   {

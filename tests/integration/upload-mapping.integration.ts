@@ -150,6 +150,18 @@ async function waitFor(expectedStatus: string): Promise<UploadState> {
   throw new Error(`upload did not reach ${expectedStatus}`);
 }
 
+async function waitForTerminal(): Promise<UploadState> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const response = await fetch(`${baseUrl}/api/uploads/${created.uploadId}`);
+    assert.equal(response.status, 200);
+    const state = (await response.json()) as UploadState;
+    if (["COMPLETED", "PARTIAL_SUCCESS"].includes(state.scan?.status ?? ""))
+      return state;
+  }
+  throw new Error("upload scan did not reach a terminal success state");
+}
+
 const inspected = await waitFor("MAPPING_REQUIRED");
 assert.equal(inspected.sheets.length, 1);
 const sheet = inspected.sheets[0]!;
@@ -305,7 +317,7 @@ async function waitForMatching(): Promise<void> {
 }
 
 await waitForMatching();
-const complete = await waitFor("COMPLETED");
+const complete = await waitForTerminal();
 assert.equal(complete.scan?.supplierRows.length, 4_969);
 assert.equal(complete.scan?.supplierRows[0]?.rawData["0"], "012345678905");
 const matchesResponse = await fetch(

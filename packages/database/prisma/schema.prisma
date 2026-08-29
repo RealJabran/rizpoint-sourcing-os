@@ -477,6 +477,83 @@ enum SecurityAuditEventType {
   PROVIDER_DISCONNECTED
   CREDENTIAL_ROTATED
   SESSION_REVOKED
+  ACCESS_DENIED
+  HIGH_RISK_EXPORT
+  CONFIGURATION_CHANGED
+  PROVIDER_ANOMALY
+  SECURITY_ERROR
+  ADMINISTRATIVE_ACTION
+  MALWARE_DETECTED
+  BACKUP_FAILED
+  RESTORE_TEST_FAILED
+  LOG_PIPELINE_FAILED
+  DATASTORE_READINESS_FAILED
+  SECRET_SCAN_FAILED
+}
+
+enum SecurityEventOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+  WARNING
+}
+
+enum SecurityControlType {
+  SECURITY_LOG_REVIEW
+  INCIDENT_RESPONSE_PLAN_REVIEW
+  VULNERABILITY_SCAN
+  MALWARE_UPDATE_REVIEW
+  ACCESS_REVIEW
+  BACKUP_RESTORE_TEST
+  RISK_ASSESSMENT
+  PENETRATION_TEST
+  API_CREDENTIAL_ROTATION
+  ENCRYPTION_KEY_ROTATION
+  SECURITY_AWARENESS_TRAINING
+  THIRD_PARTY_RISK_REVIEW
+}
+
+enum SecurityControlResult {
+  PASS
+  FAIL
+  FINDINGS
+}
+
+enum SecurityAlertType {
+  REPEATED_AUTH_FAILURES
+  ACCOUNT_LOCKOUT
+  MFA_FAILURES
+  UNEXPECTED_ADMIN_ACTION
+  CREDENTIAL_CHANGE
+  AMAZON_AUTHORIZATION_SPIKE
+  AMAZON_THROTTLE_ANOMALY
+  PROVIDER_RATE_ANOMALY
+  MALWARE_DETECTION
+  BACKUP_FAILURE
+  RESTORE_TEST_FAILURE
+  LOG_PIPELINE_FAILURE
+  DATASTORE_READINESS_FAILURE
+  SECRET_SCAN_FAILURE
+}
+
+enum SecurityAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum SecurityIncidentSeverity {
+  SEV_1
+  SEV_2
+  SEV_3
+  SEV_4
+}
+
+enum SecurityIncidentStatus {
+  OPEN
+  CONTAINED
+  RECOVERING
+  CLOSED
 }
 
 enum AccessReviewDecision {
@@ -902,6 +979,9 @@ model Organization {
   accessReviews                  OrganizationAccessReview[]
   securityAuditEvents            SecurityAuditEvent[]
   credentialRotationRecords      CredentialRotationRecord[]
+  securityControlRecords         SecurityControlRecord[]
+  securityAlerts                 SecurityAlert[]
+  securityIncidents              SecurityIncident[]
 
   @@map("organizations")
 }
@@ -926,16 +1006,19 @@ model User {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  memberships              OrganizationMembership[]
-  passwordHistory          UserPasswordHistory[]
-  mfaFactor                UserMfaFactor?
-  authenticationChallenges AuthenticationChallenge[]
-  sessions                 UserSession[]
-  accessReviewsSubject     OrganizationAccessReview[] @relation("AccessReviewSubject")
-  accessReviewsReviewer    OrganizationAccessReview[] @relation("AccessReviewReviewer")
-  securityEventsActor      SecurityAuditEvent[]       @relation("SecurityEventActor")
-  securityEventsTarget     SecurityAuditEvent[]       @relation("SecurityEventTarget")
-  credentialRotations      CredentialRotationRecord[] @relation("CredentialRotationActor")
+  memberships                OrganizationMembership[]
+  passwordHistory            UserPasswordHistory[]
+  mfaFactor                  UserMfaFactor?
+  authenticationChallenges   AuthenticationChallenge[]
+  sessions                   UserSession[]
+  accessReviewsSubject       OrganizationAccessReview[] @relation("AccessReviewSubject")
+  accessReviewsReviewer      OrganizationAccessReview[] @relation("AccessReviewReviewer")
+  securityEventsActor        SecurityAuditEvent[]       @relation("SecurityEventActor")
+  securityEventsTarget       SecurityAuditEvent[]       @relation("SecurityEventTarget")
+  credentialRotations        CredentialRotationRecord[] @relation("CredentialRotationActor")
+  securityControlReviews     SecurityControlRecord[]    @relation("SecurityControlReviewer")
+  securityAlertsAcknowledged SecurityAlert[]            @relation("SecurityAlertAcknowledgedBy")
+  incidentsCommanded         SecurityIncident[]         @relation("SecurityIncidentCommander")
 
   @@map("users")
 }
@@ -1067,14 +1150,19 @@ model OrganizationAccessReview {
 }
 
 model SecurityAuditEvent {
-  id             String                 @id @default(cuid())
-  organizationId String                 @map("organization_id")
-  actorUserId    String?                @map("actor_user_id")
-  targetUserId   String?                @map("target_user_id")
-  eventType      SecurityAuditEventType @map("event_type")
-  idempotencyKey String?                @map("idempotency_key")
-  context        Json?
-  createdAt      DateTime               @default(now()) @map("created_at")
+  id                   String                 @id @default(cuid())
+  organizationId       String                 @map("organization_id")
+  actorUserId          String?                @map("actor_user_id")
+  targetUserId         String?                @map("target_user_id")
+  eventType            SecurityAuditEventType @map("event_type")
+  outcome              SecurityEventOutcome   @default(SUCCESS)
+  source               String                 @default("APPLICATION")
+  requestCorrelationId String?                @map("request_correlation_id")
+  sourcePrincipalHash  String?                @map("source_principal_hash")
+  idempotencyKey       String?                @map("idempotency_key")
+  context              Json?
+  createdAt            DateTime               @default(now()) @map("created_at")
+  retentionUntil       DateTime               @default(dbgenerated("(CURRENT_TIMESTAMP + INTERVAL '12 months')")) @map("retention_until")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   actorUser    User?        @relation("SecurityEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
@@ -1083,6 +1171,7 @@ model SecurityAuditEvent {
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, eventType, createdAt(sort: Desc)])
   @@index([targetUserId, createdAt(sort: Desc)])
+  @@index([organizationId, retentionUntil])
   @@map("security_audit_events")
 }
 
@@ -1102,6 +1191,83 @@ model CredentialRotationRecord {
   @@index([organizationId, credentialType, rotatedAt(sort: Desc)])
   @@index([organizationId, nextDueAt])
   @@map("credential_rotation_records")
+}
+
+model SecurityControlRecord {
+  id                String                @id @default(cuid())
+  organizationId    String                @map("organization_id")
+  reviewerUserId    String?               @map("reviewer_user_id")
+  controlType       SecurityControlType   @map("control_type")
+  result            SecurityControlResult
+  periodStartedAt   DateTime?             @map("period_started_at")
+  periodEndedAt     DateTime?             @map("period_ended_at")
+  performedAt       DateTime              @map("performed_at")
+  nextDueAt         DateTime              @map("next_due_at")
+  evidenceReference String?               @map("evidence_reference")
+  summary           String
+  findings          Json?
+  actionItems       Json?                 @map("action_items")
+  idempotencyKey    String                @map("idempotency_key")
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  reviewer     User?        @relation("SecurityControlReviewer", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, controlType, performedAt(sort: Desc)])
+  @@index([organizationId, nextDueAt])
+  @@map("security_control_records")
+}
+
+model SecurityAlert {
+  id                   String              @id @default(cuid())
+  organizationId       String              @map("organization_id")
+  alertType            SecurityAlertType   @map("alert_type")
+  status               SecurityAlertStatus @default(OPEN)
+  severity             String
+  dedupeKey            String              @map("dedupe_key")
+  observedAt           DateTime            @map("observed_at")
+  requestCorrelationId String?             @map("request_correlation_id")
+  triggerInputs        Json                @map("trigger_inputs")
+  acknowledgedAt       DateTime?           @map("acknowledged_at")
+  acknowledgedByUserId String?             @map("acknowledged_by_user_id")
+  resolvedAt           DateTime?           @map("resolved_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  acknowledgedBy User?        @relation("SecurityAlertAcknowledgedBy", fields: [acknowledgedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status, observedAt(sort: Desc)])
+  @@index([organizationId, alertType, observedAt(sort: Desc)])
+  @@map("security_alerts")
+}
+
+model SecurityIncident {
+  id                         String                   @id @default(cuid())
+  organizationId             String                   @map("organization_id")
+  reference                  String
+  title                      String
+  severity                   SecurityIncidentSeverity
+  status                     SecurityIncidentStatus   @default(OPEN)
+  detectedAt                 DateTime                 @map("detected_at")
+  amazonNotificationRequired Boolean                  @map("amazon_notification_required")
+  amazonNotificationDueAt    DateTime?                @map("amazon_notification_due_at")
+  amazonNotifiedAt           DateTime?                @map("amazon_notified_at")
+  amazonIncidentReference    String?                  @map("amazon_incident_reference")
+  incidentCommanderUserId    String?                  @map("incident_commander_user_id")
+  nonSensitiveSummary        String                   @map("non_sensitive_summary")
+  closedAt                   DateTime?                @map("closed_at")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  updatedAt                  DateTime                 @updatedAt @map("updated_at")
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  incidentCommander User?        @relation("SecurityIncidentCommander", fields: [incidentCommanderUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, reference])
+  @@index([organizationId, status, detectedAt(sort: Desc)])
+  @@index([organizationId, amazonNotificationDueAt])
+  @@map("security_incidents")
 }
 
 model ScanJob {

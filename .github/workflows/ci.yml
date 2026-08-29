@@ -4,8 +4,42 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
+  security-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level high
+      - run: pnpm check:private-assets
+      - name: Trivy filesystem, dependency, configuration and secret scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: github/codeql-action/analyze@v4
+
   native:
     runs-on: ubuntu-latest
     steps:
@@ -25,6 +59,7 @@ jobs:
       - run: pnpm check:production-hardening
       - run: DATABASE_URL=postgresql://invalid:invalid@127.0.0.1:1/invalid pnpm db:generate
       - run: pnpm verify
+      - run: pnpm security:amazon:audit
       - run: pnpm release-gate:research
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e 'services/scanner[dev]'

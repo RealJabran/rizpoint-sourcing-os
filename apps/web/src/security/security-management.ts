@@ -1,5 +1,6 @@
 import {
   db,
+  listSecurityOperationsStatus,
   type AccessReviewDecision,
   type CredentialRotationType,
   type OrganizationRole,
@@ -120,6 +121,7 @@ export async function getSecurityDashboard(input: {
       own,
       organization: null,
       providerCredentialHealth: null,
+      operations: null,
       audit: [],
     };
 
@@ -131,11 +133,14 @@ export async function getSecurityDashboard(input: {
       accessReviews: { orderBy: { reviewedAt: "desc" }, take: 1 },
     },
   });
-  const audit = await db.securityAuditEvent.findMany({
-    where: { organizationId: input.organizationId },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const [audit, operations] = await Promise.all([
+    db.securityAuditEvent.findMany({
+      where: { organizationId: input.organizationId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    listSecurityOperationsStatus(input.organizationId, now),
+  ]);
   return {
     own,
     organization: {
@@ -172,12 +177,37 @@ export async function getSecurityDashboard(input: {
         overdue: record.nextDueAt <= now,
       })),
     },
+    operations: {
+      controls: operations.controls.map((control) => ({
+        ...control,
+        lastPerformedAt: control.lastPerformedAt?.toISOString() ?? null,
+        nextDueAt: control.nextDueAt?.toISOString() ?? null,
+      })),
+      openAlerts: operations.alerts.map((alert) => ({
+        id: alert.id,
+        alertType: alert.alertType,
+        severity: alert.severity,
+        observedAt: alert.observedAt.toISOString(),
+      })),
+      openIncidents: operations.incidents.map((incident) => ({
+        id: incident.id,
+        reference: incident.reference,
+        severity: incident.severity,
+        detectedAt: incident.detectedAt.toISOString(),
+        amazonNotificationDueAt:
+          incident.amazonNotificationDueAt?.toISOString() ?? null,
+        amazonNotifiedAt: incident.amazonNotifiedAt?.toISOString() ?? null,
+      })),
+    },
     audit: audit.map((event) => ({
       id: event.id,
       eventType: event.eventType,
+      outcome: event.outcome,
+      source: event.source,
       actorUserId: event.actorUserId,
       targetUserId: event.targetUserId,
       createdAt: event.createdAt.toISOString(),
+      retentionUntil: event.retentionUntil.toISOString(),
       context: event.context,
     })),
   };

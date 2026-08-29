@@ -4,6 +4,7 @@ import {
   db,
   ensurePhaseZeroOrganization,
   Prisma,
+  recordSecurityAuditEvent,
   type AuthenticationChallengePurpose,
 } from "@rizpoint/database";
 import {
@@ -84,15 +85,32 @@ async function audit(input: {
   actorUserId?: string | null;
   targetUserId?: string | null;
   context?: Record<string, string | number | boolean | null>;
+  requestCorrelationId?: string;
+  sourcePrincipal?: string;
 }) {
-  await db.securityAuditEvent.create({
-    data: {
-      organizationId: input.organizationId,
-      eventType: input.eventType,
-      actorUserId: input.actorUserId ?? null,
-      targetUserId: input.targetUserId ?? null,
-      ...(input.context ? { context: input.context } : {}),
-    },
+  const failed = new Set([
+    "LOGIN_FAILURE",
+    "MFA_CHALLENGE_FAILED",
+    "PASSWORD_EXPIRED",
+  ]).has(input.eventType);
+  await recordSecurityAuditEvent({
+    organizationId: input.organizationId,
+    eventType: input.eventType,
+    outcome: failed ? "FAILURE" : "SUCCESS",
+    source: "AUTHENTICATION",
+    ...(input.actorUserId !== undefined
+      ? { actorUserId: input.actorUserId }
+      : {}),
+    ...(input.targetUserId !== undefined
+      ? { targetUserId: input.targetUserId }
+      : {}),
+    ...(input.requestCorrelationId
+      ? { requestCorrelationId: input.requestCorrelationId }
+      : {}),
+    ...(input.sourcePrincipal
+      ? { sourcePrincipal: input.sourcePrincipal }
+      : {}),
+    ...(input.context ? { context: input.context } : {}),
   });
 }
 
@@ -109,6 +127,7 @@ async function recordFailedPassword(input: {
   organizationId: string;
   userId: string;
   now: Date;
+  networkPrincipal?: string;
 }) {
   const rows = await db.$queryRaw<
     Array<{ failedLoginAttempts: number; lockedUntil: Date | null }>
@@ -134,6 +153,9 @@ async function recordFailedPassword(input: {
     eventType: "LOGIN_FAILURE",
     targetUserId: input.userId,
     context: { reason: "PASSWORD_INVALID" },
+    ...(input.networkPrincipal
+      ? { sourcePrincipal: input.networkPrincipal }
+      : {}),
   });
   if (state?.failedLoginAttempts === ACCOUNT_LOCK_THRESHOLD)
     await audit({
@@ -144,6 +166,9 @@ async function recordFailedPassword(input: {
         failedAttempts: state.failedLoginAttempts,
         lockMinutes: ACCOUNT_LOCK_MS / 60_000,
       },
+      ...(input.networkPrincipal
+        ? { sourcePrincipal: input.networkPrincipal }
+        : {}),
     });
   return state;
 }
@@ -175,8 +200,15 @@ export async function startAuthentication(input: {
       now,
     }),
   ]);
-  if (!networkLimit.allowed || !accountLimit.allowed)
+  if (!networkLimit.allowed || !accountLimit.allowed) {
+    await audit({
+      organizationId: organization.id,
+      eventType: "LOGIN_FAILURE",
+      context: { reason: "RATE_LIMITED" },
+      sourcePrincipal: input.networkPrincipal,
+    });
     return { status: "INVALID_CREDENTIALS" };
+  }
 
   const user = await db.user.findUnique({
     where: { email },
@@ -191,6 +223,12 @@ export async function startAuthentication(input: {
   if (!user || !user.active || user.memberships.length !== 1) {
     // Equalize the expensive password path without revealing account existence.
     await createPasswordHash(input.password);
+    await audit({
+      organizationId: organization.id,
+      eventType: "LOGIN_FAILURE",
+      context: { reason: "INVALID_PRINCIPAL_OR_INACTIVE" },
+      sourcePrincipal: input.networkPrincipal,
+    });
     return { status: "INVALID_CREDENTIALS" };
   }
 
@@ -200,6 +238,7 @@ export async function startAuthentication(input: {
       organizationId: organization.id,
       userId: user.id,
       now,
+      networkPrincipal: input.networkPrincipal,
     });
     return { status: "INVALID_CREDENTIALS" };
   }

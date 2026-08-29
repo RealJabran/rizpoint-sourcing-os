@@ -93,6 +93,14 @@ endpoint/server/database/object/backup storage, monthly vulnerability scans,
 and the external controls classified in `AMAZON_SECURITY_CONTROLS.md`;
 application rate limits and idle sessions are not infrastructure substitutes.
 
+Prompt 36I formalizes that process in `SECURITY_LOGGING.md` and the maintenance
+calendar in `SECURITY_MAINTENANCE.md`. Production security logs require private
+central collection and at least 12 months of integrity-protected retention.
+Record every review, vulnerability scan, recovery exercise, plan review and
+annual governance activity through the tenant-scoped security control boundary;
+never mark a control complete from documentation alone. Run
+`pnpm security:amazon:audit` for machine checks and overdue/manual evidence.
+
 Scanner readiness now fails when ClamAV is unavailable or its signature date is
 older than `CLAMAV_MAX_SIGNATURE_AGE_HOURS` (72 hours in the supported profile).
 This is upload-scanner evidence only. Review the separate host/server/endpoint

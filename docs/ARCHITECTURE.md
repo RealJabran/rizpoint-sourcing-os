@@ -9,6 +9,15 @@
 - **Redis**: BullMQ transport only; it is not canonical job state.
 - **MinIO**: local private S3-compatible object storage.
 
+Security operations use the existing PostgreSQL trust boundary. Append-only
+`SecurityAuditEvent` rows carry outcome/source/correlation and a 12-month minimum
+retention deadline. `SecurityAlert` stores deduplicated non-sensitive triggers;
+`SecurityControlRecord` stores human review evidence and due dates; and
+`SecurityIncident` starts the Amazon 24-hour notification clock when Amazon
+Information or SP-API access may be involved. Worker signal evaluation is
+bounded and tenant-scoped. A production SIEM remains a separate deployment
+control rather than a new application database.
+
 ## Upload and mapping job flow
 
 ```mermaid
