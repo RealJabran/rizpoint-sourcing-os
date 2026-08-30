@@ -1,6 +1,6 @@
 # Amazon SP-API network and infrastructure security
 
-Last reviewed: 2026-08-28
+Last reviewed: 2026-08-30
 
 This runbook defines RizPoint's supported hardened application topology and the
 evidence required before answering Amazon infrastructure questions. It is not
@@ -48,7 +48,7 @@ flowchart LR
   SIEM[Central SIEM\nEXTERNAL EVIDENCE]
 
   Internet --> FW --> WAF --> Edge
-  Edge -->|EDGE| Web
+  Edge -->|EDGE mTLS 1.2+| Web
   Web -->|DATA| PG
   Web -->|DATA| S3
   Worker -->|DATA| PG
@@ -57,15 +57,17 @@ flowchart LR
   Worker -->|APPLICATION egress| Providers
   Worker -->|SECURITY| Scanner -->|SECURITY| ClamAV
   ClamAV -->|signature-update egress only| Internet
-  Edge -. sanitized logs .-> SIEM
-  Web -. sanitized logs .-> SIEM
-  Worker -. sanitized logs .-> SIEM
+  Edge -. journald / rsyslog TLS .-> SIEM
+  Web -. journald / rsyslog TLS .-> SIEM
+  Worker -. journald / rsyslog TLS .-> SIEM
 ```
 
 The trust zones are:
 
 - **EDGE**: only the TLS proxy and web service. Host TCP/443 maps to edge
-  TCP/8443. No application container binds a host port.
+  TCP/8443. Edge authenticates web over TLS 1.2+ mTLS on TCP/3443. The only
+  plaintext hop is web-container loopback from stunnel to Next.js; it never
+  crosses a network namespace.
 - **APPLICATION**: worker provider egress. Web does not join this network and
   cannot receive LWA/provider-vault secrets.
 - **DATA**: web, worker, and migrator reach only private managed TLS endpoints.
@@ -73,17 +75,20 @@ The trust zones are:
   deployment identities/subnets.
 - **SECURITY**: an internal Docker network containing only worker, scanner, and
   ClamAV. A separate ClamAV-only update network permits signature downloads.
+- **MONITORING**: host journald is forwarded by rsyslog over authenticated TLS
+  to the managed SIEM. Containers do not receive collector administration
+  access or join its management plane.
 
-The edge-to-web and scanner-to-ClamAV hops are confined to one trusted host and
-isolated bridges. For a multi-host/container-platform deployment, replace those
-links with service-mesh/private-load-balancer TLS or mTLS before approval.
+Scanner and ClamAV process supplier upload content, not Amazon SP-API responses.
+Those isolated same-host hops therefore do not carry Amazon Information. If
+that scope changes or the services move to separate hosts, mTLS is mandatory.
 
 ### Allowed connectivity
 
 | Source   | Destination                   | Port/protocol | Purpose                                |
 | -------- | ----------------------------- | ------------- | -------------------------------------- |
 | Internet | Edge                          | TCP/443       | HTTPS only                             |
-| Edge     | Web                           | TCP/3000      | trusted same-host reverse proxy        |
+| Edge     | Web                           | mTLS/3443     | authenticated reverse proxy            |
 | Web      | PostgreSQL                    | TLS/5432      | tenant-scoped application state        |
 | Web      | object storage                | HTTPS/443     | signed private uploads/downloads       |
 | Worker   | PostgreSQL                    | TLS/5432      | canonical jobs/evidence                |
@@ -93,15 +98,37 @@ links with service-mesh/private-load-balancer TLS or mTLS before approval.
 | Scanner  | ClamAV                        | TCP/3310      | isolated malware scanning              |
 | Worker   | Amazon/LWA/licensed providers | HTTPS/443     | allowlisted server-side provider calls |
 | ClamAV   | signature distribution        | HTTPS/DNS     | definitions update only                |
+| Host     | managed SIEM                  | TLS/6514      | sanitized security events              |
 
 Everything else is denied by topology and must be denied again at the cloud
 security-group/network-firewall layer. Docker network names are not proof of a
 cloud ACL.
 
+### Complete Amazon Information transport inventory
+
+| Information path                    | Amazon Information carried                           | Required protection / verifier evidence                       |
+| ----------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
+| Amazon SP-API → worker              | catalog, offers, fees, restrictions, seller metadata | HTTPS allowlisted Amazon endpoint; Node TLS minimum 1.2       |
+| Login With Amazon → worker          | OAuth code/access token                              | official HTTPS LWA endpoint; access token remains memory-only |
+| worker/web/migrator ↔ PostgreSQL    | normalized evidence and tenant workflow state        | TLS `sslmode=verify-full`, CA trust and hostname checking     |
+| worker ↔ Redis                      | job identifiers and bounded job metadata             | `rediss://` with certificate validation                       |
+| worker/web ↔ object storage         | authorized files, evidence, exports                  | HTTPS, certificate validation, private bucket and KMS at rest |
+| edge ↔ web                          | requests and Amazon-derived projections              | private CA, mutual TLS 1.2+, service-name verification        |
+| web ↔ browser                       | authorized evidence projections                      | trusted public TLS 1.2/1.3, HSTS and secure cookies           |
+| services/host → security monitoring | sanitized security metadata and identifiers          | rsyslog TLS with CA/peer verification; no payloads or secrets |
+| database/object backups             | retained Amazon evidence                             | encrypted transport to private encrypted backup destination   |
+
+The scanner/ClamAV path is excluded only because its defined input is supplier
+files. Raw Amazon payloads, refresh/access tokens, provider credentials and
+supplier file contents are prohibited from monitoring and WAF logs.
+
 ## TLS and transport
 
 - Nginx accepts TLS 1.2 and 1.3 only. Certificate and key files are mounted from
   operator-controlled secret paths and are never committed.
+- Edge-to-web uses a private CA and mutually authenticated leaf certificates.
+  Leaf validity is one year by default; the checker fails inside a 30-day
+  renewal window. The CA private key is kept offline/in the secret manager.
 - The supported host profile publishes TCP/443 only. If HTTP is enabled at a
   managed WAF/load balancer, it must perform a 308 redirect without forwarding
   credentials. RizPoint also redirects insecure page requests and rejects
@@ -135,10 +162,11 @@ host policy:
 5. Restrict outbound traffic to DNS, time, ClamAV updates, secret/KMS/monitoring
    services, private data services, Amazon/LWA, and licensed providers.
 
-`deploy/amazon-hardened/apply-ufw-baseline.sh` prints a plan by default. Its
-`--apply` path requires an administration CIDR, an exact confirmation value,
-root, and a reviewed recoverability plan. RizPoint never invokes it
-automatically.
+`deploy/amazon-production/firewall.sh` provides `plan`, `validate`, `apply`, and
+explicit `rollback` modes. Apply requires root, confirmed provider-console
+recovery and an exact reviewed confirmation. It preserves a root-only backup.
+RizPoint never invokes it automatically. `cloud-acl.md` defines the reinforcing
+provider firewall rules.
 
 After deployment, verify from a separate external network:
 
@@ -155,14 +183,18 @@ Choose and operate one appropriate production path:
 
 - Managed cloud: internet WAF, managed network firewall/IDS, threat-detection
   service, centralized immutable logs, and SIEM/security findings; or
-- Controlled Linux host: upstream WAF plus Suricata in IDS/IPS mode and Wazuh
-  or an equivalent SIEM/endpoint stack.
+- Controlled Linux host: upstream managed WAF, Suricata on the reviewed host
+  interface, host ClamAV daemon/on-access and scheduled protection, plus a
+  managed TLS SIEM.
 
 Required evidence includes the deployment/resource ID, protected subnet or
 endpoint, enabled rule/policy set, alert destination, last healthy check, dated
 test alert, retention, reviewer, and change ticket. Fail2ban and application
-logs alone are not IDS/IPS or a WAF. No such platform is installed by this
-repository, so this remains `EXTERNAL_OPERATION_REQUIRED`.
+logs alone are not IDS/IPS or a WAF.
+`deploy/amazon-production/host-controls.sh` installs and validates the supported
+host agents, rule/signature freshness, audit/time/update services and
+authenticated TLS log forwarding. The WAF/SIEM accounts and real host execution
+remain `EXTERNAL_OPERATION_REQUIRED` until verified.
 
 ## Malware and endpoint protection
 
@@ -172,12 +204,11 @@ ClamAV to respond and its signature timestamp to be within
 readiness response exposes only engine/signature version and update time.
 ClamAV cannot silently become stale while the scanner remains ready.
 
-This does **not** prove that the Linux host, administrator workstation, CI
-runner, or every server accessing Amazon Information has endpoint protection.
-Deploy a managed, tamper-protected endpoint/server agent, prove it cannot be
-disabled by ordinary users, record update/scan health, and perform the monthly
-update review required by Amazon. Until then endpoint anti-malware remains
-`EXTERNAL_OPERATION_REQUIRED`.
+The supported production host additionally runs the ClamAV daemon, freshclam,
+root-controlled on-access protection, a persistent daily scan timer, root-only
+quarantine and signature-age validation. This still does **not** prove those
+controls have been applied to the real host or that administrator workstations
+are covered. Host output plus endpoint-estate evidence remains required.
 
 ## Encryption at rest
 
@@ -207,17 +238,18 @@ equivalent into the container process at runtime. Restrict the worker identity
 to LWA/provider keys, the web identity to the MFA/session key, and storage
 identities to their required bucket actions.
 
-For an operator-controlled Compose deployment, run Compose inside the secret
-manager's short-lived process environment and disable automatic `.env` loading:
+For the supported operator-controlled deployment, run Compose inside 1Password
+Secrets Automation (or an equivalent approved secret manager) and disable
+automatic `.env` loading:
 
 ```bash
-COMPOSE_DISABLE_ENV_FILE=1 secret-manager-exec -- \
+COMPOSE_DISABLE_ENV_FILE=1 op run --env-file=/private/rizpoint-production.env -- \
   docker compose --env-file /dev/null -f compose.production.yaml up -d
 ```
 
-The command is intentionally provider-neutral; replace `secret-manager-exec`
-with the approved tool. The TLS certificate/key paths are external files with
-restricted ownership. The browser artifact gate rejects database, Redis,
+The private environment file contains secret-manager references, not values.
+Equivalent Vault/cloud-manager process injection is allowed. TLS/key paths are
+external files with restricted ownership. The browser artifact gate rejects database, Redis,
 NextAuth, provider, LWA, refresh-token, S3, MFA, and callback-private-key marker
 families.
 
@@ -234,23 +266,28 @@ It must report no `FAIL`. Missing external evidence correctly reports
 
 For the actual secret-injected runtime, copy
 `deploy/amazon-hardened/operator-attestation.example.json` to the ignored
-`operator-attestation.json`, fill it only after inspecting real controls, then
-run:
+`operator-attestation.json`, fill it only after inspecting real controls, and
+sign the exact bytes with an offline Ed25519 evidence key. Then run:
 
 ```bash
 pnpm security:amazon:deployment-check -- \
   --live \
-  --strict \
   --public-url=https://research.example.com \
-  --attestation=deploy/amazon-hardened/operator-attestation.json
+  --attestation=/private/operator-attestation.json \
+  --attestation-signature=/private/operator-attestation.sig \
+  --attestation-public-key=/run/rizpoint/attestation/public.pem \
+  --report-out=/private/rizpoint.deployment-report.json \
+  --signing-key=/private/deployment-evidence-key.pem
 ```
 
 The verifier checks topology, ports, fixed private/demo flags, TLS URL schemes,
 PostgreSQL certificate verification, Redis TLS, provider endpoint allowlisting,
 key length/placeholder rejection, the live certificate/TLS protocol/security
-headers, browser secret scanning, and the age and completeness of operator
-evidence. `--strict` exits non-zero while any manual control remains. It never
-prints secret values.
+headers, legacy TLS rejection, internal mTLS, browser secret scanning, and the
+age, signature and completeness of operator evidence. `--live` is always strict
+and exits non-zero while any manual control remains. A report is never signed
+unless every check passes. Import the JSON report and detached `.sig` in
+**Settings → Security → Amazon Compliance**; it is stored per organization.
 
 ## Amazon questionnaire evidence matrix
 
@@ -269,6 +306,9 @@ prints secret values.
   configured.
 - Uploaded files require ClamAV and current definitions; stale/unavailable
   scanning makes readiness fail.
+- The repository supplies recovery-gated UFW, Suricata, host ClamAV,
+  rsyslog-TLS, patching, PKI, certificate-age and host validation automation.
+  These are `CODE_READY`, not proof they are deployed.
 
 ### YES_AFTER_DEPLOYMENT_VERIFICATION
 

@@ -59,6 +59,58 @@ const statusFixture = {
 };
 
 test.describe("security controls", () => {
+  test("shows tenant-scoped signed Amazon deployment evidence without infrastructure secrets", async ({
+    page,
+  }) => {
+    await page.route("**/api/security/amazon-compliance", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          deployment: {
+            deploymentId: "private-production",
+            observedAt: "2026-08-30T10:00:00.000Z",
+            overallStatus: "VERIFIED",
+            releaseDigest: "abc123def456",
+            signerFingerprint: "fed654cba321",
+          },
+          controls: [
+            {
+              id: "firewall",
+              label: "Firewall",
+              status: "VERIFIED",
+              detail:
+                "Host and cloud rules verified by the signed deployment report.",
+            },
+            {
+              id: "tls-internal",
+              label: "TLS internal",
+              status: "VERIFIED",
+              detail: "Mutual TLS path verified.",
+            },
+          ],
+          governance: [
+            {
+              label: "Last vulnerability scan",
+              status: "CURRENT",
+              lastPerformedAt: "2026-08-29T10:00:00.000Z",
+              nextDueAt: "2026-09-28T10:00:00.000Z",
+            },
+          ],
+        }),
+      }),
+    );
+    await page.goto("/settings/security/amazon-compliance");
+    await expect(
+      page.getByRole("heading", { name: "Amazon Compliance" }),
+    ).toBeVisible();
+    await expect(page.getByText("Signed evidence verified")).toBeVisible();
+    await expect(page.getByText("TLS internal")).toBeVisible();
+    const content = await page.content();
+    expect(content).not.toMatch(
+      /refresh.?token|private.?key|database.?password/i,
+    );
+  });
+
   test("shows account, least-privilege, review, and credential evidence", async ({
     page,
   }) => {

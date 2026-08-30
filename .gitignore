@@ -37,3 +37,11 @@ redis-data/
 # Deployment attestations contain infrastructure evidence and reviewer data.
 deploy/amazon-hardened/operator-attestation.json
 deploy/amazon-hardened/security-operations-evidence.json
+# Live deployment evidence, detached signatures and private PKI material stay
+# in the private operations vault, never Git.
+deploy/amazon-production/evidence/
+deploy/amazon-production/private/
+*.deployment-report.json
+*.deployment-report.json.sig
+*.attestation.sig
+*-key.pem

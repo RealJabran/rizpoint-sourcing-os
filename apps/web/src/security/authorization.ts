@@ -67,7 +67,7 @@ const permissionRules: PermissionRule[] = [
   },
   {
     pattern:
-      /^\/api\/security\/(users|access-reviews|credentials|audit|operations)/u,
+      /^\/api\/security\/(users|access-reviews|credentials|audit|operations|amazon-compliance)/u,
     permission: "MANAGE_SECURITY",
   },
   {

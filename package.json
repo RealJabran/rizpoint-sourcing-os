@@ -23,6 +23,7 @@
     "check:private-assets": "node scripts/check-private-assets.mjs",
     "check:production-hardening": "node scripts/check-production-hardening.mjs",
     "security:amazon:deployment-check": "node scripts/amazon-deployment-security.mjs",
+    "security:amazon:attestation-sign": "node scripts/sign-amazon-deployment-attestation.mjs",
     "security:amazon:audit": "node scripts/amazon-security-audit.mjs",
     "security:amazon:profile-readiness": "node scripts/amazon-profile-readiness.mjs",
     "security:amazon:ports": "node scripts/verify-external-ports.mjs",

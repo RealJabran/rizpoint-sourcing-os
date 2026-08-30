@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { createHash, verify as verifySignature } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
+import { connect as tlsConnect } from "node:tls";
 
 export const STATUS = Object.freeze({
   PASS: "PASS",
@@ -36,8 +38,9 @@ const AMAZON_ENDPOINTS = new Set([
   "https://sellingpartnerapi-fe.amazon.com",
 ]);
 
-const EXTERNAL_CONTROLS = Object.freeze({
+export const EXTERNAL_CONTROLS = Object.freeze({
   hostFirewall: { label: "Host/cloud firewall", maxAgeDays: 90 },
+  networkSegmentation: { label: "Network segmentation", maxAgeDays: 90 },
   waf: { label: "Internet-edge WAF", maxAgeDays: 90 },
   idsIps: { label: "IDS/IPS", maxAgeDays: 90 },
   endpointProtection: {
@@ -53,6 +56,13 @@ const EXTERNAL_CONTROLS = Object.freeze({
     label: "Centralized monitoring/SIEM",
     maxAgeDays: 90,
   },
+  publicTls: { label: "Public TLS", maxAgeDays: 31 },
+  internalTls: { label: "Internal service mTLS", maxAgeDays: 31 },
+  databaseTls: { label: "PostgreSQL verified TLS", maxAgeDays: 31 },
+  redisTls: { label: "Redis TLS", maxAgeDays: 31 },
+  storageTls: { label: "Object-storage TLS", maxAgeDays: 31 },
+  providerTls: { label: "Amazon SP-API and LWA TLS", maxAgeDays: 31 },
+  monitoringTls: { label: "Monitoring transport TLS", maxAgeDays: 31 },
   securityUpdates: {
     label: "Operating-system and endpoint security updates",
     maxAgeDays: 31,
@@ -115,7 +125,7 @@ function checkNetworkMembership(checks, services, serviceName, required) {
   );
 }
 
-export function evaluateProductionCompose(compose) {
+export function evaluateProductionCompose(compose, composeSource = "") {
   const checks = [];
   const services = compose?.services ?? {};
   const networks = compose?.networks ?? {};
@@ -135,6 +145,13 @@ export function evaluateProductionCompose(compose) {
       ),
     );
   }
+  checks.push(
+    result(
+      "compose-network-monitoring",
+      /^\s{2}monitoring:\s*$/mu.test(composeSource) ? STATUS.PASS : STATUS.FAIL,
+      "MONITORING is a declared host-managed private trust zone.",
+    ),
+  );
 
   checkNetworkMembership(checks, services, "edge", ["edge"]);
   checkNetworkMembership(checks, services, "web", ["edge", "data"]);
@@ -212,6 +229,45 @@ export function evaluateProductionCompose(compose) {
     ),
   );
 
+  const missingResources = [
+    "edge",
+    "web",
+    "worker",
+    "migrate",
+    "scanner",
+    "clamav",
+  ].filter((name) => {
+    const service = services[name];
+    return (
+      !service?.pids_limit ||
+      !service?.mem_limit ||
+      !service?.cpus ||
+      !service?.restart
+    );
+  });
+  checks.push(
+    result(
+      "compose-resource-and-restart-policy",
+      missingResources.length === 0 ? STATUS.PASS : STATUS.FAIL,
+      missingResources.length === 0
+        ? "Production services have PID, memory, CPU and restart policies."
+        : `Resource/restart policy missing for: ${missingResources.join(", ")}.`,
+    ),
+  );
+
+  const unsafeLogging = Object.entries(services).filter(
+    ([, service]) => service?.logging?.driver !== "journald",
+  );
+  checks.push(
+    result(
+      "compose-central-log-source",
+      unsafeLogging.length === 0 ? STATUS.PASS : STATUS.FAIL,
+      unsafeLogging.length === 0
+        ? "Every service emits to host journald for sanitized TLS forwarding."
+        : `Journald logging missing for: ${unsafeLogging.map(([name]) => name).join(", ")}.`,
+    ),
+  );
+
   const webEnvironment = services.web?.environment ?? {};
   const workerEnvironment = services.worker?.environment ?? {};
   const fixedEnvironmentOkay =
@@ -245,6 +301,24 @@ export function evaluateProductionCompose(compose) {
       webHasUnneededAccess
         ? "Web receives a worker/scanner/provider-only configuration value."
         : "Web receives no Redis, scanner, LWA secret, or provider-vault configuration.",
+    ),
+  );
+
+  const edgeNetworks = serviceNetworks(services.edge);
+  const webNetworks = serviceNetworks(services.web);
+  const pathIsolationOkay =
+    edgeNetworks.length === 1 &&
+    !webNetworks.some(
+      (name) => name.endsWith("application") || name.endsWith("security"),
+    ) &&
+    !serviceNetworks(services.worker).some((name) => name.endsWith("edge"));
+  checks.push(
+    result(
+      "compose-prohibited-paths",
+      pathIsolationOkay ? STATUS.PASS : STATUS.FAIL,
+      pathIsolationOkay
+        ? "Edge cannot enter DATA/APPLICATION/SECURITY; web cannot enter worker/security zones; worker cannot enter EDGE."
+        : "A prohibited east-west trust-zone path is present.",
     ),
   );
 
@@ -359,6 +433,26 @@ export function evaluateRuntimeEnvironment(environment) {
       ),
     );
   }
+  checks.push(
+    result(
+      "runtime-lwa-endpoint",
+      environment.SP_API_LWA_ENDPOINT === "https://api.amazon.com/auth/o2/token"
+        ? STATUS.PASS
+        : STATUS.FAIL,
+      "LWA token exchange must use Amazon's HTTPS endpoint.",
+    ),
+  );
+  checks.push(
+    result(
+      "runtime-certificate-validation",
+      typeof environment.NODE_EXTRA_CA_CERTS === "string" &&
+        environment.NODE_EXTRA_CA_CERTS.startsWith("/run/secrets/") &&
+        !String(environment.NODE_TLS_REJECT_UNAUTHORIZED ?? "").includes("0")
+        ? STATUS.PASS
+        : STATUS.FAIL,
+      "Private CA trust must be secret-mounted and TLS certificate validation cannot be disabled.",
+    ),
+  );
 
   checks.push(
     result(
@@ -430,7 +524,17 @@ export function evaluateRuntimeEnvironment(environment) {
   return checks;
 }
 
-export function evaluateStaticFiles({ nginx, nextConfig, csp, privateAsset }) {
+export function evaluateStaticFiles({
+  nginx,
+  nextConfig,
+  csp,
+  privateAsset,
+  productionCompose = "",
+  webStunnel = "",
+  hostControls = "",
+  firewall = "",
+  monitoring = "",
+}) {
   const checks = [];
   const nginxRequirements = [
     "listen 8443 ssl",
@@ -439,9 +543,93 @@ export function evaluateStaticFiles({ nginx, nextConfig, csp, privateAsset }) {
     "Strict-Transport-Security",
     "/run/secrets/rizpoint_tls_cert",
     "/run/secrets/rizpoint_tls_key",
+    "proxy_pass https://web:3443",
+    "proxy_ssl_verify on",
+    "proxy_ssl_protocols TLSv1.2 TLSv1.3",
   ];
   const missingNginx = nginxRequirements.filter(
     (required) => !nginx.includes(required),
+  );
+
+  const stunnelRequirements = [
+    "accept = 0.0.0.0:3443",
+    "connect = 127.0.0.1:3000",
+    "verifyChain = yes",
+    "checkHost = edge",
+    "options = NO_TLSv1",
+    "options = NO_TLSv1.1",
+  ];
+  const missingStunnel = stunnelRequirements.filter(
+    (required) => !webStunnel.includes(required),
+  );
+  checks.push(
+    result(
+      "internal-edge-web-mtls",
+      missingStunnel.length === 0 ? STATUS.PASS : STATUS.FAIL,
+      missingStunnel.length === 0
+        ? "Edge-to-web uses verified TLS 1.2+ mTLS; plaintext is confined to web-container loopback."
+        : `Internal mTLS missing: ${missingStunnel.join(", ")}.`,
+    ),
+  );
+
+  const forbiddenProductionPatterns = [
+    [/rejectUnauthorized\s*[:=]\s*false/iu, "certificate validation disabled"],
+    [/sslmode=disable/iu, "PostgreSQL TLS disabled"],
+    [/\bredis:\/\//iu, "plaintext Redis URL"],
+    [
+      /SP_API_(?:ENDPOINT|LWA_ENDPOINT):\s*http:\/\//iu,
+      "insecure provider endpoint",
+    ],
+    [
+      /S3_(?:ENDPOINT|PUBLIC_ENDPOINT):\s*http:\/\//iu,
+      "insecure storage endpoint",
+    ],
+  ];
+  const unsafeProduction = forbiddenProductionPatterns
+    .filter(([pattern]) => pattern.test(productionCompose))
+    .map(([, label]) => label);
+  checks.push(
+    result(
+      "production-plaintext-rejection",
+      unsafeProduction.length === 0 ? STATUS.PASS : STATUS.FAIL,
+      unsafeProduction.length === 0
+        ? "Production profile contains no disabled certificate validation or plaintext data/provider endpoints."
+        : `Unsafe production transport: ${unsafeProduction.join(", ")}.`,
+    ),
+  );
+
+  const firewallRequirements = [
+    "ufw default deny incoming",
+    "ufw default deny routed",
+    "ufw allow 443/tcp",
+    "RIZPOINT_RECOVERY_ACCESS_CONFIRMED",
+    "rollback",
+  ];
+  const hostRequirements = [
+    "suricata-update",
+    "clamav-freshclam",
+    "rizpoint-clamonacc.service",
+    "rizpoint-malware-scan.timer",
+    "rsyslog-gnutls",
+    "unattended-upgrades",
+  ];
+  const monitoringRequirements = [
+    'StreamDriver="gtls"',
+    'StreamDriverMode="1"',
+    'StreamDriverAuthMode="x509/name"',
+  ];
+  const automationOkay =
+    firewallRequirements.every((value) => firewall.includes(value)) &&
+    hostRequirements.every((value) => hostControls.includes(value)) &&
+    monitoringRequirements.every((value) => monitoring.includes(value));
+  checks.push(
+    result(
+      "host-control-deployment-automation",
+      automationOkay ? STATUS.PASS : STATUS.FAIL,
+      automationOkay
+        ? "Recovery-gated firewall, IDS, anti-malware, patching and verified TLS log-forwarding automation is present."
+        : "Required production host-control automation is incomplete.",
+    ),
   );
   checks.push(
     result(
@@ -491,8 +679,18 @@ export function evaluateStaticFiles({ nginx, nextConfig, csp, privateAsset }) {
   return checks;
 }
 
-export function evaluateAttestation(attestation, now = new Date()) {
+export function evaluateAttestation(
+  attestation,
+  now = new Date(),
+  signatureVerified = false,
+) {
   return Object.entries(EXTERNAL_CONTROLS).map(([key, policy]) => {
+    if (!signatureVerified)
+      return result(
+        `external-${key}`,
+        STATUS.MANUAL,
+        `${policy.label} needs a valid Ed25519 signature from the configured deployment evidence key.`,
+      );
     const value = attestation?.controls?.[key];
     if (!value || value.status === "NOT_VERIFIED")
       return result(
@@ -524,6 +722,22 @@ export function evaluateAttestation(attestation, now = new Date()) {
         : `${policy.label} verification is incomplete or older than ${policy.maxAgeDays} days.`,
     );
   });
+}
+
+export function verifyAttestationSignature(
+  attestationBytes,
+  signature,
+  publicKey,
+) {
+  try {
+    return verifySignature(null, attestationBytes, publicKey, signature);
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizedAttestationDigest(attestationBytes) {
+  return createHash("sha256").update(attestationBytes).digest("hex");
 }
 
 export function loadProductionCompose(path = "compose.production.yaml") {
@@ -601,6 +815,11 @@ export async function verifyPublicTlsEndpoint(value) {
       (response) => {
         const protocol = response.socket.getProtocol();
         const tlsOkay = protocol === "TLSv1.2" || protocol === "TLSv1.3";
+        const peer = response.socket.getPeerCertificate();
+        const certificateExpiry = new Date(peer?.valid_to ?? "invalid");
+        const expiryOkay =
+          Number.isFinite(certificateExpiry.getTime()) &&
+          certificateExpiry.getTime() - Date.now() >= 30 * 86_400_000;
         const requiredHeaders = [
           "strict-transport-security",
           "content-security-policy",
@@ -617,12 +836,14 @@ export async function verifyPublicTlsEndpoint(value) {
           resolve([
             result(
               "live-public-tls",
-              tlsOkay && (response.statusCode ?? 500) < 500
+              tlsOkay && expiryOkay && (response.statusCode ?? 500) < 500
                 ? STATUS.PASS
                 : STATUS.FAIL,
-              tlsOkay
-                ? `Validated certificate and negotiated ${protocol}.`
-                : "Endpoint did not negotiate TLS 1.2 or TLS 1.3.",
+              tlsOkay && expiryOkay
+                ? `Validated certificate, at least 30 days validity, and negotiated ${protocol}.`
+                : tlsOkay
+                  ? "Public certificate is missing or expires within 30 days."
+                  : "Endpoint did not negotiate TLS 1.2 or TLS 1.3.",
             ),
             result(
               "live-public-security-headers",
@@ -647,4 +868,66 @@ export async function verifyPublicTlsEndpoint(value) {
     );
     request.end();
   });
+}
+
+export async function verifyLegacyTlsRejected(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return [
+      result(
+        "live-legacy-tls-rejection",
+        STATUS.FAIL,
+        "Public URL is invalid.",
+      ),
+    ];
+  }
+  if (url.protocol !== "https:")
+    return [
+      result(
+        "live-legacy-tls-rejection",
+        STATUS.FAIL,
+        "Public URL must use HTTPS.",
+      ),
+    ];
+  const port = Number(url.port || 443);
+  const attempts = ["TLSv1", "TLSv1.1"].map(
+    (version) =>
+      new Promise((resolve) => {
+        let accepted = false;
+        let socket;
+        try {
+          socket = tlsConnect({
+            host: url.hostname,
+            port,
+            servername: url.hostname,
+            minVersion: version,
+            maxVersion: version,
+            rejectUnauthorized: true,
+            timeout: 5_000,
+          });
+          socket.once("secureConnect", () => {
+            accepted = true;
+            socket.destroy();
+          });
+          socket.once("timeout", () => socket.destroy());
+          socket.once("error", () => resolve({ version, accepted: false }));
+          socket.once("close", () => resolve({ version, accepted }));
+        } catch {
+          resolve({ version, accepted: false });
+        }
+      }),
+  );
+  const outcomes = await Promise.all(attempts);
+  const accepted = outcomes.filter((outcome) => outcome.accepted);
+  return [
+    result(
+      "live-legacy-tls-rejection",
+      accepted.length === 0 ? STATUS.PASS : STATUS.FAIL,
+      accepted.length === 0
+        ? "TLS 1.0 and TLS 1.1 handshakes were rejected."
+        : `Legacy protocols accepted: ${accepted.map((item) => item.version).join(", ")}.`,
+    ),
+  ];
 }

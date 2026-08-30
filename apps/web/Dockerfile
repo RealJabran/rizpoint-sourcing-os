@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim AS base
 WORKDIR /app
 ENV COREPACK_HOME=/opt/corepack
 RUN apt-get update && \
-    apt-get install --yes --no-install-recommends openssl && \
+    apt-get install --yes --no-install-recommends openssl stunnel4 && \
     rm -rf /var/lib/apt/lists/* && \
     corepack enable
 COPY . .
@@ -26,5 +26,5 @@ RUN DATABASE_URL="$PRISMA_GENERATE_DATABASE_URL" pnpm --filter @rizpoint/databas
 RUN cp -R /app/apps/web/.next/static /app/apps/web/.next/standalone/apps/web/.next/static && \
     chown -R node:node /app/apps/web/.next /app/apps/web/next-env.d.ts
 USER node
-EXPOSE 3000
+EXPOSE 3000 3443
 CMD ["node", "apps/web/.next/standalone/apps/web/server.js"]

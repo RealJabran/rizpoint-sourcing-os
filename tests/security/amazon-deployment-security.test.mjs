@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   BROWSER_FORBIDDEN_SECRET_MARKERS,
+  EXTERNAL_CONTROLS,
   STATUS,
   evaluateAttestation,
   evaluateProductionCompose,
   evaluateRuntimeEnvironment,
   evaluateStaticFiles,
   loadProductionCompose,
+  verifyAttestationSignature,
   verifyPublicTlsEndpoint,
 } from "../../scripts/lib/amazon-deployment-security.mjs";
 
@@ -26,6 +29,8 @@ function validRuntime() {
     SP_API_OAUTH_REDIRECT_URI:
       "https://rizpoint.test/api/providers/amazon/oauth/callback",
     SP_API_ENDPOINT: "https://sellingpartnerapi-na.amazon.com",
+    SP_API_LWA_ENDPOINT: "https://api.amazon.com/auth/o2/token",
+    NODE_EXTRA_CA_CERTS: "/run/secrets/rizpoint_internal_ca",
     DATABASE_URL:
       "postgresql://rizpoint:test@db.private/rizpoint?sslmode=verify-full",
     REDIS_URL: "rediss://redis.private:6379",
@@ -49,31 +54,50 @@ function verifiedAttestation() {
   };
   return {
     controls: Object.fromEntries(
-      [
-        "hostFirewall",
-        "waf",
-        "idsIps",
-        "endpointProtection",
-        "storageEncryption",
-        "backupEncryption",
-        "centralizedMonitoring",
-        "securityUpdates",
-      ].map((name) => [name, { ...value }]),
+      Object.keys(EXTERNAL_CONTROLS).map((name) => [name, { ...value }]),
     ),
   };
 }
 
 test("supported production topology publishes only the TLS edge", async () => {
   const compose = loadProductionCompose();
-  const [nginx, nextConfig, csp, privateAsset] = await Promise.all([
+  const [
+    nginx,
+    nextConfig,
+    csp,
+    privateAsset,
+    productionCompose,
+    webStunnel,
+    hostControls,
+    firewall,
+    monitoring,
+  ] = await Promise.all([
     readFile("deploy/amazon-hardened/nginx.conf", "utf8"),
     readFile("apps/web/next.config.ts", "utf8"),
     readFile("apps/web/src/content-security-policy.ts", "utf8"),
     readFile("scripts/check-private-assets.mjs", "utf8"),
+    readFile("compose.production.yaml", "utf8"),
+    readFile("deploy/amazon-production/runtime/web-stunnel.conf", "utf8"),
+    readFile("deploy/amazon-production/host-controls.sh", "utf8"),
+    readFile("deploy/amazon-production/firewall.sh", "utf8"),
+    readFile(
+      "deploy/amazon-production/monitoring/rsyslog-rizpoint.conf.tpl",
+      "utf8",
+    ),
   ]);
   const checks = [
-    ...evaluateProductionCompose(compose),
-    ...evaluateStaticFiles({ nginx, nextConfig, csp, privateAsset }),
+    ...evaluateProductionCompose(compose, productionCompose),
+    ...evaluateStaticFiles({
+      nginx,
+      nextConfig,
+      csp,
+      privateAsset,
+      productionCompose,
+      webStunnel,
+      hostControls,
+      firewall,
+      monitoring,
+    }),
   ];
   assert.deepEqual(
     checks.filter((check) => check.status === STATUS.FAIL),
@@ -128,15 +152,54 @@ test("external controls require current dated evidence rather than a boolean fla
     evaluateAttestation(
       verifiedAttestation(),
       new Date("2026-08-28T12:00:00.000Z"),
+      true,
     ).every((check) => check.status === STATUS.PASS),
   );
   const stale = verifiedAttestation();
   stale.controls.endpointProtection.verifiedAt = "2026-01-01T00:00:00.000Z";
   assert.equal(
-    evaluateAttestation(stale, new Date("2026-08-28T12:00:00.000Z")).find(
+    evaluateAttestation(stale, new Date("2026-08-28T12:00:00.000Z"), true).find(
       (check) => check.id === "external-endpointProtection",
     )?.status,
     STATUS.MANUAL,
+  );
+});
+
+test("operator evidence must retain a valid detached Ed25519 signature", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const bytes = Buffer.from(JSON.stringify(verifiedAttestation()));
+  const signature = sign(null, bytes, privateKey);
+  assert.equal(verifyAttestationSignature(bytes, signature, publicKey), true);
+  assert.equal(
+    verifyAttestationSignature(
+      Buffer.from(`${bytes.toString()} `),
+      signature,
+      publicKey,
+    ),
+    false,
+  );
+});
+
+test("production transport scan rejects plaintext Redis, storage, and disabled verification", () => {
+  const base = {
+    nginx: "",
+    nextConfig: "",
+    csp: "",
+    privateAsset: "",
+    webStunnel: "",
+    hostControls: "",
+    firewall: "",
+    monitoring: "",
+  };
+  const checks = evaluateStaticFiles({
+    ...base,
+    productionCompose:
+      "REDIS_URL: redis://cache\nS3_ENDPOINT: http://storage\nrejectUnauthorized=false",
+  });
+  assert.equal(
+    checks.find((check) => check.id === "production-plaintext-rejection")
+      ?.status,
+    STATUS.FAIL,
   );
 });
 

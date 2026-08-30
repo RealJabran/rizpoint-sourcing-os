@@ -43,15 +43,43 @@ if (
 )
   throw new Error("Research Companion host permissions must remain explicit");
 
-const [nginx, nextConfig, csp, privateAsset] = await Promise.all([
+const [
+  nginx,
+  nextConfig,
+  csp,
+  privateAsset,
+  productionCompose,
+  webStunnel,
+  hostControls,
+  firewall,
+  monitoring,
+] = await Promise.all([
   readFile("deploy/amazon-hardened/nginx.conf", "utf8"),
   readFile("apps/web/next.config.ts", "utf8"),
   readFile("apps/web/src/content-security-policy.ts", "utf8"),
   readFile("scripts/check-private-assets.mjs", "utf8"),
+  readFile("compose.production.yaml", "utf8"),
+  readFile("deploy/amazon-production/runtime/web-stunnel.conf", "utf8"),
+  readFile("deploy/amazon-production/host-controls.sh", "utf8"),
+  readFile("deploy/amazon-production/firewall.sh", "utf8"),
+  readFile(
+    "deploy/amazon-production/monitoring/rsyslog-rizpoint.conf.tpl",
+    "utf8",
+  ),
 ]);
 const deploymentChecks = [
-  ...evaluateProductionCompose(loadProductionCompose()),
-  ...evaluateStaticFiles({ nginx, nextConfig, csp, privateAsset }),
+  ...evaluateProductionCompose(loadProductionCompose(), productionCompose),
+  ...evaluateStaticFiles({
+    nginx,
+    nextConfig,
+    csp,
+    privateAsset,
+    productionCompose,
+    webStunnel,
+    hostControls,
+    firewall,
+    monitoring,
+  }),
 ];
 const failures = deploymentChecks.filter(
   (check) => check.status === STATUS.FAIL,

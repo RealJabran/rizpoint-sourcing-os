@@ -42,6 +42,7 @@ export * from "./alert-evaluator.js";
 export * from "./security-operations.js";
 export * from "./amazon-retention-policy.js";
 export * from "./amazon-information-lifecycle.js";
+export * from "./amazon-deployment-security.js";
 export * from "./marketplace-registry.js";
 export * from "./research-performance.js";
 export {

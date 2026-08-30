@@ -1,8 +1,14 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "deploymentId": "replace-with-production-deployment-id",
   "controls": {
     "hostFirewall": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "networkSegmentation": {
       "status": "NOT_VERIFIED",
       "verifiedAt": null,
       "reviewer": "",
@@ -39,6 +45,48 @@
       "evidenceReference": ""
     },
     "centralizedMonitoring": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "publicTls": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "internalTls": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "databaseTls": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "redisTls": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "storageTls": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "providerTls": {
+      "status": "NOT_VERIFIED",
+      "verifiedAt": null,
+      "reviewer": "",
+      "evidenceReference": ""
+    },
+    "monitoringTls": {
       "status": "NOT_VERIFIED",
       "verifiedAt": null,
       "reviewer": "",

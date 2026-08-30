@@ -25,6 +25,17 @@ services:
         uid: "101"
         gid: "101"
         mode: 0400
+      - source: rizpoint_internal_ca
+        target: rizpoint_internal_ca
+        mode: 0444
+      - source: rizpoint_edge_client_cert
+        target: rizpoint_edge_client_cert
+        mode: 0444
+      - source: rizpoint_edge_client_key
+        target: rizpoint_edge_client_key
+        uid: "101"
+        gid: "101"
+        mode: 0400
     ports:
       - "443:8443"
     networks: [edge]
@@ -32,14 +43,17 @@ services:
       web:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -q -O /dev/null --no-check-certificate https://127.0.0.1:8443/api/health",
-        ]
+      test: ["CMD", "nginx", "-t"]
       interval: 15s
       timeout: 5s
       retries: 5
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    logging: &security-logging
+      driver: journald
+      options:
+        tag: "rizpoint/{{.Name}}"
 
   migrate:
     build:
@@ -54,7 +68,16 @@ services:
     environment:
       DATABASE_URL:
       NODE_OPTIONS: --tls-min-v1.2
+      NODE_EXTRA_CA_CERTS: /run/secrets/rizpoint_internal_ca
     networks: [data]
+    secrets:
+      - source: rizpoint_internal_ca
+        target: rizpoint_internal_ca
+        mode: 0444
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.00
+    logging: *security-logging
 
   web:
     build:
@@ -62,7 +85,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:?inject a non-secret HTTPS storage origin}
-    command: ["node", "apps/web/.next/standalone/apps/web/server.js"]
+    command: ["node", "deploy/amazon-production/runtime/launch-web-tls.mjs"]
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -71,6 +94,7 @@ services:
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --tls-min-v1.2
+      NODE_EXTRA_CA_CERTS: /run/secrets/rizpoint_internal_ca
       HOSTNAME: 0.0.0.0
       RIZPOINT_PRIVATE_MODE: "true"
       PHASE_ZERO_DEMO_MODE: "false"
@@ -101,8 +125,24 @@ services:
       SP_API_OAUTH_CALLBACK_PUBLIC_KEY:
       SP_API_OAUTH_CALLBACK_KEY_VERSION:
       SP_API_OAUTH_DRAFT:
-    expose: ["3000"]
+      AMAZON_DEPLOYMENT_ATTESTATION_PUBLIC_KEY_FILE: /run/secrets/rizpoint_deployment_attestation_public_key
+    expose: ["3443"]
     networks: [edge, data]
+    secrets:
+      - source: rizpoint_internal_ca
+        target: rizpoint_internal_ca
+        mode: 0444
+      - source: rizpoint_web_server_cert
+        target: rizpoint_web_server_cert
+        mode: 0444
+      - source: rizpoint_web_server_key
+        target: rizpoint_web_server_key
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: rizpoint_deployment_attestation_public_key
+        target: rizpoint_deployment_attestation_public_key
+        mode: 0444
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -117,6 +157,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.50
+    logging: *security-logging
 
   worker:
     build:
@@ -130,6 +174,7 @@ services:
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --tls-min-v1.2
+      NODE_EXTRA_CA_CERTS: /run/secrets/rizpoint_internal_ca
       RIZPOINT_PRIVATE_MODE: "true"
       PHASE_ZERO_DEMO_MODE: "false"
       MALWARE_SCAN_MODE: clamav
@@ -157,7 +202,12 @@ services:
       SP_API_ENDPOINT:
       RIZPOINT_RELEASE_SHA:
       RIZPOINT_ERROR_TRACKING_WEBHOOK_URL:
+      SP_API_LWA_ENDPOINT: https://api.amazon.com/auth/o2/token
     networks: [application, data, security]
+    secrets:
+      - source: rizpoint_internal_ca
+        target: rizpoint_internal_ca
+        mode: 0444
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -174,6 +224,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2.00
+    logging: *security-logging
 
   scanner:
     build:
@@ -205,6 +259,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.00
+    logging: *security-logging
 
   clamav:
     image: clamav/clamav:1.4.3_base
@@ -221,23 +279,47 @@ services:
       interval: 30s
       timeout: 10s
       retries: 10
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.00
+    logging: *security-logging
 
 networks:
   edge:
     name: rizpoint-edge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: rp-edge
   application:
     name: rizpoint-application
+    driver_opts:
+      com.docker.network.bridge.name: rp-application
   # DATA has outbound routing only so web/worker can reach private managed TLS
   # endpoints. Cloud ACLs must restrict those endpoints to this deployment.
   data:
     name: rizpoint-data
+    driver_opts:
+      com.docker.network.bridge.name: rp-data
   security:
     name: rizpoint-security
     internal: true
+    driver_opts:
+      com.docker.network.bridge.name: rp-security
   # Only ClamAV joins this outbound-only zone so freshclam can update virus
   # definitions without making the scanner or worker publicly reachable.
   security-updates:
     name: rizpoint-security-updates
+    driver_opts:
+      com.docker.network.bridge.name: rp-security-updates
+  # Host journald -> rsyslog TLS -> managed SIEM is the supported monitoring
+  # boundary. Application containers never join the collector management plane.
+  monitoring:
+    name: rizpoint-monitoring
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: rp-monitoring
+    labels:
+      com.rizpoint.boundary: host-managed
 
 volumes:
   clamav-definitions:
@@ -247,3 +329,15 @@ secrets:
     file: ${RIZPOINT_TLS_CERT_FILE:-/run/rizpoint/tls/fullchain.pem}
   rizpoint_tls_key:
     file: ${RIZPOINT_TLS_KEY_FILE:-/run/rizpoint/tls/privkey.pem}
+  rizpoint_internal_ca:
+    file: ${RIZPOINT_INTERNAL_CA_FILE:-/run/rizpoint/internal-ca/ca.pem}
+  rizpoint_edge_client_cert:
+    file: ${RIZPOINT_EDGE_CLIENT_CERT_FILE:-/run/rizpoint/internal-ca/edge.pem}
+  rizpoint_edge_client_key:
+    file: ${RIZPOINT_EDGE_CLIENT_KEY_FILE:-/run/rizpoint/internal-ca/edge-key.pem}
+  rizpoint_web_server_cert:
+    file: ${RIZPOINT_WEB_SERVER_CERT_FILE:-/run/rizpoint/internal-ca/web.pem}
+  rizpoint_web_server_key:
+    file: ${RIZPOINT_WEB_SERVER_KEY_FILE:-/run/rizpoint/internal-ca/web-key.pem}
+  rizpoint_deployment_attestation_public_key:
+    file: ${RIZPOINT_DEPLOYMENT_ATTESTATION_PUBLIC_KEY_FILE:-/run/rizpoint/attestation/public.pem}

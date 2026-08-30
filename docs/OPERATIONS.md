@@ -93,6 +93,16 @@ endpoint/server/database/object/backup storage, monthly vulnerability scans,
 and the external controls classified in `AMAZON_SECURITY_CONTROLS.md`;
 application rate limits and idle sessions are not infrastructure substitutes.
 
+For the supported Amazon production host, follow
+`deploy/amazon-production/README.md`. Its firewall and host-control apply modes
+require provider-console recovery and exact confirmations; never run them
+blindly on a workstation or an unrecoverable SSH session. Production deploys
+must use secret-manager process injection, edge-to-web mTLS, private verified
+data endpoints, the managed WAF/SIEM boundary, and the strict live deployment
+checker. A signed report is retained outside Git and imported through
+**Settings → Security → Amazon Compliance**. It does not replace Prompt 36L's
+independent verification.
+
 Prompt 36I formalizes that process in `SECURITY_LOGGING.md` and the maintenance
 calendar in `SECURITY_MAINTENANCE.md`. Production security logs require private
 central collection and at least 12 months of integrity-protected retention.

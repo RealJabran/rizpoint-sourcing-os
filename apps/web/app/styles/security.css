@@ -323,6 +323,111 @@
   gap: 16px;
 }
 
+.security-overview-card,
+.security-control-card,
+.security-evidence-form {
+  padding: 22px;
+}
+
+.security-section-heading,
+.security-control-card,
+.security-control-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.security-section-heading h2,
+.security-evidence-form h2,
+.security-control-card h3 {
+  margin: 4px 0 6px;
+  letter-spacing: -0.025em;
+}
+
+.security-section-heading p,
+.security-evidence-form p,
+.security-control-card p {
+  margin: 0;
+  color: var(--rp-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.security-control-card {
+  min-height: 156px;
+}
+
+.security-control-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--rp-warning);
+  background: var(--rp-warning-tint);
+}
+
+.security-control-icon[data-tone="success"] {
+  color: var(--rp-success);
+  background: var(--rp-success-tint);
+}
+
+.security-control-icon svg {
+  width: 18px;
+}
+
+.security-control-card > div:nth-child(2) {
+  flex: 1;
+}
+
+.security-control-list {
+  display: grid;
+  margin-top: 18px;
+}
+
+.security-control-row {
+  padding: 14px 0;
+  border-top: 1px solid var(--rp-border);
+}
+
+.security-control-row div {
+  display: grid;
+  gap: 4px;
+}
+
+.security-control-row span {
+  color: var(--rp-muted);
+  font-size: 12px;
+}
+
+.security-evidence-form {
+  display: grid;
+  grid-template-columns:
+    minmax(260px, 1fr) minmax(180px, 0.55fr) minmax(180px, 0.55fr)
+    auto;
+  align-items: end;
+  gap: 16px;
+}
+
+.security-evidence-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--rp-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.security-evidence-form input[type="file"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--rp-border-strong);
+  border-radius: var(--rp-radius-control);
+  color: var(--rp-ink);
+  background: var(--rp-surface);
+}
+
 .security-panel {
   padding: 22px;
 }
@@ -607,6 +712,11 @@
   .security-overview,
   .security-grid {
     grid-template-columns: 1fr;
+  }
+
+  .security-evidence-form {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .security-form-grid {

@@ -95,6 +95,9 @@ describe("least privilege", () => {
     expect(requiredPermissionForRequest("/api/purchase-orders", "GET")).toBe(
       "VIEW_FINANCIALS",
     );
+    expect(
+      requiredPermissionForRequest("/api/security/amazon-compliance", "POST"),
+    ).toBe("MANAGE_SECURITY");
     expect(requiredPermissionForRequest("/api/product-explorer", "GET")).toBe(
       "VIEW_RESEARCH",
     );
